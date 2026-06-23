@@ -73,7 +73,7 @@ dark-first** with a single electric accent — deliberately *not* Strava orange 
 Spacing scale: `2 4 6 8 12 16 20 24 32 40 48 64`
 Radius scale: `sm 6 · md 10 · lg 14 · xl 20 · 2xl 28 · full 999`
 
-## Screens (v2 complete — 10 screens)
+## Screens (v2 complete — 12 screens)
 
 **Onboarding**
 1. **Welcome** — brand-first intro
@@ -81,22 +81,25 @@ Radius scale: `sm 6 · md 10 · lg 14 · xl 20 · 2xl 28 · full 999`
 3. **Goal Setup** — pick race, goal finish time, run days/week, current volume
 4. **Paywall** — Tempo Pro: features, Annual/Monthly pricing, free trial
 
-**Core app (tab bar)**
+**Core app (tab bar: Today · Plan · Progress · Coach · You)**
 5. **Today** — daily home: readiness ring, session card, workout structure, coach cue, week, last run
 6. **Plan** — adaptive 18-week plan: race countdown, training phases, adaptive adjustments, week list
-7. **Analyze** — run breakdown: splits chart vs target, time-in-zone, HR drift, coach takeaway
+7. **Progress** — goal-trajectory hub: projected finish vs goal, fitness trajectory toward ceiling,
+   training-block phase progress, consistency, key-session benchmarks, recent-runs preview
 8. **Coach** — calm-expert conversational coaching with quick replies
 9. **You** — profile: goal hero, year stats, personal bests, connected sources, preferences
 
 **Detail**
-10. **Fitness** — training-load trends: CTL curve, fitness/fatigue/form, weekly mileage, pace trends
+10. **Run History** — all runs grouped by week, training-load-balance read (under/over-training), per-run tags
+11. **Run Detail** — run breakdown: splits chart vs target, time-in-zone, HR drift, coach takeaway
+12. **Fitness** — training-load trends: CTL curve, fitness/fatigue/form, weekly mileage, pace trends
 
 ## Prototype (clickable)
 
 The screens are wired into an interactive Figma prototype — full onboarding chain
 (Welcome → Connect → Goal Setup → Paywall → Today), working bottom-tab navigation
-across the 5 main screens, and deep links (last run → Analyze, coach cue → Coach,
-You → Fitness). Start point: **Welcome**.
+across the 5 main screens, and deep links: last run → Run Detail, coach cue → Coach,
+You → Fitness, Progress → "See all" → Run History → Run Detail. Start point: **Welcome**.
 
 - **Play:** https://www.figma.com/proto/pwk7w2hbbQDFL35Penijae?node-id=11-2&starting-point-node-id=11-2&scaling=scale-down
 - **Design file:** https://www.figma.com/design/pwk7w2hbbQDFL35Penijae
