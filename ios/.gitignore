@@ -1,0 +1,9 @@
+# XcodeGen output + Xcode artifacts
+*.xcodeproj
+Tempo/Info.plist
+DerivedData/
+build/
+.DS_Store
+*.xcuserstate
+xcuserdata/
+.swiftpm/

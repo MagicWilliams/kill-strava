@@ -1,0 +1,43 @@
+name: Tempo
+options:
+  bundleIdPrefix: studio.delight
+  deploymentTarget:
+    iOS: "17.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    SWIFT_VERSION: "5.9"
+    DEVELOPMENT_TEAM: ""   # set your team in Xcode → Signing
+targets:
+  Tempo:
+    type: application
+    platform: iOS
+    deploymentTarget: "17.0"
+    sources:
+      - path: Tempo
+    info:
+      path: Tempo/Info.plist
+      properties:
+        CFBundleDisplayName: Tempo
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+        NSHealthShareUsageDescription: "Tempo reads your runs from Apple Health to build and adapt your training plan."
+        NSHealthUpdateUsageDescription: "Tempo can mark planned workouts complete in Apple Health."
+        UIAppFonts:
+          - SpaceGrotesk-Bold.ttf
+          - Inter-Regular.ttf
+          - Inter-Medium.ttf
+          - Inter-SemiBold.ttf
+          - Inter-Bold.ttf
+          - RobotoMono-Medium.ttf
+    entitlements:
+      path: Tempo/Tempo.entitlements
+      properties:
+        com.apple.developer.healthkit: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: studio.delight.tempo
+        TARGETED_DEVICE_FAMILY: "1"
+        GENERATE_INFOPLIST_FILE: NO
