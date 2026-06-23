@@ -4,7 +4,9 @@
 alternative to Runna (now owned by Strava). Built to be used, starting with the 2025/2026 build-up
 to the Chicago Marathon.
 
-> Working name: **Tempo**. Status: design phase (v2 core screens complete in Figma).
+> Working name: **Tempo**. Status: design complete (12 screens + clickable prototype);
+> v1 build underway. See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the locked stack
+> (iOS/SwiftUI · HealthKit · hybrid engine · Supabase · Claude).
 
 ## Why this exists
 
