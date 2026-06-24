@@ -10,11 +10,18 @@ settings:
     CURRENT_PROJECT_VERSION: "1"
     SWIFT_VERSION: "5.9"
     DEVELOPMENT_TEAM: ""   # set your team in Xcode → Signing
+packages:
+  Supabase:
+    url: https://github.com/supabase/supabase-swift
+    from: "2.0.0"
 targets:
   Tempo:
     type: application
     platform: iOS
     deploymentTarget: "17.0"
+    dependencies:
+      - package: Supabase
+        product: Supabase
     sources:
       - path: Tempo
     info:

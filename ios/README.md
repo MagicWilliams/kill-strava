@@ -28,9 +28,14 @@ Tempo/
   DesignSystem/  — tokens (Tokens.swift) + reusable components (Components.swift)
   Screens/       — Today, Plan, Progress, Coach, You
   Engine/        — deterministic training math (TrainingPaces.swift)
-  Models/        — mock data (until Supabase + HealthKit are wired)
+  Services/      — Supabase client + HealthKit ingest
+  Models/        — Codable models (+ Mock data until live data is wired)
   Resources/Fonts/
 ```
 
-Status: **app shell** — five screens render from mock data and the real pace engine.
-Next: Auth + HealthKit ingest, then wire screens to live data.
+The `Supabase` SPM package is declared in `project.yml`; `xcodegen generate` resolves it.
+Supabase project `Tempo` (`lpgdhqqroyqdrjsrlodo`) is provisioned with the schema + RLS applied.
+
+Status: **app shell + data layer scaffold** — five screens render from mock data and the
+real pace engine; Supabase client, models, and HealthKit ingest are in place.
+Next: **Sign in with Apple** (so ingested runs get a `user_id`), then swap screens to live data.
