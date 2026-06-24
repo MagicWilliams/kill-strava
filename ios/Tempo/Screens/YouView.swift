@@ -1,6 +1,8 @@
 import SwiftUI
 
 struct YouView: View {
+    @EnvironmentObject private var auth: AuthService
+
     var body: some View {
         Screen(title: "David", subtitle: "Chicago Marathon · 16 weeks out") {
             goal
@@ -10,6 +12,16 @@ struct YouView: View {
                 StatTile(value: "64h", label: "Time")
             }
             prefs
+            Button {
+                Task { await auth.signOut() }
+            } label: {
+                Text("Sign out")
+                    .font(Tokens.Font.ui(15, .semibold))
+                    .foregroundStyle(Tokens.Palette.danger)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 14)
+            }
+            .buttonStyle(.plain)
         }
     }
 
@@ -58,5 +70,7 @@ struct YouView: View {
 }
 
 #Preview {
-    YouView().preferredColorScheme(.dark)
+    YouView()
+        .environmentObject(AuthService())
+        .preferredColorScheme(.dark)
 }
