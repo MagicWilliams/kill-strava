@@ -6,6 +6,7 @@ struct TodayView: View {
 
     var body: some View {
         Screen(title: "Today", subtitle: Date.now.formatted(.dateTime.weekday(.wide).month(.wide).day())) {
+            dataWarning
             readiness
             session
             tomorrow
@@ -13,6 +14,23 @@ struct TodayView: View {
             lastRun
         }
         .refreshable { await store.refresh() }
+    }
+
+    /// Says out loud when the numbers below aren't the corrected record — a fallback to raw
+    /// Health data changes distances the athlete already fixed, and used to do it silently.
+    @ViewBuilder private var dataWarning: some View {
+        if let warning = store.dataWarning {
+            HStack(alignment: .top, spacing: 8) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.system(size: 12)).foregroundStyle(Tokens.Palette.warning)
+                Text(warning)
+                    .font(Tokens.Font.ui(12)).foregroundStyle(Tokens.Palette.warning)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .padding(12)
+            .background(Tokens.Palette.inset)
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        }
     }
 
     /// Real readiness from the load model — taps into the full breakdown.

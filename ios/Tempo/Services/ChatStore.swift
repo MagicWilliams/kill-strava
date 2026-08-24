@@ -194,7 +194,12 @@ final class ChatStore: ObservableObject {
         }
         messages[idx].actionState = .applied
         append(.user, "Confirmed — \(action.displaySummary)")
-        await runStore.reloadFromSupabase()
+        let reloaded = await runStore.reloadFromSupabase()
+        if !reloaded {
+            // The write landed; only the re-read didn't. Saying nothing here is what makes
+            // a saved edit look discarded — the card goes green and the numbers don't move.
+            errorText = "Saved — but your runs couldn't be re-read just now. Pull to refresh on Today."
+        }
         return true
     }
 

@@ -31,6 +31,11 @@ final class RunStore: ObservableObject {
     @Published private(set) var fitness: FitnessMetrics?
     @Published private(set) var todayTakeaway: String?
 
+    /// Non-nil when what's on screen is not the corrected record — see RunFetch. Rendered
+    /// as a banner on Today, because numbers the athlete already fixed silently reverting
+    /// is a bug he can only catch if we say something.
+    @Published private(set) var dataWarning: String?
+
     // Active plan state (see PlanData.swift)
     @Published var plan: PlanInfo?
     @Published var goal: GoalInfo?
@@ -72,25 +77,43 @@ final class RunStore: ObservableObject {
         }
         // DB first: ingest dedupes against what's already recorded (Garmin re-exports
         // the same runs under new HK uuids when its Health settings change).
-        var dbRuns = try? await fetchFromSupabase()
+        var response = await readRuns()
         if !ingested.isEmpty {
-            let inserted = (try? await health.sync(ingested, existing: dbRuns ?? runs)) ?? 0
+            var inserted = 0
+            do {
+                inserted = try await health.sync(ingested, existing: response.knownRows ?? runs)
+            } catch {
+                Telemetry.error("sync.insert_failed", error)
+            }
             if inserted > 0 {
-                dbRuns = (try? await fetchFromSupabase()) ?? dbRuns
+                switch await readRuns() {
+                case .rows(let rows):
+                    response = .rows(rows)
+                case .incomplete, .unreachable:
+                    // We wrote runs and then couldn't read them back. Whatever we held
+                    // before the insert is real but short of the truth — say so instead of
+                    // letting the new runs go missing until the next refresh.
+                    Telemetry.warn("sync.reread_failed", "runs inserted but the re-read failed")
+                    response = .incomplete(response.knownRows ?? [])
+                }
             }
         }
-        if let dbRuns {
-            runs = dbRuns
-        } else if !ingested.isEmpty {
-            runs = ingested                    // offline fallback: uncorrected view
-        } else if runs.isEmpty {
+
+        // The display rule is pure and lives in RunFetch — a failed read must never look
+        // like data, and a fallback must never look like the corrected record.
+        let decision = RunFetch.resolve(response, ingested: ingested, onScreen: runs)
+        if let resolved = decision.runs { runs = resolved }
+        dataWarning = decision.warning
+        switch decision.availability {
+        case .ready: phase = .ready
+        case .empty: phase = .empty
+        case .unavailable:
             // Nothing from the DB, nothing from Health, nothing cached: the screen goes
             // blank. Worth knowing every time it happens.
             Telemetry.warn("sync.no_data", "no runs from DB, HealthKit, or cache")
             phase = .unavailable
             return
         }
-        phase = runs.isEmpty ? .empty : .ready
 
         // Repair pass: fill avg HR on recent rows that predate HR enrichment
         // (Garmin doesn't associate HR samples with its workouts).
@@ -115,18 +138,14 @@ final class RunStore: ObservableObject {
             todayTakeaway = nil
             return
         }
-        struct Row: Decodable { let coach_takeaway: String? }
-        let cached: Row? = try? await Supa.client
-            .from("runs")
-            .select("coach_takeaway")
-            .eq("id", value: run.id.uuidString)
-            .single()
-            .execute()
-            .value
-        if let takeaway = cached?.coach_takeaway {
+        let cached = await readTakeaway(for: run)
+        if let takeaway = cached.text {
             todayTakeaway = takeaway
             return
         }
+        // A failed read is not an absent takeaway: generating on failure spends a Claude
+        // call re-deriving something the row may already hold.
+        guard cached.shouldGenerate else { return }
         // Not generated yet — do it in the background so refresh stays fast; the
         // preview appears on Today the moment it lands.
         Task { [weak self] in
@@ -138,10 +157,54 @@ final class RunStore: ObservableObject {
     }
 
     /// After a confirmed coach edit: re-read Supabase only (no re-ingest needed).
-    func reloadFromSupabase() async {
-        if let dbRuns = try? await fetchFromSupabase() {
+    ///
+    /// Returns whether the re-read landed. A silent no-op here is how an edit that *did*
+    /// save ends up looking discarded: the coach says "logged as 8.0", the list still reads
+    /// 7.6, and nothing on screen explains the gap.
+    @discardableResult
+    func reloadFromSupabase() async -> Bool {
+        switch await readRuns() {
+        case .rows(let dbRuns):
             runs = dbRuns
             phase = runs.isEmpty ? .empty : .ready
+            dataWarning = nil
+            return true
+        case .incomplete, .unreachable:
+            dataWarning = RunFetch.Copy.editNotReflected
+            return false
+        }
+    }
+
+    /// Read Supabase and report *which* outcome it was. The `try?` this replaces made
+    /// "the table is empty" and "the server never answered" the same value.
+    private func readRuns() async -> RunFetch.Response {
+        do {
+            return .rows(try await fetchFromSupabase())
+        } catch {
+            Telemetry.error("sync.runs_unreadable", error)
+            return .unreachable
+        }
+    }
+
+    /// Read the cached coach takeaway, distinguishing an empty column from a failed read.
+    private func readTakeaway(for run: RunSummary) async -> RunFetch.Takeaway {
+        struct Row: Decodable { let coach_takeaway: String? }
+        do {
+            let row: Row = try await Supa.client
+                .from("runs")
+                .select("coach_takeaway")
+                .eq("id", value: run.id.uuidString)
+                .single()
+                .execute()
+                .value
+            guard let takeaway = row.coach_takeaway, !takeaway.isEmpty else { return .notGenerated }
+            return .cached(takeaway)
+        } catch {
+            // Also the path for a run that only exists in the HealthKit fallback copy:
+            // `.single()` throws on zero rows, and generating against a row the DB doesn't
+            // have would fail anyway.
+            Telemetry.error("takeaway.cache_unreadable", error)
+            return .unreadable
         }
     }
 
