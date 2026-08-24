@@ -68,6 +68,7 @@ final class RunStore: ObservableObject {
             ingested = try await health.fetchSummaries()
         } catch {
             // No Health access — Supabase may still hold previously synced/manual runs.
+            Telemetry.error("sync.healthkit_unavailable", error)
         }
         // DB first: ingest dedupes against what's already recorded (Garmin re-exports
         // the same runs under new HK uuids when its Health settings change).
@@ -83,6 +84,9 @@ final class RunStore: ObservableObject {
         } else if !ingested.isEmpty {
             runs = ingested                    // offline fallback: uncorrected view
         } else if runs.isEmpty {
+            // Nothing from the DB, nothing from Health, nothing cached: the screen goes
+            // blank. Worth knowing every time it happens.
+            Telemetry.warn("sync.no_data", "no runs from DB, HealthKit, or cache")
             phase = .unavailable
             return
         }

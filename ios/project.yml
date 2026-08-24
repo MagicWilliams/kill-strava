@@ -48,3 +48,26 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: studio.delight.tempo
         TARGETED_DEVICE_FAMILY: "1"
         GENERATE_INFOPLIST_FILE: NO
+  TempoTests:
+    type: bundle.unit-test
+    platform: iOS
+    deploymentTarget: "17.0"
+    sources:
+      - path: TempoTests
+    dependencies:
+      - target: Tempo
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: studio.delight.tempo.tests
+        GENERATE_INFOPLIST_FILE: YES
+schemes:
+  Tempo:
+    build:
+      targets:
+        Tempo: all
+        TempoTests: [test]
+    test:
+      targets:
+        - TempoTests
+    run:
+      config: Debug

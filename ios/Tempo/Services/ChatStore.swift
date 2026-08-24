@@ -467,6 +467,9 @@ final class ChatStore: ObservableObject {
             append(.coach, extra.displaySummary, action: extra)
         }
         if reply.reply.isEmpty && actions.isEmpty {
+            // The v11 guard is supposed to make this unreachable. If it fires, the guard
+            // has a hole — and only telemetry would ever tell us.
+            Telemetry.warn("coach.empty_reply", "reached the supposedly-unreachable path")
             errorText = "Coach sent an empty reply — try again."
         }
     }
@@ -479,6 +482,7 @@ final class ChatStore: ObservableObject {
             )
             return reply
         } catch {
+            Telemetry.error("coach.invoke_failed", error)
             return nil
         }
     }

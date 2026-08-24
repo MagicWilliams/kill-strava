@@ -80,24 +80,29 @@ final class HealthService {
     func sync(_ summaries: [RunSummary], existing: [RunSummary]) async throws -> Int {
         guard let userID = Supa.userID?.uuidString, !summaries.isEmpty else { return 0 }
 
-        var kept: [RunSummary] = []
-        for var candidate in summaries {
-            let dupOfExisting = existing.contains {
-                abs($0.start.timeIntervalSince(candidate.start)) < 300
-            }
-            let dupInBatch = kept.contains {
-                abs($0.start.timeIntervalSince(candidate.start)) < 300
-            }
-            guard !dupOfExisting && !dupInBatch else { continue }
-            // Garmin doesn't associate HR with its workouts — enrich new rows from the
-            // time window before they're written (kept is small: only new runs).
-            if candidate.avgHR == nil {
-                let end = candidate.start.addingTimeInterval(TimeInterval(candidate.durationS))
-                candidate.avgHR = await windowAverageHR(start: candidate.start, end: end)
-            }
-            kept.append(candidate)
+        // Dedupe rule lives in RunDedupe (pure + unit-tested) — see that file for why
+        // the uuid constraint alone is not enough.
+        var kept = RunDedupe.newRuns(from: summaries, existing: existing)
+
+        // The Garmin re-export signature: a large batch collapsing to almost nothing.
+        // Silent when healthy (a normal refresh drops everything it already has); the
+        // agent looks for the shape where many candidates arrive and many are dropped,
+        // which is what a settings-change re-export looks like from in here.
+        let dropped = summaries.count - kept.count
+        if dropped > 0 && summaries.count >= 5 {
+            Telemetry.info("sync.dedupe_dropped", "re-export suspected",
+                           context: ["candidates": "\(summaries.count)",
+                                     "dropped": "\(dropped)",
+                                     "kept": "\(kept.count)"])
         }
         guard !kept.isEmpty else { return 0 }
+
+        // Garmin doesn't associate HR with its workouts — enrich new rows from the
+        // time window before they're written (kept is small: only new runs).
+        for i in kept.indices where kept[i].avgHR == nil {
+            let end = kept[i].start.addingTimeInterval(TimeInterval(kept[i].durationS))
+            kept[i].avgHR = await windowAverageHR(start: kept[i].start, end: end)
+        }
 
         let inserts = kept.map { run in
             RunInsert(
