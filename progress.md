@@ -118,6 +118,18 @@ Later wishlist (explicitly deferred): watch laps, weather, PR detection, share c
 
 ## Session log
 
+- **2026-08-23 (loop live) — the autonomy loop is switched on.**
+  - **Board seeded.** 9 labels (`agent-ready` / `needs-david` / `needs-device`, `p0`–`p2`, `feat`/`chore`/`spike`) + 8 issues (#6–#13) drawn from the 2026-07-11 gap audit and today's findings. The four `needs-david` ones are assigned to David so GitHub notifies him; his comment on the issue is the answer, and the next EM run reads it back and re-labels `agent-ready`. That round trip is the whole consult mechanism.
+  - **Three cloud routines** (UTC crons; local times shift an hour at the November DST change):
+    | Agent | Local | Cron (UTC) | Model | Connectors |
+    |---|---|---|---|---|
+    | Scout `/triage` | daily 08:17 PDT | `17 15 * * *` | sonnet | Supabase (read-only) |
+    | Builder `/build-next` | weekdays 09:23 PDT | `23 16 * * 1-5` | opus | **none** |
+    | EM `/brief` | Fridays 17:11 PDT | `11 0 * * 6` | opus | Supabase (read-only) |
+  - **Least privilege matters here.** A routine created without an explicit `mcp_connections` list inherits *every* connected connector — Builder came up with Gmail, Slack, Stripe, Notion, Asana, Linear and Calendar attached. Cleared it to `[]`. An agent that acts autonomously on issue text from a public repo must not also hold the keys to email and payments; anyone can file an issue.
+  - **PR hygiene lesson:** #4 was stacked on `chore/autonomy-foundation` and merged into *that branch*, not `main` — GitHub only auto-retargets a stacked PR when its base branch is **deleted**, and #3's branch survived. The launch fix silently missed `main`; re-opened as #5. Either delete the base branch on merge, or retarget the child before merging the parent.
+  - Still gating everything: migration `0006_telemetry` is unapplied (#6). Until it runs, Scout's first pass will correctly report an empty `app_events` and little else.
+
 - **2026-08-23 (autonomy foundation) — CI, an engine test suite, telemetry, and a three-agent org.**
   - **`.github/workflows/ci.yml`** — the piece everything else depends on. macOS runner: device-slice build + simulator tests; Ubuntu: `deno check` on the edge functions. Cloud agents run Linux and *cannot compile Swift*, so CI is literally their compiler. Simulator UDID resolved dynamically at run time rather than pinned (a pinned device name is a loop-wide outage waiting to happen).
   - **`ios/TempoTests/`** — first real tests. Written as regressions against actual incidents, not coverage padding: `RunDedupeTests` replays the 2026-07-10 Garmin re-export week; `LoadModelTests` pins "the athlete's word outranks the math" (a positive check-in must *not* inflate readiness, only lift the cap); `PaceModelTests` pins the sub-3:15 paces the doc comment already claimed were tested.
