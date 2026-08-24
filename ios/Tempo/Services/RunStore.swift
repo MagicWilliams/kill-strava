@@ -23,8 +23,16 @@ final class RunStore: ObservableObject {
     @Published private(set) var daysPerWeek = 6
     @Published private(set) var longRunDay = 0            // 0 = Sunday … 6 = Saturday
 
-    // Onboarding gate: nil = profile not loaded yet, true = takeover, false = through
-    @Published private(set) var needsOnboarding: Bool?
+    // Launch gate: what RootTabView shows before the app proper. See LaunchGate.swift —
+    // .unreachable exists so a dead backend can never masquerade as "still loading".
+    @Published private(set) var launch: LaunchGate = .loading
+    var needsOnboarding: Bool? {
+        switch launch {
+        case .loading, .unreachable: return nil
+        case .onboarding:            return true
+        case .ready:                 return false
+        }
+    }
     @Published private(set) var birthdate: String?        // yyyy-MM-dd
 
     // Load model output (recomputed each refresh) + today's cached coach read
@@ -49,14 +57,36 @@ final class RunStore: ObservableObject {
 
     func start() async {
         guard phase == .idle else { return }
+        await runLaunchSequence()
+    }
+
+    /// Retry after `.unreachable`. Resets the `phase` latch that `start()` guards on —
+    /// without this the first failure would be permanent for the life of the process.
+    func retryLaunch() async {
+        guard launch.isUnreachable else { return }
+        phase = .idle
+        launch = .loading
+        await runLaunchSequence()
+    }
+
+    private func runLaunchSequence() async {
         phase = .loading
-        await Supa.signInAnonymouslyIfNeeded()
-        await Supa.ensureProfile()
-        await loadRiskTolerance()
+        let signedIn = await Supa.signInAnonymouslyIfNeeded()
+        if signedIn { await Supa.ensureProfile() }
+        let profile = signedIn ? await loadProfile() : .unreadable
+
+        launch = LaunchGate.resolve(signedIn: signedIn, profile: profile)
+        guard !launch.isUnreachable else {
+            // Don't chase plans and runs against a backend that just refused to answer;
+            // the retry re-runs the whole sequence.
+            phase = .idle
+            return
+        }
+
         await loadPlan()
         // During onboarding, the Connect step owns the HealthKit moment — don't
         // fire the permission sheet from under the Welcome screen.
-        if needsOnboarding != true {
+        if launch == .ready {
             await refresh()
         }
     }
@@ -177,8 +207,13 @@ final class RunStore: ObservableObject {
         }
     }
 
-    private func loadRiskTolerance() async {
-        struct Row: Decodable {
+    /// Read the profile row and report which of the three launch outcomes it is.
+    ///
+    /// The old version wrapped this in `try?` and simply left `needsOnboarding` nil when the
+    /// read failed — the exact line that turned a paused project into an infinite splash.
+    /// A thrown error and an absent row now mean different things, because they are.
+    private func loadProfile() async -> LaunchGate.Profile {
+        struct Row: Decodable, Sendable {
             let risk_tolerance: String
             let max_hr: Int?
             let days_per_week: Int?
@@ -186,21 +221,35 @@ final class RunStore: ObservableObject {
             let onboarded_at: Date?
             let birthdate: String?
         }
-        if let uid = Supa.userID?.uuidString,
-           let row: Row = try? await Supa.client
-               .from("profiles")
-               .select("risk_tolerance,max_hr,days_per_week,long_run_day,onboarded_at,birthdate")
-               .eq("id", value: uid)
-               .single()
-               .execute()
-               .value {
-            riskTolerance = row.risk_tolerance
-            maxHR = row.max_hr
-            daysPerWeek = row.days_per_week ?? 6
-            longRunDay = row.long_run_day ?? 0
-            birthdate = row.birthdate
-            needsOnboarding = row.onboarded_at == nil
+        guard let uid = Supa.userID?.uuidString else { return .unreadable }
+
+        let rows: [Row]
+        do {
+            // Decoded as an array rather than `.single()`: PostgREST turns a zero-row
+            // `.single()` into a thrown error, which would collapse "no profile yet" back
+            // into "couldn't read the profile" — the exact conflation being fixed here.
+            rows = try await Deadline.run {
+                try await Supa.client
+                    .from("profiles")
+                    .select("risk_tolerance,max_hr,days_per_week,long_run_day,onboarded_at,birthdate")
+                    .eq("id", value: uid)
+                    .limit(1)
+                    .execute()
+                    .value
+            }
+        } catch {
+            Telemetry.error("launch.profile_unreadable", error)
+            return .unreadable
         }
+
+        guard let row = rows.first else { return .new }   // no row yet — a genuinely new athlete
+
+        riskTolerance = row.risk_tolerance
+        maxHR = row.max_hr
+        daysPerWeek = row.days_per_week ?? 6
+        longRunDay = row.long_run_day ?? 0
+        birthdate = row.birthdate
+        return row.onboarded_at == nil ? .new : .onboarded
     }
 
     func setBirthdate(_ iso: String?) {
@@ -216,7 +265,7 @@ final class RunStore: ObservableObject {
             .update(Patch(onboarded_at: ISO8601DateFormatter().string(from: .now)))
             .eq("id", value: uid)
             .execute()
-        needsOnboarding = false
+        launch = .ready
         await refresh()
     }
 
