@@ -7,7 +7,7 @@ struct TempoApp: App {
 
     var body: some Scene {
         WindowGroup {
-            RootTabView()
+            RootView()
                 .preferredColorScheme(.dark)
                 .environmentObject(runs)
                 .environmentObject(router)

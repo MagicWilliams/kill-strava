@@ -111,9 +111,11 @@ struct Profile: Codable, Identifiable {
     let name: String?
     let units: String
     let coachVoice: String
+    let healthConnected: Bool
 
     enum CodingKeys: String, CodingKey {
         case id, name, units
         case coachVoice = "coach_voice"
+        case healthConnected = "health_connected"
     }
 }
