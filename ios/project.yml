@@ -32,15 +32,13 @@ targets:
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
         NSHealthShareUsageDescription: "Tempo reads your runs from Apple Health to build and adapt your training plan."
         NSHealthUpdateUsageDescription: "Tempo can mark planned workouts complete in Apple Health."
-        # Fonts: re-enable this list once the .ttf files are in Tempo/Resources/Fonts/
-        # (see ios/Tempo/Resources/Fonts/README.md). Until then the app uses system fonts.
-        # UIAppFonts:
-        #   - SpaceGrotesk-Bold.ttf
-        #   - Inter-Regular.ttf
-        #   - Inter-Medium.ttf
-        #   - Inter-SemiBold.ttf
-        #   - Inter-Bold.ttf
-        #   - RobotoMono-Medium.ttf
+        UIAppFonts:
+          - SpaceGrotesk-Bold.ttf
+          - Inter-Regular.ttf
+          - Inter-Medium.ttf
+          - Inter-SemiBold.ttf
+          - Inter-Bold.ttf
+          - RobotoMono-Medium.ttf
     entitlements:
       path: Tempo/Tempo.entitlements
       properties:

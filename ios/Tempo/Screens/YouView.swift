@@ -5,7 +5,6 @@ import SwiftUI
 struct YouView: View {
     @EnvironmentObject private var store: RunStore
     @EnvironmentObject private var router: TabRouter
-    @EnvironmentObject private var auth: AuthService
 
     var body: some View {
         Screen(title: "You", subtitle: subtitle) {
@@ -13,22 +12,6 @@ struct YouView: View {
             yearStats
             bests
             settings
-            HStack(spacing: 10) {
-                StatTile(value: "412", label: "Miles")
-                StatTile(value: "78", label: "Runs")
-                StatTile(value: "64h", label: "Time")
-            }
-            prefs
-            Button {
-                Task { await auth.signOut() }
-            } label: {
-                Text("Sign out")
-                    .font(Tokens.Font.ui(15, .semibold))
-                    .foregroundStyle(Tokens.Palette.danger)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 14)
-            }
-            .buttonStyle(.plain)
         }
         .refreshable { await store.refresh() }
     }
@@ -185,6 +168,5 @@ struct YouView: View {
     YouView()
         .environmentObject(RunStore())
         .environmentObject(TabRouter())
-        .environmentObject(AuthService())
         .preferredColorScheme(.dark)
 }
