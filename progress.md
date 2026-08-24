@@ -2,7 +2,7 @@
 
 > Read me first each session. Architecture + build sequence: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
-_Last updated: 2026-07-08 (audit session)_
+_Last updated: 2026-08-23 (autonomy foundation)_
 
 ## Where we are
 
@@ -117,6 +117,15 @@ Later wishlist (explicitly deferred): watch laps, weather, PR detection, share c
 - Run-detail wishlist: watch laps, weather, PR detection, share card, HR drift.
 
 ## Session log
+
+- **2026-08-23 (autonomy foundation) — CI, an engine test suite, telemetry, and a three-agent org.**
+  - **`.github/workflows/ci.yml`** — the piece everything else depends on. macOS runner: device-slice build + simulator tests; Ubuntu: `deno check` on the edge functions. Cloud agents run Linux and *cannot compile Swift*, so CI is literally their compiler. Simulator UDID resolved dynamically at run time rather than pinned (a pinned device name is a loop-wide outage waiting to happen).
+  - **`ios/TempoTests/`** — first real tests. Written as regressions against actual incidents, not coverage padding: `RunDedupeTests` replays the 2026-07-10 Garmin re-export week; `LoadModelTests` pins "the athlete's word outranks the math" (a positive check-in must *not* inflate readiness, only lift the cap); `PaceModelTests` pins the sub-3:15 paces the doc comment already claimed were tested.
+  - **`Engine/RunDedupe.swift`** — extracted the ±300s dedupe out of `HealthService.sync` as a pure function. Behavior-identical; the point is that the worst bug class in the app's history is now regression-testable without mocking HealthKit.
+  - **Telemetry** — `supabase/migrations/0006_telemetry.sql` (`app_events`, RLS insert-only + own-read so a bug can't erase evidence of itself) + `Services/Telemetry.swift`, wired at 9 sites. No health data, no PII, stable dot-path keys. **Not applied yet** — until it is, the triage agent is blind.
+  - **Agent org** — `CLAUDE.md` (rulebook: three hard limits, verification contract, never-do list), `.claude/agents/{scout,builder,em}.md`, `.claude/commands/{triage,build-next,brief}.md`, `docs/AUTONOMY.md`. Roles are split so no agent grades its own homework.
+  - Decisions: David reviews every PR (nothing auto-merges); EM consults via GitHub decision issues assigned to him (Claude's push notifications only fire from a live local session, so a cloud routine can't reach his phone that way); stabilize before features.
+  - **Correction to earlier notes:** the "simulator runtime broken (CoreSimulator mismatch)" line from 2026-07-08 is stale — iOS 18.2 and 26.5 runtimes both work; the full suite runs locally on iPhone 17 Pro.
 
 - **2026-07-11 — Engagement pass: readiness goes real (the last hardcoded stub dies) + richer Today + polish.**
   - **LoadModel** (`Engine/LoadModel.swift`): per-run load = miles × intensity² (intensity = pace vs athlete's own 60-day median — self-calibrating, works without HR); CTL(42d)/ATL(7d) EWMAs; form = CTL−ATL; readiness 5–98 centered on form/fitness; a "something's off" check-in caps it at 40 (athlete's word outranks math). Computed every refresh; feeds coach context (`fitness` block).

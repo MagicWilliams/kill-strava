@@ -1,0 +1,83 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ios:
+    name: iOS build + engine tests
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      # Not pinned: runner images move fast and a stale pin fails the whole loop.
+      # If a toolchain bump ever breaks the build, pin here deliberately.
+      - name: Show toolchain
+        run: xcodebuild -version && swift --version
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate project
+        working-directory: ios
+        run: xcodegen generate
+
+      - name: Cache SPM
+        uses: actions/cache@v4
+        with:
+          path: ~/Library/Developer/Xcode/DerivedData/**/SourcePackages
+          key: spm-${{ runner.os }}-${{ hashFiles('ios/project.yml') }}
+          restore-keys: spm-${{ runner.os }}-
+
+      # Device build proves the whole app compiles, including HealthKit paths
+      # that are unavailable in the simulator. No signing on CI.
+      - name: Build (device slice)
+        working-directory: ios
+        run: |
+          set -o pipefail
+          xcodebuild -project Tempo.xcodeproj -scheme Tempo \
+            -destination 'generic/platform=iOS' \
+            -quiet build CODE_SIGNING_ALLOWED=NO
+
+      # Resolved at run time, never pinned: a hardcoded simulator name is the most
+      # common way an iOS pipeline rots (locally, 'iPhone 16' exists only on iOS 18.2).
+      - name: Pick a simulator
+        id: sim
+        run: |
+          UDID=$(xcrun simctl list devices available -j \
+            | python3 -c "import json,sys; ds=json.load(sys.stdin)['devices']; \
+                print(next(d['udid'] for rt in sorted(ds, reverse=True) for d in ds[rt] \
+                if d.get('isAvailable') and 'iPhone' in d['name']))")
+          echo "udid=$UDID" >> "$GITHUB_OUTPUT"
+          xcrun simctl list devices | grep -i "$UDID" || true
+
+      # Tests need a simulator. This is the gate agents cannot fake.
+      - name: Test (simulator)
+        working-directory: ios
+        run: |
+          set -o pipefail
+          xcodebuild -project Tempo.xcodeproj -scheme Tempo \
+            -destination "id=${{ steps.sim.outputs.udid }}" \
+            -quiet test CODE_SIGNING_ALLOWED=NO
+
+  edge:
+    name: Edge functions typecheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: Typecheck
+        run: deno check supabase/functions/*/index.ts
+      - name: Lint
+        run: deno lint supabase/functions/ || true

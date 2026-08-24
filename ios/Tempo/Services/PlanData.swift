@@ -124,11 +124,18 @@ extension RunStore {
                 .execute()
                 .value
         } catch {
-            return   // transient failure — keep whatever we're showing
+            // Transient failure — keep whatever we're showing. Reported because a
+            // *persistent* run of these looks identical to "the plan vanished" from
+            // the athlete's side, and that ambiguity cost days in July.
+            Telemetry.error("plan.load_failed", error)
+            return
         }
 
         guard let newPlan = fetched.first else {
             // Definitive: no active plan exists.
+            if plan != nil {
+                Telemetry.warn("plan.cleared", "server returned zero active plans")
+            }
             plan = nil; goal = nil; planWeeks = []; sessions = []
             return
         }
