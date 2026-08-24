@@ -2,7 +2,7 @@
 
 > Read me first each session. Architecture + build sequence: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
-_Last updated: 2026-08-23 (autonomy foundation)_
+_Last updated: 2026-08-23 (splash freeze + autonomy foundation)_
 
 ## Where we are
 
@@ -117,6 +117,16 @@ Later wishlist (explicitly deferred): watch laps, weather, PR detection, share c
 - Run-detail wishlist: watch laps, weather, PR detection, share card, HR drift.
 
 ## Session log
+
+- **2026-08-23 (splash freeze) — root-caused to a paused Supabase project; the *freeze* fixed in the app.**
+  - **Symptom:** app hangs on the "Tempo" splash forever. **Cause (infra):** the Supabase project `lpgdhqqroyqdrjsrlodo` is `INACTIVE` — free-tier auto-pause after ~7 days idle. Every launch request fails; `list_tables` against it times out. **David restores it from the dashboard; agents never touch project state.**
+  - **Cause (app) — the real bug, and it outlives the outage.** `RootTabView` showed the splash for `needsOnboarding == nil`, and `nil` meant *both* "not loaded yet" and "load failed": the profile read was wrapped in `try?`, so any failure left the gate nil forever. No timeout, no error state, no retry — and `start()`'s `guard phase == .idle` meant the first failure was permanent for the process lifetime.
+  - **Fix.** New `Engine`-style pure gate `Services/LaunchGate.swift`: `.loading | .onboarding | .ready | .unreachable(reason:)`, resolved by a pure `resolve(signedIn:profile:)`. Two invariants pinned by tests: *resolution never yields `.loading`* (a failure can't masquerade as loading) and *an unreadable profile never routes to `.onboarding`* (demoting an onboarded athlete into the setup interview would read as account loss).
+  - Profile read now decodes `[Row]` via `.limit(1)` instead of `.single()` — PostgREST throws on a zero-row `.single()`, which is exactly what collapsed "no profile yet" into "couldn't read profile". Absent row → `.new`; thrown/timed-out → `.unreachable`.
+  - Transport leash: `Supa` now builds its own `URLSession` (request 15s, resource 30s, `waitsForConnectivity = false`) instead of inheriting `URLSession.shared`'s 60s/7-day defaults. Plus `Deadline.run(_:)` for launch work that could stall off-network. `signInAnonymouslyIfNeeded()` returns `Bool` now — that one bit is the whole difference between a retry screen and a permanent splash.
+  - `LaunchErrorView` + `RunStore.retryLaunch()` (resets the `phase` latch). Copy deliberately says *connection*, not *error* — the data was never at risk.
+  - New telemetry: `auth.anonymous_sign_in_failed`, `launch.profile_unreadable`. Note these need migration `0006_telemetry` applied before they record anything.
+  - Verified: `xcodegen` 0, device-slice build 0, **33 tests / 0 failures**. **David confirmed on device**: project restored, app launches, retry screen works.
 
 - **2026-08-23 (loop live) — the autonomy loop is switched on.**
   - **Board seeded.** 9 labels (`agent-ready` / `needs-david` / `needs-device`, `p0`–`p2`, `feat`/`chore`/`spike`) + 8 issues (#6–#13) drawn from the 2026-07-11 gap audit and today's findings. The four `needs-david` ones are assigned to David so GitHub notifies him; his comment on the issue is the answer, and the next EM run reads it back and re-labels `agent-ready`. That round trip is the whole consult mechanism.
