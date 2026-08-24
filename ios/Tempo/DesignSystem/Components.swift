@@ -62,22 +62,39 @@ struct Tag: View {
     }
 }
 
-/// Full-width volt CTA.
+/// Press feedback for every tappable: quick scale + dim so a tap always visibly lands.
+struct Pressable: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.96 : 1)
+            .opacity(configuration.isPressed ? 0.8 : 1)
+            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
+    }
+}
+
+/// Full-width volt CTA with built-in loading state.
 struct PrimaryButton: View {
     let title: String
+    var loading = false
     var action: () -> Void = {}
 
     var body: some View {
         Button(action: action) {
-            Text(title)
-                .font(Tokens.Font.ui(16, .bold))
-                .foregroundStyle(Tokens.Palette.onVolt)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 16)
-                .background(Tokens.Palette.volt)
-                .clipShape(RoundedRectangle(cornerRadius: Tokens.Radius.lg, style: .continuous))
+            HStack(spacing: 8) {
+                if loading {
+                    ProgressView().controlSize(.small).tint(Tokens.Palette.onVolt)
+                }
+                Text(title)
+                    .font(Tokens.Font.ui(16, .bold))
+                    .foregroundStyle(Tokens.Palette.onVolt)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 16)
+            .background(Tokens.Palette.volt.opacity(loading ? 0.7 : 1))
+            .clipShape(RoundedRectangle(cornerRadius: Tokens.Radius.lg, style: .continuous))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(Pressable())
+        .disabled(loading)
     }
 }
 

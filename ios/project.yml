@@ -9,7 +9,7 @@ settings:
     MARKETING_VERSION: "0.1.0"
     CURRENT_PROJECT_VERSION: "1"
     SWIFT_VERSION: "5.9"
-    DEVELOPMENT_TEAM: ""   # set your team in Xcode → Signing
+    DEVELOPMENT_TEAM: "2P8QGJVNJ7"   # David Latimore II (Personal Team) — survives xcodegen regeneration
 packages:
   Supabase:
     url: https://github.com/supabase/supabase-swift

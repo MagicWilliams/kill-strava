@@ -39,6 +39,41 @@ struct RunInsert: Encodable {
     let avg_hr: Int?
 }
 
+// MARK: - RunSummary (a run as read from HealthKit)
+
+/// A completed run. Read path is Supabase `runs` (source of truth — carries user
+/// corrections); HealthKit-shaped instances exist only for ingest + offline fallback.
+struct RunSummary: Identifiable, Hashable {
+    let id: UUID          // Supabase row id (or HKWorkout uuid on the ingest/fallback path)
+    let start: Date
+    let distanceM: Int
+    let durationS: Int
+    var avgHR: Int?       // var: HR backfill fills it in when Garmin didn't associate samples
+    var corrected: Bool = false
+    var source: String = "healthkit"
+    var externalID: String? = nil   // HKWorkout uuid for healthkit rows → detail-series lookup
+
+    var miles: Double { Double(distanceM) / 1609.34 }
+    var paceSecPerMile: Int? { miles > 0.05 ? Int(Double(durationS) / miles) : nil }
+
+    /// "5.1 mi · 9:10 /mi · 138 bpm" (drops what's unknown).
+    var metricsLine: String {
+        var parts = [String(format: "%.1f mi", miles)]
+        if let pace = paceSecPerMile { parts.append(PaceModel.format(pace) + " /mi") }
+        if let hr = avgHR { parts.append("\(hr) bpm") }
+        return parts.joined(separator: " · ")
+    }
+}
+
+/// One training week's aggregate (Mon–Sun).
+struct WeekSummary: Identifiable {
+    let weekStart: Date
+    let miles: Double
+    let runCount: Int
+    let durationS: Int
+    var id: Date { weekStart }
+}
+
 // MARK: - Goal
 
 struct Goal: Codable, Identifiable {
