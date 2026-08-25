@@ -3,7 +3,12 @@ import Supabase
 
 /// A write the coach wants to make, pending the athlete's confirmation.
 /// Flat shape mirroring the Edge Function's tool params.
-struct ProposedAction: Decodable, Equatable {
+///
+/// `Encodable` as well as `Decodable` because the proposal is stored verbatim in
+/// `coach_messages.proposed_action` so it can be offered again after a relaunch. The
+/// synthesized encoder skips nil, so a row holds the handful of keys the coach actually
+/// sent rather than thirty mostly-null ones.
+struct ProposedAction: Codable, Equatable {
     let type: String            // amend_run | add_run | set_risk_tolerance
     let summary: String?        // one line shown on the confirm card (server guarantees it; belt & suspenders)
 
@@ -52,13 +57,9 @@ struct ProposedAction: Decodable, Equatable {
 
 struct ChatMessage: Identifiable, Equatable {
     enum Role: String { case user, coach }
-    enum ActionState: Equatable {
-        case pending      // card showing Confirm/Dismiss
-        case applying     // write in flight — card shows progress
-        case applied      // success — card stays as evidence
-        case dismissed
-        case failed       // error — buttons return, retryable
-    }
+    /// Defined in `Engine/CoachActionState.swift`: the transitions have to survive a
+    /// relaunch, which makes them logic, and logic here is pure and pinned by tests.
+    typealias ActionState = CoachActionState
     let id: UUID
     let role: Role
     let text: String
@@ -93,8 +94,31 @@ final class ChatStore: ObservableObject {
     struct WireMessage: Codable { let role: String; let content: String }
     private struct CoachRequest: Encodable { let messages: [WireMessage]; let context: CoachContext }
     private struct CoachReply: Decodable { let reply: String; let proposed_actions: [ProposedAction]? }
-    private struct HistoryRow: Decodable { let id: UUID; let role: String; let content: String; let created_at: Date }
-    private struct MessageInsert: Encodable { let user_id: String; let role: String; let content: String }
+    private struct HistoryRow: Decodable {
+        let id: UUID
+        let role: String
+        let content: String
+        let created_at: Date
+        // Both nil for an ordinary message and for every row written before migration 0007.
+        // Optional decoding tolerates the columns being absent entirely, so a build running
+        // ahead of the migration still replays the conversation.
+        let proposed_action: ProposedAction?
+        let action_state: String?
+    }
+    private struct MessageInsert: Encodable { let id: String; let user_id: String; let role: String; let content: String }
+    /// A separate shape so a message *without* a proposal never names the two columns
+    /// migration 0007 adds. Running this build against an un-migrated database then costs
+    /// the confirm cards and nothing else, instead of failing every message insert and
+    /// dropping the whole conversation on the floor.
+    private struct ProposalInsert: Encodable {
+        let id: String
+        let user_id: String
+        let role: String
+        let content: String
+        let proposed_action: ProposedAction
+        let action_state: String
+    }
+    private struct StatePatch: Encodable { let action_state: String }
 
     /// Load persisted history; on a fresh account, open with a data-grounded status read.
     /// In onboarding mode, always (re)open the interview — resuming where it left off.
@@ -109,7 +133,14 @@ final class ChatStore: ObservableObject {
             .execute()
             .value {
             messages = rows.map {
-                ChatMessage(id: $0.id, role: ChatMessage.Role(rawValue: $0.role) ?? .coach, text: $0.content, timestamp: $0.created_at)
+                ChatMessage(
+                    id: $0.id,
+                    role: ChatMessage.Role(rawValue: $0.role) ?? .coach,
+                    text: $0.content,
+                    timestamp: $0.created_at,
+                    action: $0.proposed_action,
+                    actionState: .restored(from: $0.action_state)
+                )
             }
         }
         let opener: String
@@ -184,15 +215,18 @@ final class ChatStore: ObservableObject {
             case "complete_onboarding": await applyCompleteOnboarding(runStore: runStore)
             default:
                 messages[idx].actionState = .failed
+                persistActionState(messageID, .failed)
                 errorText = "Unknown action type “\(action.type)”."
                 return false
             }
         } catch {
             messages[idx].actionState = .failed
+            persistActionState(messageID, .failed)
             errorText = "That change didn't go through — Confirm to retry."
             return false
         }
         messages[idx].actionState = .applied
+        persistActionState(messageID, .applied)
         append(.user, "Confirmed — \(action.displaySummary)")
         let reloaded = await runStore.reloadFromSupabase()
         if !reloaded {
@@ -208,7 +242,26 @@ final class ChatStore: ObservableObject {
               let action = messages[idx].action,
               messages[idx].actionState == .pending || messages[idx].actionState == .failed else { return }
         messages[idx].actionState = .dismissed
+        persistActionState(messageID, .dismissed)
         append(.user, "Dismissed — \(action.displaySummary)")
+    }
+
+    /// Record a resolution on the message's own row, so the card comes back resolved rather
+    /// than as a live offer the athlete already answered.
+    ///
+    /// Fire-and-forget: the write the athlete actually cared about has already landed, and
+    /// blocking the card on bookkeeping would be the worse trade. If this one fails the card
+    /// reopens as pending — the failure mode is being asked twice, never a silent apply.
+    private func persistActionState(_ messageID: UUID, _ state: ChatMessage.ActionState) {
+        guard let stored = state.persisted else { return }
+        let id = messageID.uuidString
+        let patch = StatePatch(action_state: stored)
+        enqueueWrite("coach.action_state_persist_failed") {
+            try await Supa.client.from("coach_messages")
+                .update(patch)
+                .eq("id", value: id)
+                .execute()
+        }
     }
 
     private func applyAmend(_ action: ProposedAction) async throws {
@@ -493,9 +546,53 @@ final class ChatStore: ObservableObject {
     }
 
     private func append(_ role: ChatMessage.Role, _ text: String, action: ProposedAction? = nil) {
-        messages.append(ChatMessage(id: UUID(), role: role, text: text, action: action))
+        let message = ChatMessage(id: UUID(), role: role, text: text, action: action)
+        messages.append(message)
         guard let uid = Supa.userID?.uuidString else { return }
-        let row = MessageInsert(user_id: uid, role: role.rawValue, content: text)
-        Task { try? await Supa.client.from("coach_messages").insert(row).execute() }
+        // The row id is minted here rather than by Postgres' `default gen_random_uuid()`,
+        // because a later Confirm has to be able to find its own row: the card on screen and
+        // the row behind it must be one identity, across a relaunch and across the gap
+        // between this insert and the read that replays it.
+        let id = message.id.uuidString
+        let roleValue = role.rawValue
+        // Used to be `try?`. A dropped insert now costs a confirmable offer, not just a line
+        // of transcript, so it is worth hearing about.
+        enqueueWrite("coach.message_persist_failed") {
+            let table = Supa.client.from("coach_messages")
+            if let action {
+                try await table.insert(ProposalInsert(
+                    id: id, user_id: uid, role: roleValue, content: text,
+                    proposed_action: action,
+                    action_state: ChatMessage.ActionState.pending.rawValue
+                )).execute()
+            } else {
+                try await table.insert(MessageInsert(
+                    id: id, user_id: uid, role: roleValue, content: text
+                )).execute()
+            }
+        }
     }
+
+    /// Every `coach_messages` write goes through here, and they run one at a time in the
+    /// order they were made.
+    ///
+    /// Ordering is not decoration. A Confirm can land a second after the card appears, and
+    /// its state UPDATE would then race the INSERT that created the row — an update that
+    /// overtakes its own insert matches nothing, and the card comes back next launch as a
+    /// live offer the athlete already took. Which is the bug this whole change exists to fix.
+    /// The traffic is a handful of small writes a minute at its very busiest, so a queue
+    /// costs nothing worth counting.
+    private func enqueueWrite(_ event: String, _ work: @escaping @Sendable () async throws -> Void) {
+        let previous = writes
+        writes = Task {
+            if let previous { await previous.value }
+            do {
+                try await work()
+            } catch {
+                Telemetry.error(event, error)
+            }
+        }
+    }
+
+    private var writes: Task<Void, Never>?
 }
