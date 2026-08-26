@@ -17,6 +17,34 @@ const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
 const MODEL = "claude-sonnet-5";
 const MI = 1609.34;
 
+// Sonnet 5 thinks by default (adaptive), and thinking is drawn from the SAME
+// max_tokens budget as the visible output. That is the defect that made every
+// coach reply "Lost my train of thought there" (#16); this call has the same
+// shape and has simply never been caught, because a plan gets built rarely.
+// 1500 is the same order of magnitude as the 1200 the coach was burning
+// entirely on thinking — and this call has to fit a whole plan shape (phases,
+// volumes, a rationale) into whatever thinking leaves behind. When it runs out
+// the tool_use block is absent, and the athlete gets a 502 "no shape proposed"
+// instead of a training plan.
+//
+// max_tokens is a ceiling, not a target: thinking stops on its own and billing
+// is on tokens actually produced, so headroom costs nothing. Effort is the dial
+// that actually bounds thinking — `high` (the Sonnet 5 default, which is what
+// this call already gets today) rather than the coach's `medium`: it runs once
+// per plan instead of once per message, and the arithmetic is constrained —
+// phases summing to exactly the weeks available, ramp rates, long-run caps —
+// with the athlete then training on the result for months.
+//
+// The forced tool_choice below stays. Only Amazon Bedrock requires
+// `thinking: {type: "disabled"}` alongside a forced tool_choice; on the Claude
+// API — which is what this calls — a forced tool and adaptive thinking are
+// compatible. The `no shape proposed` guard stays as the backstop regardless.
+const SAMPLING = {
+  max_tokens: 16000,
+  thinking: { type: "adaptive" },
+  output_config: { effort: "high" },
+} as const;
+
 // ── Pace math (port of ios/Tempo/Engine/TrainingPaces.swift) ─────────────────
 function equivalentTime(t1: number, d1: number, d2: number): number {
   return t1 * Math.pow(d2 / d1, 1.06);
@@ -329,7 +357,7 @@ features: ${JSON.stringify(features, null, 1)}
       method: "POST",
       headers: { "x-api-key": apiKey, "anthropic-version": "2023-06-01", "content-type": "application/json" },
       body: JSON.stringify({
-        model: MODEL, max_tokens: 1500, system,
+        model: MODEL, ...SAMPLING, system,
         tools: [SHAPE_TOOL], tool_choice: { type: "tool", name: "propose_plan_shape" },
         messages: [{ role: "user", content: "Propose the plan shape." }],
       }),
