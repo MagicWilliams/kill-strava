@@ -99,9 +99,19 @@ struct ProgressScreen: View {
             HStack {
                 SectionLabel("Recent runs")
                 Spacer()
-                Text("\(runs.count) IN 14 DAYS")
-                    .font(Tokens.Font.mono(10)).tracking(1.2)
-                    .foregroundStyle(Tokens.Palette.textTertiary)
+                // The doorway to the archive. This card shows two weeks; the athlete has
+                // 2,000+ runs, and until now there was no screen that could show them.
+                Button {
+                    router.openHistory()
+                } label: {
+                    HStack(spacing: 3) {
+                        Text("ALL \(store.runs.count.formatted())")
+                            .font(Tokens.Font.mono(10)).tracking(1.2)
+                        Image(systemName: "chevron.right").font(.system(size: 9, weight: .bold))
+                    }
+                    .foregroundStyle(Tokens.Palette.volt)
+                }
+                .buttonStyle(Pressable())
             }
             if runs.isEmpty {
                 Text(store.phase == .loading ? "Reading Apple Health…" : "Nothing in the last two weeks.")
@@ -127,6 +137,25 @@ struct ProgressScreen: View {
                             .font(.system(size: 11))
                             .foregroundStyle(Tokens.Palette.textTertiary)
                     }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(Pressable())
+            }
+            if !runs.isEmpty {
+                Rectangle().fill(Tokens.Palette.divider).frame(height: 1)
+                Button {
+                    router.openHistory()
+                } label: {
+                    HStack {
+                        Text("Browse every run")
+                            .font(Tokens.Font.ui(13, .medium))
+                            .foregroundStyle(Tokens.Palette.volt)
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(Tokens.Palette.volt)
+                    }
+                    .frame(height: 28)
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(Pressable())
