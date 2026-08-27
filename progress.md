@@ -2,7 +2,7 @@
 
 > Read me first each session. Architecture + build sequence: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
-_Last updated: 2026-08-23 (splash freeze + autonomy foundation)_
+_Last updated: 2026-08-27 (coach unbroken; the run archive opens up)_
 
 ## Where we are
 
@@ -117,6 +117,55 @@ Later wishlist (explicitly deferred): watch laps, weather, PR detection, share c
 - Run-detail wishlist: watch laps, weather, PR detection, share card, HR drift.
 
 ## Session log
+
+- **2026-08-27 (the archive) — coach chat unbroken, and the Strava-replacement push begins.**
+  - *The coach was answering every message with "Lost my train of thought there."* Root-caused
+    from production logs in one query: `stop_reason: max_tokens`, `output_tokens: 1200`, of which
+    `thinking_tokens: 1200`. **Sonnet 5 runs adaptive thinking by default when `thinking` is
+    omitted, and thinking is drawn from the same `max_tokens` budget as the reply.** The ceilings
+    in `coach` (1200 chat / 400 takeaway / 600 continuation) were sized for a model that didn't
+    think, so the whole budget went to thinking and the response carried a lone thinking block —
+    no text, no tool call. The empty-completion guard fired, the retry reused the same ceiling and
+    failed identically, and a fallback written for an occasional hiccup became the only thing
+    David ever saw. Run-detail takeaways (400) were almost certainly failing the same way.
+    Fixed with a shared `SAMPLING` block: 16k ceiling, `thinking: {type: "adaptive"}` stated
+    explicitly rather than inherited, `output_config: {effort: "medium"}` as the actual dial
+    (#16 → PR #17). `plan/index.ts` carried the identical defect at 1500 (#18 → PR #28) — its
+    failure mode was a bare 502 "no shape proposed" with no plan built. Confirmed while fixing it
+    that forced `tool_choice` alongside thinking is a **Bedrock-only** restriction, so the forced
+    choice stays. Both functions now log `stop_reason` + `usage` on the failure path; that line is
+    the entire reason the first diagnosis took a log query instead of guesswork.
+    **Both need David to deploy.**
+  - *New direction from David:* the north star is **replacing Strava**, above all on rich run
+    analysis — splits, maps, all of it — while staying fun and easy to scroll through past runs.
+    Beta-of-one, so this means the analysis and the archive, not a social graph.
+  - *The key discovery:* `RunStore.fetchFromSupabase()` has **no limit**, so all 2,010 runs were
+    already resident in memory. The app showed a 14-day card. Every cross-run feature is therefore
+    pure presentation — no fetch, no pagination, no migration.
+  - *Shipped (#10 → PR #23):* `Engine/RunHistory.swift`, pure and pinned by 18 tests — month
+    grouping with stored totals, Mon–Sun weeks, streaks, and records banded by distance (3 mi+ /
+    10K+ / Half+ / Marathon) so a fast shakeout can't outrank a strong half. Records are
+    **whole-run averages, not splits within a run**; the naming says "run" everywhere so the two
+    never get conflated. `Screens/HistoryView.swift` owns its own ScrollView for a `LazyVStack`
+    with pinned month headers; per-row bars scale to the month's longest run so a long scroll has
+    rhythm. Filters: All / 10K+ / Half+ / PRs. Two doorways from Progress.
+  - *Shipped (PR #24):* the **training wall** — `RunHistory.wall()` plus a `TrainingWall` view.
+    Five years of running as one grid. Rest days included (a wall of only run days is a smear, not
+    a pattern); days outside the year padded so Jan 1 lands on its real weekday, or the grid shears
+    and the weekday rows stop meaning anything; fixed intensity bands rather than quantiles of the
+    athlete's own distribution, so an easy day means the same thing in June as in a taper. Cells
+    are 4.5pt so a full year fits without scrolling — far below a tap target, so selection is a
+    **scrub**, and the 44pt readout is what opens the run. Drawn with `Canvas`: six years would
+    otherwise be ~2,200 SwiftUI views in one scroll section.
+  - *Judgment calls, cheap to reverse:* History is a pushed route rather than a sixth tab (six is
+    past what a phone tab bar carries, and the archive needs its own scroll view).
+  - *Filed for what's next:* #25 sub-distance best efforts (fastest 5K **within** a run — needs a
+    background pass over per-run HealthKit series and a schema change, so it's a spike with real
+    decisions for David), #26 year jump for the history scroll, #27 route matching ("you've run
+    this before") — the true segment analog and, for a beta-of-one, arguably more valuable than
+    Strava's version, since comparing David to David needs no leaderboard.
+  - *Still not device-verified.* Nothing here has been seen running. The scrub in particular is a
+    feel question only David can answer.
 
 - **2026-08-23 (splash freeze) — root-caused to a paused Supabase project; the *freeze* fixed in the app.**
   - **Symptom:** app hangs on the "Tempo" splash forever. **Cause (infra):** the Supabase project `lpgdhqqroyqdrjsrlodo` is `INACTIVE` — free-tier auto-pause after ~7 days idle. Every launch request fails; `list_tables` against it times out. **David restores it from the dashboard; agents never touch project state.**
