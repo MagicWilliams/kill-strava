@@ -1,0 +1,8 @@
+#!/usr/bin/env sh
+# Fires after `git pull` / `git merge`. HEAD@{1} is the pre-merge tip.
+set -u
+if git diff --quiet 'HEAD@{1}' HEAD -- ios/ 2>/dev/null; then
+  exit 0
+fi
+
+exec "$(dirname "$0")/regenerate-xcodeproj.sh"

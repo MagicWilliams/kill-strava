@@ -1,0 +1,11 @@
+#!/usr/bin/env sh
+# $3 is 1 for a branch checkout, 0 for a file checkout (`git checkout -- path`).
+set -u
+[ "${3:-0}" = "1" ] || exit 0
+
+# Only disturb an open Xcode when the app's own files actually moved.
+if git diff --quiet "$1" "$2" -- ios/ 2>/dev/null; then
+  exit 0
+fi
+
+exec "$(dirname "$0")/regenerate-xcodeproj.sh"

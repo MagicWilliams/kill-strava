@@ -1,0 +1,5 @@
+#!/usr/bin/env sh
+# Fires after rebase / commit --amend. The rewritten commits arrive on stdin, so
+# there is no cheap before/after pair to diff — just regenerate.
+set -u
+exec "$(dirname "$0")/regenerate-xcodeproj.sh"
