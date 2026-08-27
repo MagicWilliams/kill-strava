@@ -92,8 +92,7 @@ final class ChatStore: ObservableObject {
     weak var runStore: RunStore?
 
     private var loaded = false
-    private static let autoApplyTypes: Set<String> =
-        ["update_athlete", "update_plan_settings", "set_risk_tolerance", "complete_onboarding"]
+    private static let autoApplyTypes = CoachAcknowledgement.onboardingAutoApplyTypes
 
     // Wire types
     struct WireMessage: Codable { let role: String; let content: String }
@@ -224,6 +223,7 @@ final class ChatStore: ObservableObject {
             messages[idx].actionState = .failed
             persist(.failed, for: messageID)
             errorText = "That change didn't go through — Confirm to retry."
+            // No acknowledgement on a failure: the retry card is the response.
             return false
         }
         messages[idx].actionState = .applied
@@ -235,16 +235,63 @@ final class ChatStore: ObservableObject {
             // a saved edit look discarded — the card goes green and the numbers don't move.
             errorText = "Saved — but your runs couldn't be re-read just now. Pull to refresh on Today."
         }
+        // The re-read has to come first. Ask before it and the coach answers out of the
+        // pre-correction context — "that puts you at 25 for the week" about the very run it
+        // just grew to 8 miles. That ordering is the whole reason this call sits down here.
+        busyLabel = nil   // the save is done; what follows is the coach thinking, not the write
+        await acknowledgeIfWarranted(
+            reloaded ? .applied : .appliedWithStaleContext,
+            action: action,
+            runStore: runStore
+        )
         return true
     }
 
-    func dismiss(_ messageID: UUID) {
+    func dismiss(_ messageID: UUID, runStore: RunStore) async {
         guard let idx = messages.firstIndex(where: { $0.id == messageID }),
               let action = messages[idx].action,
               messages[idx].actionState == .pending || messages[idx].actionState == .failed else { return }
         messages[idx].actionState = .dismissed
         persist(.dismissed, for: messageID)
         append(.user, "Dismissed — \(action.displaySummary)")
+        // Nothing was written, so there is nothing to re-read — the current context is current.
+        await acknowledgeIfWarranted(.dismissed, action: action, runStore: runStore)
+    }
+
+    /// One turn of coach reply to a resolved card, when `CoachAcknowledgement` says the
+    /// transition earns one.
+    ///
+    /// Nothing new is sent: `confirm`/`dismiss` have already appended "Confirmed — …" /
+    /// "Dismissed — …" as a user turn, so the coach is answering a message that is genuinely
+    /// in the transcript. The context is built *here*, at call time, rather than passed in —
+    /// a context captured before the write would describe the state the athlete just changed.
+    ///
+    /// A failed round trip stays quiet. The change landed and the green card says so; an
+    /// "unreachable" banner underneath it reads like the save failed, which is worse than the
+    /// silence this whole issue is about. `requestReply` logs the failure either way.
+    private func acknowledgeIfWarranted(
+        _ transition: CoachAcknowledgement.Transition,
+        action: ProposedAction,
+        runStore: RunStore
+    ) async {
+        guard CoachAcknowledgement.shouldRequestReply(
+            after: transition,
+            onboardingMode: onboardingMode,
+            actionType: action.type
+        ) else { return }
+        isThinking = true
+        defer { isThinking = false }
+        let history = messages.suffix(24).map {
+            WireMessage(role: $0.role == .user ? "user" : "assistant", content: $0.text)
+        }
+        if let reply = await requestReply(
+            history: Array(history),
+            context: runStore.coachContext(onboarding: onboardingMode)
+        ) {
+            // `handleReply` may attach a card of its own — legitimate — but it never asks for
+            // another reply, which is what stops this from chaining into a monologue.
+            handleReply(reply)
+        }
     }
 
     private func applyAmend(_ action: ProposedAction) async throws {

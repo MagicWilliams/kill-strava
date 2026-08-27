@@ -205,7 +205,7 @@ struct CoachView: View {
                     }
                     .buttonStyle(Pressable())
                     Button {
-                        chat.dismiss(messageID)
+                        Task { await chat.dismiss(messageID, runStore: store) }
                     } label: {
                         Text("Dismiss")
                             .font(Tokens.Font.ui(14, .medium))
