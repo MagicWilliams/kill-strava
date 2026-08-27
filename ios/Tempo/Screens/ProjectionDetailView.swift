@@ -113,7 +113,7 @@ struct ProjectionDetailView: View {
     private var hero: some View {
         Card(glow: true) {
             HStack {
-                SectionLabel("Now", color: Tokens.Palette.volt)
+                SectionLabel("Now", color: Tokens.Palette.accentText)
                 Spacer()
                 if let projection = displayedFinish, let goal = goalTime {
                     if projection <= goal {
@@ -166,7 +166,7 @@ struct ProjectionDetailView: View {
         } label: {
             HStack(spacing: 7) {
                 if recomputing {
-                    ProgressView().controlSize(.small).tint(Tokens.Palette.volt)
+                    ProgressView().controlSize(.small).tint(Tokens.Palette.accentText)
                 } else {
                     Image(systemName: "arrow.clockwise").font(.system(size: 11, weight: .bold))
                 }
@@ -174,7 +174,7 @@ struct ProjectionDetailView: View {
                     .font(Tokens.Font.ui(13, .semibold))
                 Spacer()
             }
-            .foregroundStyle(Tokens.Palette.volt)
+            .foregroundStyle(Tokens.Palette.accentText)
             .frame(height: 22)
             .contentShape(Rectangle())
         }
@@ -227,7 +227,7 @@ struct ProjectionDetailView: View {
             } else {
                 chart
                 HStack {
-                    legendDot(Tokens.Palette.volt, "PROJECTED")
+                    legendDot(Tokens.Palette.accentText, "PROJECTED")
                     legendDot(Tokens.Palette.textTertiary, "GOAL")
                     Spacer()
                     Text("\(points.count) WEEKLY READINGS").mono(9, Tokens.Palette.textTertiary).tracking(1)
@@ -271,7 +271,7 @@ struct ProjectionDetailView: View {
                         y: .value("Projected", Double(point.projectedFinishS)),
                         series: .value("Stretch", index)
                     )
-                    .foregroundStyle(Tokens.Palette.volt)
+                    .foregroundStyle(Tokens.Palette.accentText)
                     .lineStyle(StrokeStyle(lineWidth: 1.5))
                 }
             }
@@ -280,7 +280,7 @@ struct ProjectionDetailView: View {
                     x: .value("Date", last.date),
                     y: .value("Projected", Double(last.projectedFinishS))
                 )
-                .foregroundStyle(Tokens.Palette.volt)
+                .foregroundStyle(Tokens.Palette.accentText)
                 .symbolSize(36)
             }
         }

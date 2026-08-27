@@ -88,12 +88,12 @@ struct ReadinessDetailView: View {
                 ForEach(Array(m.ctlSeries.enumerated()), id: \.offset) { _, point in
                     AreaMark(x: .value("Day", point.date), y: .value("CTL", point.ctl))
                         .foregroundStyle(
-                            LinearGradient(colors: [Tokens.Palette.volt.opacity(0.3), Tokens.Palette.volt.opacity(0.02)],
+                            LinearGradient(colors: [Tokens.Palette.voltMark.opacity(0.3), Tokens.Palette.voltMark.opacity(0.02)],
                                            startPoint: .top, endPoint: .bottom)
                         )
                         .interpolationMethod(.catmullRom)
                     LineMark(x: .value("Day", point.date), y: .value("CTL", point.ctl))
-                        .foregroundStyle(Tokens.Palette.volt)
+                        .foregroundStyle(Tokens.Palette.accentText)
                         .lineStyle(StrokeStyle(lineWidth: 1.5))
                         .interpolationMethod(.catmullRom)
                 }
@@ -132,7 +132,7 @@ struct ReadinessDetailView: View {
             }
             Button { router.showCoach() } label: {
                 Text("Talk it through with Coach")
-                    .font(Tokens.Font.ui(13, .semibold)).foregroundStyle(Tokens.Palette.volt)
+                    .font(Tokens.Font.ui(13, .semibold)).foregroundStyle(Tokens.Palette.accentText)
             }
             .buttonStyle(Pressable())
         }

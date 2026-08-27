@@ -60,6 +60,11 @@ struct RootTabView: View {
     @EnvironmentObject private var router: TabRouter
     @EnvironmentObject private var store: RunStore
 
+    /// Owned here because a zoom push needs both ends in one namespace, and the two ends live
+    /// in different places: the card is on a tab, the destination is in `navigationDestination`.
+    /// Published down the tree as `\.zoomNamespace`.
+    @Namespace private var zoom
+
     var body: some View {
         switch store.launch {
         case .loading:
@@ -97,13 +102,14 @@ struct RootTabView: View {
             .toolbar(.hidden, for: .navigationBar)
             .navigationDestination(for: Route.self) { route in
                 switch route {
-                case .run(let run): RunDetailView(run: run)
+                case .run(let run): RunDetailView(run: run).zoomDestination(run.id, in: zoom)
                 case .readiness: ReadinessDetailView()
                 case .history: HistoryView()
                 case .projection: ProjectionDetailView()
                 }
             }
         }
+        .environment(\.zoomNamespace, zoom)
     }
 
     @ViewBuilder private var content: some View {
@@ -119,33 +125,70 @@ struct RootTabView: View {
 
 struct TempoTabBar: View {
     @Binding var selection: Tab
+    @Namespace private var indicator
 
     var body: some View {
         HStack(spacing: 0) {
             ForEach(Tab.allCases) { tab in
                 let active = tab == selection
                 Button {
+                    guard tab != selection else { return }
+                    Haptics.select()
                     selection = tab
                 } label: {
                     VStack(spacing: 5) {
                         Image(systemName: tab.symbol)
                             .font(.system(size: 18, weight: active ? .semibold : .regular))
+                            .modifier(BounceOnSelect(active: active))
                         Text(tab.title)
                             .font(Tokens.Font.ui(10, active ? .semibold : .medium))
                     }
-                    .foregroundStyle(active ? Tokens.Palette.volt : Tokens.Palette.textTertiary)
+                    .foregroundStyle(active ? Tokens.Palette.accentText : Tokens.Palette.textTertiary)
                     .frame(maxWidth: .infinity)
+                    .padding(.vertical, 6)
+                    .background {
+                        // One capsule, matched across tabs, so selection *travels* instead of
+                        // blinking out here and in over there.
+                        if active {
+                            Capsule()
+                                .fill(Tokens.Well.accent.fill)
+                                .matchedGeometryEffect(id: "tab", in: indicator)
+                        }
+                    }
+                    .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
             }
         }
-        .padding(.top, 10)
-        .padding(.horizontal, 12)
+        .motion(Motion.tab, value: selection)
+        .padding(.top, 8)
+        .padding(.horizontal, 10)
         .padding(.bottom, 4)
         .background(Tokens.Palette.inset)
         .overlay(alignment: .top) {
-            Rectangle().fill(Tokens.Palette.elevated).frame(height: 1)
+            Rectangle().fill(Tokens.Palette.divider).frame(height: 0.5)
         }
+    }
+}
+
+/// Bounces a tab's glyph when it *becomes* selected.
+///
+/// `.symbolEffect(.bounce, value: active)` looks like the obvious spelling and is wrong: it
+/// fires on every change of `active`, so switching tabs bounces the one you left as well as
+/// the one you chose. Counting activations gives one bounce, on the tab you actually picked.
+private struct BounceOnSelect: ViewModifier {
+    let active: Bool
+
+    @State private var activations = 0
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    func body(content: Content) -> some View {
+        content
+            .symbolEffect(.bounce, options: .nonRepeating, value: activations)
+            .onChange(of: active) { _, isActive in
+                guard isActive, !reduceMotion else { return }
+                activations += 1
+            }
     }
 }
 
@@ -194,7 +237,14 @@ struct LaunchErrorView: View {
     }
 }
 
-#Preview {
+#Preview("Light") {
+    RootTabView()
+        .environmentObject(TabRouter())
+        .environmentObject(RunStore())
+        .preferredColorScheme(.light)
+}
+
+#Preview("Dark") {
     RootTabView()
         .environmentObject(TabRouter())
         .environmentObject(RunStore())

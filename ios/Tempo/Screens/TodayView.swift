@@ -3,6 +3,7 @@ import SwiftUI
 struct TodayView: View {
     @EnvironmentObject private var store: RunStore
     @EnvironmentObject private var router: TabRouter
+    @Environment(\.zoomNamespace) private var zoom
 
     var body: some View {
         Screen(title: "Today", subtitle: Date.now.formatted(.dateTime.weekday(.wide).month(.wide).day())) {
@@ -20,16 +21,17 @@ struct TodayView: View {
     /// Health data changes distances the athlete already fixed, and used to do it silently.
     @ViewBuilder private var dataWarning: some View {
         if let warning = store.dataWarning {
-            HStack(alignment: .top, spacing: 8) {
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .font(.system(size: 12)).foregroundStyle(Tokens.Palette.warning)
-                Text(warning)
-                    .font(Tokens.Font.ui(12)).foregroundStyle(Tokens.Palette.warning)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+            Card(padding: 12, well: .warning) {
+                HStack(alignment: .top, spacing: 8) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 12)).foregroundStyle(Tokens.Palette.warning)
+                    Text(warning)
+                        .font(Tokens.Font.ui(12)).foregroundStyle(Tokens.Palette.warning)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
             }
-            .padding(12)
-            .background(Tokens.Palette.inset)
-            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .transition(.opacity.combined(with: .move(edge: .top)))
+            .motion(Motion.reveal, value: warning)
         }
     }
 
@@ -40,9 +42,8 @@ struct TodayView: View {
                 HStack(spacing: 16) {
                     ReadinessRing(value: Double(store.fitness?.readiness ?? 50) / 100)
                     VStack(alignment: .leading, spacing: 4) {
-                        SectionLabel("Readiness", color: Tokens.Palette.volt)
-                        Text(store.fitness?.label ?? "Warming up")
-                            .font(Tokens.Font.display(22)).foregroundStyle(Tokens.Palette.textPrimary)
+                        SectionLabel("Readiness", color: Tokens.Palette.accentText)
+                        Text(store.fitness?.label ?? "Warming up").display(22)
                         Text(store.fitness?.caption ?? "Syncing your training history…")
                             .font(Tokens.Font.ui(13)).foregroundStyle(Tokens.Palette.textSecondary)
                             .multilineTextAlignment(.leading)
@@ -62,7 +63,7 @@ struct TodayView: View {
         if todayDone,
            let tomorrowDate = RunStore.cal.date(byAdding: .day, value: 1, to: .now),
            let next = store.sessions.first(where: { $0.date == PlanDates.day.string(from: tomorrowDate) && $0.type != "rest" }) {
-            Card(padding: 14) {
+            Card(padding: 14, well: well(for: next)) {
                 HStack {
                     SectionLabel("Tomorrow")
                     Spacer()
@@ -87,10 +88,19 @@ struct TodayView: View {
         }
     }
 
+    /// What a day costs you, as a colour. Scanning down the screen — or later, down the Plan
+    /// list — the tint tells you the shape of the week before you read a word of it.
+    private func well(for s: SessionInfo) -> Tokens.Well {
+        if s.status == "done" { return .success }
+        if s.isQuality { return .warm }
+        if s.type == "long" { return .cool }
+        return .neutral
+    }
+
     private var noPlanCard: some View {
-        Card(glow: true) {
-            SectionLabel("Today's session", color: Tokens.Palette.volt)
-            Text("No plan yet").font(Tokens.Font.display(24)).foregroundStyle(Tokens.Palette.textPrimary)
+        Card(well: .accent) {
+            SectionLabel("Today's session", color: Tokens.Palette.accentText)
+            Text("No plan yet").display(24)
             Text("Your coach reads your real history first, proposes a goal, and the plan builds from what the data supports.")
                 .font(Tokens.Font.ui(13)).foregroundStyle(Tokens.Palette.textSecondary)
             PrimaryButton(title: "Talk to Coach") { router.showCoach() }
@@ -98,23 +108,22 @@ struct TodayView: View {
     }
 
     private var restCard: some View {
-        Card {
+        Card(well: .calm) {
             SectionLabel("Today's session")
-            Text("Rest day").font(Tokens.Font.display(24)).foregroundStyle(Tokens.Palette.textPrimary)
+            Text("Rest day").display(24)
             Text("Recovery is training. Tomorrow's session banks what today absorbs.")
                 .font(Tokens.Font.ui(13)).foregroundStyle(Tokens.Palette.textSecondary)
         }
     }
 
     private func sessionCard(_ s: SessionInfo) -> some View {
-        Card(glow: s.isQuality) {
+        Card(well: well(for: s)) {
             HStack {
-                SectionLabel("Today's session", color: Tokens.Palette.volt)
+                SectionLabel("Today's session", color: Tokens.Palette.accentText)
                 Spacer()
                 sessionTag(s)
             }
-            Text(s.title ?? s.type.capitalized)
-                .font(Tokens.Font.display(24)).foregroundStyle(Tokens.Palette.textPrimary)
+            Text(s.title ?? s.type.capitalized).display(24)
             if let detail = s.detail {
                 Text(detail).font(Tokens.Font.mono(14)).foregroundStyle(Tokens.Palette.textSecondary)
             }
@@ -139,12 +148,13 @@ struct TodayView: View {
                     .font(Tokens.Font.ui(12)).foregroundStyle(Tokens.Palette.warning)
             }
         }
+        .motion(Motion.reveal, value: s.status)
     }
 
     private func sessionTag(_ s: SessionInfo) -> Tag {
         if s.isQuality { return Tag(text: "quality", fg: Tokens.Palette.onVolt, bg: Tokens.Palette.volt) }
-        if s.type == "long" { return Tag(text: "long run", fg: Tokens.Palette.info, bg: Tokens.Palette.inset) }
-        return Tag(text: s.type, fg: Tokens.Palette.success, bg: Tokens.Palette.inset)
+        if s.type == "long" { return Tag(text: "long run", fg: Tokens.Palette.info, bg: Tokens.Well.cool.insetFill) }
+        return Tag(text: s.type, fg: Tokens.Palette.success, bg: Tokens.Well.success.insetFill)
     }
 
     private func needsCheckIn(_ s: SessionInfo) -> Bool {
@@ -152,12 +162,17 @@ struct TodayView: View {
     }
 
     /// Two-tap trust mechanism before hard sessions (spec: agency decision #4).
+    ///
+    /// The two answers get deliberately different haptics. Saying you're good commits you to
+    /// a hard session; flagging something is a warning the app is about to act on. Those are
+    /// not the same event, and the hand should be able to tell them apart without the eyes.
     private var checkInRow: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Before this one — feeling okay? Nothing hurting?")
                 .font(Tokens.Font.ui(13, .medium)).foregroundStyle(Tokens.Palette.textPrimary)
             HStack(spacing: 8) {
                 Button {
+                    Haptics.commit()
                     Task { await store.submitCheckIn(feelsOk: true) }
                 } label: {
                     Text("Good to go")
@@ -165,8 +180,9 @@ struct TodayView: View {
                         .padding(.horizontal, 16).padding(.vertical, 8)
                         .background(Tokens.Palette.volt).clipShape(Capsule())
                 }
-                .buttonStyle(Pressable())
+                .buttonStyle(Pressable(haptic: false))
                 Button {
+                    Haptics.warn()
                     Task {
                         await store.submitCheckIn(feelsOk: false)
                         router.showCoach()
@@ -175,10 +191,9 @@ struct TodayView: View {
                     Text("Something's off")
                         .font(Tokens.Font.ui(13, .medium)).foregroundStyle(Tokens.Palette.textSecondary)
                         .padding(.horizontal, 14).padding(.vertical, 8)
-                        .background(Tokens.Palette.surface).clipShape(Capsule())
-                        .overlay(Capsule().strokeBorder(Tokens.Palette.elevated, lineWidth: 1))
+                        .background(Tokens.Well.warm.insetFill).clipShape(Capsule())
                 }
-                .buttonStyle(Pressable())
+                .buttonStyle(Pressable(haptic: false))
             }
         }
         .padding(.top, 2)
@@ -187,30 +202,29 @@ struct TodayView: View {
     /// The coach's cached read of the completed run, right on the home page.
     @ViewBuilder private func takeawayPreview(_ s: SessionInfo) -> some View {
         if let takeaway = store.todayTakeaway {
-            VStack(alignment: .leading, spacing: 6) {
-                SectionLabel("Coach's read", color: Tokens.Palette.volt)
+            InsetWell {
+                SectionLabel("Coach's read", color: Tokens.Palette.accentText)
                 Text(takeaway)
                     .font(Tokens.Font.ui(13)).foregroundStyle(Tokens.Palette.textSecondary)
                     .lineLimit(3)
                     .lineSpacing(2)
                 if let run = store.matchedRun(for: s) {
-                    Button { router.openRun(run) } label: {
-                        Text("Full analysis").font(Tokens.Font.ui(12, .semibold)).foregroundStyle(Tokens.Palette.volt)
+                    Button { openRun(run) } label: {
+                        Text("Full analysis")
+                            .font(Tokens.Font.ui(12, .semibold)).foregroundStyle(Tokens.Palette.accentText)
                     }
                     .buttonStyle(Pressable())
                 }
             }
-            .padding(12)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Tokens.Palette.inset)
-            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .transition(.opacity)
+            .motion(Motion.reveal, value: takeaway)
         } else if let run = store.matchedRun(for: s) {
-            Button { router.openRun(run) } label: {
+            Button { openRun(run) } label: {
                 HStack(spacing: 6) {
                     Text("Get the coach's read on this run")
-                        .font(Tokens.Font.ui(13, .semibold)).foregroundStyle(Tokens.Palette.volt)
+                        .font(Tokens.Font.ui(13, .semibold)).foregroundStyle(Tokens.Palette.accentText)
                     Image(systemName: "arrow.right").font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(Tokens.Palette.volt)
+                        .foregroundStyle(Tokens.Palette.accentText)
                 }
             }
             .buttonStyle(Pressable())
@@ -224,10 +238,11 @@ struct TodayView: View {
                 .font(Tokens.Font.ui(13, .semibold)).foregroundStyle(Tokens.Palette.success)
             Spacer()
             if let run = store.matchedRun(for: s) {
-                Button { router.openRun(run) } label: {
-                    Text("View run").font(Tokens.Font.ui(12, .semibold)).foregroundStyle(Tokens.Palette.volt)
+                Button { openRun(run) } label: {
+                    Text("View run")
+                        .font(Tokens.Font.ui(12, .semibold)).foregroundStyle(Tokens.Palette.accentText)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(Pressable())
             }
         }
     }
@@ -237,6 +252,13 @@ struct TodayView: View {
             SectionLabel(label)
             Text(value).font(Tokens.Font.ui(16, .semibold)).foregroundStyle(Tokens.Palette.textPrimary)
         }
+    }
+
+    /// Opening a run is a change of place, not a change of state — the heavier haptic is the
+    /// one that reads as arriving somewhere rather than as a button accepting a press.
+    private func openRun(_ run: RunSummary) {
+        Haptics.land()
+        router.openRun(run)
     }
 
     /// Weekly mileage counter — real miles from HealthKit, Mon–Sun week.
@@ -251,11 +273,15 @@ struct TodayView: View {
                     Text("LAST WK \(store.lastWeekMiles, specifier: "%.1f")")
                         .font(Tokens.Font.mono(11)).tracking(1.2)
                         .foregroundStyle(Tokens.Palette.textTertiary)
+                        .rolling(store.lastWeekMiles)
                 }
             }
             HStack(alignment: .firstTextBaseline, spacing: 6) {
+                // The number rolls rather than snapping. A pull-to-refresh that changed
+                // nothing and one that never landed look identical when digits just swap.
                 Text("\(store.thisWeekMiles, specifier: "%.1f")")
-                    .font(Tokens.Font.display(40)).foregroundStyle(Tokens.Palette.textPrimary)
+                    .display(38)
+                    .rolling(store.thisWeekMiles)
                 Text("mi").font(Tokens.Font.mono(15)).foregroundStyle(Tokens.Palette.textSecondary)
                 Spacer()
                 weekDelta
@@ -270,8 +296,10 @@ struct TodayView: View {
             Tag(
                 text: String(format: "%+.1f vs last wk", delta),
                 fg: delta >= 0 ? Tokens.Palette.success : Tokens.Palette.warning,
-                bg: Tokens.Palette.inset
+                bg: delta >= 0 ? Tokens.Well.success.insetFill : Tokens.Well.warning.insetFill
             )
+            .transition(.scale(scale: 0.85).combined(with: .opacity))
+            .motion(Motion.settle, value: delta)
         }
     }
 
@@ -285,12 +313,16 @@ struct TodayView: View {
                         .font(Tokens.Font.ui(11, isToday ? .semibold : .medium))
                         .foregroundStyle(isToday ? Tokens.Palette.textSecondary : Tokens.Palette.textTertiary)
                     Circle()
-                        .fill(ran ? Tokens.Palette.volt : Tokens.Palette.elevated)
+                        .fill(ran ? Tokens.Palette.voltMark : Tokens.Palette.elevated)
                         .frame(width: 10, height: 10)
+                        // A day flipping to "ran" is the smallest good news the app has to
+                        // give. It gets to pop.
+                        .scaleEffect(ran ? 1 : 0.8)
+                        .motion(Motion.settle, value: ran)
                         .overlay {
                             if isToday {
                                 Circle()
-                                    .strokeBorder(Tokens.Palette.volt.opacity(0.5), lineWidth: 1.5)
+                                    .strokeBorder(Tokens.Palette.voltMark.opacity(0.5), lineWidth: 1.5)
                                     .frame(width: 16, height: 16)
                             }
                         }
@@ -310,7 +342,7 @@ struct TodayView: View {
             case .ready:
                 if let run = store.lastRun {
                     Button {
-                        router.openRun(run)
+                        openRun(run)
                     } label: {
                         HStack {
                             VStack(alignment: .leading, spacing: 2) {
@@ -325,6 +357,7 @@ struct TodayView: View {
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(Pressable())
+                    .zoomSource(run.id, in: zoom)
                 }
             case .empty:
                 Text("No runs in Apple Health yet.\nGarmin Connect → Settings → Apple Health → allow writing workouts, then pull to refresh.")
@@ -334,6 +367,7 @@ struct TodayView: View {
                     .font(Tokens.Font.ui(13)).foregroundStyle(Tokens.Palette.warning)
             }
         }
+        .motion(Motion.reveal, value: store.phase)
     }
 
     /// "Today", "Yesterday", or "Saturday · Jul 5".
@@ -344,23 +378,37 @@ struct TodayView: View {
     }
 }
 
-/// Circular readiness gauge.
+/// Circular readiness gauge. Sweeps up from zero the first time you see it, and animates
+/// between values after that — so a readiness that moved overnight is something you watch
+/// move, rather than a number you had to have memorised yesterday to notice.
 struct ReadinessRing: View {
     let value: Double
 
     var body: some View {
-        ZStack {
-            Circle().stroke(Tokens.Palette.elevated, lineWidth: 7)
-            Circle()
-                .trim(from: 0, to: value)
-                .stroke(Tokens.Palette.volt, style: StrokeStyle(lineWidth: 7, lineCap: .round))
-                .rotationEffect(.degrees(-90))
-            Text("\(Int(value * 100))").font(Tokens.Font.display(20)).foregroundStyle(Tokens.Palette.textPrimary)
+        Drawn(to: value) { shown in
+            ZStack {
+                Circle().stroke(Tokens.Palette.elevated, lineWidth: 7)
+                Circle()
+                    .trim(from: 0, to: shown)
+                    .stroke(Tokens.Palette.voltMark, style: StrokeStyle(lineWidth: 7, lineCap: .round))
+                    .rotationEffect(.degrees(-90))
+                Text("\(Int(shown * 100))").display(20)
+            }
         }
         .frame(width: 64, height: 64)
     }
 }
 
-#Preview {
-    TodayView().environmentObject(RunStore()).preferredColorScheme(.dark)
+#Preview("Light") {
+    TodayView()
+        .environmentObject(RunStore())
+        .environmentObject(TabRouter())
+        .preferredColorScheme(.light)
+}
+
+#Preview("Dark") {
+    TodayView()
+        .environmentObject(RunStore())
+        .environmentObject(TabRouter())
+        .preferredColorScheme(.dark)
 }

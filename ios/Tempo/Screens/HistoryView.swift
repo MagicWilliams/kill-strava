@@ -135,7 +135,7 @@ struct HistoryView: View {
     @ViewBuilder private var recordsCard: some View {
         if records.totalRuns > 0 {
             Card {
-                SectionLabel("Records", color: Tokens.Palette.volt)
+                SectionLabel("Records", color: Tokens.Palette.accentText)
 
                 if let longest = records.longestRun {
                     recordRow(
@@ -295,7 +295,7 @@ struct HistoryView: View {
 
                 GeometryReader { geo in
                     Capsule()
-                        .fill(Tokens.Palette.volt.opacity(0.7))
+                        .fill(Tokens.Palette.voltMark.opacity(0.7))
                         .frame(
                             width: max(4, geo.size.width * CGFloat(scale > 0 ? run.miles / scale : 0)),
                             height: 5

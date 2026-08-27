@@ -33,7 +33,7 @@ struct OnboardingView: View {
                 .font(Tokens.Font.display(56))
                 .foregroundStyle(Tokens.Palette.textPrimary)
             Rectangle()
-                .fill(Tokens.Palette.volt)
+                .fill(Tokens.Palette.voltMark)
                 .frame(width: 56, height: 5)
                 .padding(.top, 10)
             Text("Marathon coaching, honestly.")
@@ -59,7 +59,7 @@ struct OnboardingView: View {
     private var connect: some View {
         VStack(alignment: .leading, spacing: 0) {
             Spacer()
-            SectionLabel("Step 1 of 2", color: Tokens.Palette.volt)
+            SectionLabel("Step 1 of 2", color: Tokens.Palette.accentText)
             Text("Connect your runs")
                 .font(Tokens.Font.display(34))
                 .foregroundStyle(Tokens.Palette.textPrimary)

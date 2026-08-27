@@ -196,7 +196,7 @@ struct RunDetailView: View {
     private var coachRead: some View {
         Card(glow: true) {
             HStack {
-                SectionLabel("Coach's read", color: Tokens.Palette.volt)
+                SectionLabel("Coach's read", color: Tokens.Palette.accentText)
                 Spacer()
                 if model.takeawayLoading {
                     ProgressView().controlSize(.small).tint(Tokens.Palette.textTertiary)
@@ -215,7 +215,7 @@ struct RunDetailView: View {
             } label: {
                 Text("Discuss with Coach")
                     .font(Tokens.Font.ui(13, .semibold))
-                    .foregroundStyle(Tokens.Palette.volt)
+                    .foregroundStyle(Tokens.Palette.accentText)
             }
             .buttonStyle(.plain)
         }
@@ -281,7 +281,7 @@ struct RunDetailView: View {
             HStack {
                 SectionLabel("Pace + Heart rate")
                 Spacer()
-                legendDot(Tokens.Palette.volt, "PACE")
+                legendDot(Tokens.Palette.accentText, "PACE")
                 legendDot(Tokens.Zone.z5, "HR")
             }
             scrubReadout(detail)
@@ -293,7 +293,7 @@ struct RunDetailView: View {
                             y: .value("Pace", normalizedPace(pace, detail)),
                             series: .value("Series", "pace")
                         )
-                        .foregroundStyle(Tokens.Palette.volt)
+                        .foregroundStyle(Tokens.Palette.accentText)
                         .interpolationMethod(.catmullRom)
                     }
                 }
@@ -356,7 +356,7 @@ struct RunDetailView: View {
         let hr = scrub?.hr.map { "\(Int($0)) bpm" } ?? detail.avgHR.map { "\($0) bpm avg" }
         let elev = scrub?.elevationM.map { String(format: "%.0f ft", $0 * 3.28084) }
         HStack(spacing: 12) {
-            Text(mile).mono(11, Tokens.Palette.volt)
+            Text(mile).mono(11, Tokens.Palette.accentText)
             if let pace { Text(pace).mono(11, Tokens.Palette.textPrimary) }
             if let hr { Text(hr).mono(11, Tokens.Zone.z5) }
             if let elev { Text(elev).mono(11, Tokens.Palette.textSecondary) }
@@ -433,12 +433,12 @@ struct RunDetailView: View {
                     if let elev = p.elevationM {
                         AreaMark(x: .value("Miles", p.miles), y: .value("Elev", elev * 3.28084))
                             .foregroundStyle(
-                                LinearGradient(colors: [Tokens.Palette.volt.opacity(0.35), Tokens.Palette.volt.opacity(0.02)],
+                                LinearGradient(colors: [Tokens.Palette.voltMark.opacity(0.35), Tokens.Palette.voltMark.opacity(0.02)],
                                                startPoint: .top, endPoint: .bottom)
                             )
                             .interpolationMethod(.catmullRom)
                         LineMark(x: .value("Miles", p.miles), y: .value("Elev", elev * 3.28084))
-                            .foregroundStyle(Tokens.Palette.volt.opacity(0.8))
+                            .foregroundStyle(Tokens.Palette.accentText.opacity(0.8))
                             .lineStyle(StrokeStyle(lineWidth: 1.5))
                             .interpolationMethod(.catmullRom)
                     }
@@ -481,7 +481,7 @@ struct RunDetailView: View {
                         .mono(12, Tokens.Palette.textPrimary).frame(width: 48, alignment: .leading)
                     GeometryReader { geo in
                         Capsule()
-                            .fill(Tokens.Palette.volt.opacity(0.75))
+                            .fill(Tokens.Palette.voltMark.opacity(0.75))
                             .frame(width: max(6, geo.size.width * CGFloat(Double(fastest) / Double(split.paceSec))), height: 6)
                             .frame(maxHeight: .infinity, alignment: .center)
                     }
