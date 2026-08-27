@@ -194,11 +194,54 @@ final class ChatStore: ObservableObject {
         }
     }
 
+    /// The line Confirm taps stand in, and what `CoachView` reads to stop showing a live
+    /// button on a tap it has already banked.
+    @Published private(set) var confirmQueue = ConfirmQueue()
+
+    /// Tail of the resolution queue. Everything that ends in a coach round trip — every
+    /// confirm, and the acknowledgement a dismiss asks for — waits on its predecessor here,
+    /// for the same reason `handleReply` applies onboarding facts sequentially.
+    private var resolutionTail: Task<Void, Never>?
+
+    /// Put `work` at the back of the resolution queue; the returned task carries its result.
+    ///
+    /// Unstructured on purpose: the write must finish even if the view that started it goes
+    /// away mid-flight, and a cancelled confirm would leave the card claiming `applying`
+    /// forever.
+    private func queued<T: Sendable>(_ work: @escaping @MainActor @Sendable () async -> T) -> Task<T, Never> {
+        let predecessor = resolutionTail
+        let task = Task { @MainActor in
+            await predecessor?.value
+            return await work()
+        }
+        resolutionTail = Task { @MainActor in _ = await task.value }
+        return task
+    }
+
     /// Execute a confirmed action. The card walks pending → applying → applied/failed.
+    ///
+    /// One at a time. Two cards on screen means two live Confirm buttons, and tapping both
+    /// used to run two writes concurrently plus — since #33 — two coach round trips, the
+    /// second reasoning from a context snapshotted mid-write (#38). A tap that arrives while
+    /// another confirm is in flight is queued, never dropped: the athlete meant it, and its
+    /// card says it is waiting instead of offering a button that does nothing.
     func confirm(_ messageID: UUID, runStore: RunStore) async -> Bool {
+        let offered = messages.first { $0.id == messageID && $0.action != nil }?.actionState
+        guard confirmQueue.admit(messageID, offering: offered) != .ignore else { return false }
+        return await queued { [weak self] () -> Bool in
+            guard let self else { return false }
+            defer { self.confirmQueue.finish(messageID) }
+            return await self.apply(messageID, runStore: runStore)
+        }.value
+    }
+
+    /// The write itself, once the queue has granted this card its turn. The state is checked
+    /// again here rather than trusted from admission time: a card can be resolved while it
+    /// waits, and re-applying it would double the write.
+    private func apply(_ messageID: UUID, runStore: RunStore) async -> Bool {
         guard let idx = messages.firstIndex(where: { $0.id == messageID }),
               let action = messages[idx].action,
-              messages[idx].actionState == .pending || messages[idx].actionState == .failed else { return false }
+              messages[idx].actionState.isOpenOffer else { return false }
         errorText = nil
         messages[idx].actionState = .applying
         busyLabel = Self.busyLabel(for: action.type)
@@ -247,15 +290,25 @@ final class ChatStore: ObservableObject {
         return true
     }
 
+    /// Dismiss does not queue the way Confirm does, and deliberately so: it writes nothing,
+    /// so there is no write to serialize and no reason to make the athlete watch a spinner to
+    /// be told "no" was heard. The card greys out on the tap. A second tap is already a no-op
+    /// — the card is no longer an open offer.
+    ///
+    /// Its *acknowledgement* is a different animal. That is a coach round trip appended to the
+    /// transcript, which is the half of #38 that dismiss shares, so it joins the same queue as
+    /// the confirms rather than racing one.
     func dismiss(_ messageID: UUID, runStore: RunStore) async {
         guard let idx = messages.firstIndex(where: { $0.id == messageID }),
               let action = messages[idx].action,
-              messages[idx].actionState == .pending || messages[idx].actionState == .failed else { return }
+              messages[idx].actionState.isOpenOffer else { return }
         messages[idx].actionState = .dismissed
         persist(.dismissed, for: messageID)
         append(.user, "Dismissed — \(action.displaySummary)")
         // Nothing was written, so there is nothing to re-read — the current context is current.
-        await acknowledgeIfWarranted(.dismissed, action: action, runStore: runStore)
+        await queued { [weak self] in
+            await self?.acknowledgeIfWarranted(.dismissed, action: action, runStore: runStore)
+        }.value
     }
 
     /// One turn of coach reply to a resolved card, when `CoachAcknowledgement` says the
