@@ -64,8 +64,12 @@ struct HistoryView: View {
             backButton
         }
         .toolbar(.hidden, for: .navigationBar)
+        // rebuildArchive ends by rebuilding the months itself: SwiftUI does not order two
+        // .task modifiers, and the "PRs" filter reads the record set. Left as two independent
+        // tasks, a load that landed months-first would filter against an empty record set and
+        // stay empty until the filter was toggled.
         .task(id: store.runs.count) { rebuildArchive() }
-        .task(id: "\(store.runs.count)-\(filter.rawValue)") { rebuildMonths() }
+        .task(id: filter) { rebuildMonths() }
     }
 
     /// Records and the wall always describe the whole archive — a "PR" badge that came and
@@ -75,6 +79,7 @@ struct HistoryView: View {
     private func rebuildArchive() {
         records = RunHistory.records(store.runs)
         wall = RunHistory.wall(store.runs)
+        rebuildMonths()
     }
 
     private func rebuildMonths() {
