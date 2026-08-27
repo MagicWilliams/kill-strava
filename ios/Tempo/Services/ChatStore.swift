@@ -3,7 +3,7 @@ import Supabase
 
 /// A write the coach wants to make, pending the athlete's confirmation.
 /// Flat shape mirroring the Edge Function's tool params.
-struct ProposedAction: Decodable, Equatable {
+struct ProposedAction: Codable, Equatable {
     let type: String            // amend_run | add_run | set_risk_tolerance
     let summary: String?        // one line shown on the confirm card (server guarantees it; belt & suspenders)
 
@@ -52,12 +52,18 @@ struct ProposedAction: Decodable, Equatable {
 
 struct ChatMessage: Identifiable, Equatable {
     enum Role: String { case user, coach }
-    enum ActionState: Equatable {
+    enum ActionState: String, Equatable {
         case pending      // card showing Confirm/Dismiss
         case applying     // write in flight — card shows progress
         case applied      // success — card stays as evidence
         case dismissed
         case failed       // error — buttons return, retryable
+
+        /// What gets written to the DB. `applying` deliberately never persists: an app
+        /// killed mid-write cannot know whether the write landed, so the row stays
+        /// `pending` and the athlete is re-offered the action rather than shown a state
+        /// the app can't stand behind.
+        var durable: ActionState { self == .applying ? .pending : self }
     }
     let id: UUID
     let role: Role
@@ -93,8 +99,26 @@ final class ChatStore: ObservableObject {
     struct WireMessage: Codable { let role: String; let content: String }
     private struct CoachRequest: Encodable { let messages: [WireMessage]; let context: CoachContext }
     private struct CoachReply: Decodable { let reply: String; let proposed_actions: [ProposedAction]? }
-    private struct HistoryRow: Decodable { let id: UUID; let role: String; let content: String; let created_at: Date }
-    private struct MessageInsert: Encodable { let user_id: String; let role: String; let content: String }
+    private struct HistoryRow: Decodable {
+        let id: UUID
+        let role: String
+        let content: String
+        let created_at: Date
+        let proposed_action: ProposedAction?
+        let action_state: String?
+    }
+    /// `id` is generated on the device rather than left to the column default, so the row
+    /// this insert creates is the same row a later Confirm updates. Without it the local
+    /// message id and the DB id diverge and there is nothing to target.
+    private struct MessageInsert: Encodable {
+        let id: String
+        let user_id: String
+        let role: String
+        let content: String
+        let proposed_action: ProposedAction?
+        let action_state: String?
+    }
+    private struct StatePatch: Encodable { let action_state: String }
 
     /// Load persisted history; on a fresh account, open with a data-grounded status read.
     /// In onboarding mode, always (re)open the interview — resuming where it left off.
@@ -108,8 +132,16 @@ final class ChatStore: ObservableObject {
             .limit(200)
             .execute()
             .value {
-            messages = rows.map {
-                ChatMessage(id: $0.id, role: ChatMessage.Role(rawValue: $0.role) ?? .coach, text: $0.content, timestamp: $0.created_at)
+            messages = rows.map { row in
+                ChatMessage(
+                    id: row.id,
+                    role: ChatMessage.Role(rawValue: row.role) ?? .coach,
+                    text: row.content,
+                    timestamp: row.created_at,
+                    action: row.proposed_action,
+                    actionState: row.action_state
+                        .flatMap(ChatMessage.ActionState.init(rawValue:))?.durable ?? .pending
+                )
             }
         }
         let opener: String
@@ -184,15 +216,18 @@ final class ChatStore: ObservableObject {
             case "complete_onboarding": await applyCompleteOnboarding(runStore: runStore)
             default:
                 messages[idx].actionState = .failed
+                persist(.failed, for: messageID)
                 errorText = "Unknown action type “\(action.type)”."
                 return false
             }
         } catch {
             messages[idx].actionState = .failed
+            persist(.failed, for: messageID)
             errorText = "That change didn't go through — Confirm to retry."
             return false
         }
         messages[idx].actionState = .applied
+        persist(.applied, for: messageID)
         append(.user, "Confirmed — \(action.displaySummary)")
         let reloaded = await runStore.reloadFromSupabase()
         if !reloaded {
@@ -208,6 +243,7 @@ final class ChatStore: ObservableObject {
               let action = messages[idx].action,
               messages[idx].actionState == .pending || messages[idx].actionState == .failed else { return }
         messages[idx].actionState = .dismissed
+        persist(.dismissed, for: messageID)
         append(.user, "Dismissed — \(action.displaySummary)")
     }
 
@@ -493,9 +529,28 @@ final class ChatStore: ObservableObject {
     }
 
     private func append(_ role: ChatMessage.Role, _ text: String, action: ProposedAction? = nil) {
-        messages.append(ChatMessage(id: UUID(), role: role, text: text, action: action))
+        let id = UUID()
+        messages.append(ChatMessage(id: id, role: role, text: text, action: action))
         guard let uid = Supa.userID?.uuidString else { return }
-        let row = MessageInsert(user_id: uid, role: role.rawValue, content: text)
+        let row = MessageInsert(
+            id: id.uuidString,
+            user_id: uid,
+            role: role.rawValue,
+            content: text,
+            proposed_action: action,
+            action_state: action == nil ? nil : ChatMessage.ActionState.pending.rawValue
+        )
         Task { try? await Supa.client.from("coach_messages").insert(row).execute() }
+    }
+
+    /// Mirror a card's resolution into the row that proposed it, so a relaunch replays the
+    /// outcome instead of re-offering a change the athlete already answered.
+    private func persist(_ state: ChatMessage.ActionState, for id: UUID) {
+        Task {
+            try? await Supa.client.from("coach_messages")
+                .update(StatePatch(action_state: state.durable.rawValue))
+                .eq("id", value: id.uuidString)
+                .execute()
+        }
     }
 }
