@@ -201,4 +201,102 @@ enum RunHistory {
 
         return (current, max(longest, current))
     }
+
+    // MARK: - The wall (calendar heatmap)
+
+    /// One calendar day's training, whether or not anything was run.
+    struct Day: Identifiable, Equatable {
+        let date: Date          // start of day
+        let miles: Double
+        let runCount: Int
+        let runIDs: [UUID]
+
+        var id: Date { date }
+        var didRun: Bool { runCount > 0 }
+
+        /// Intensity bucket for the heatmap, 0 (rest) … 4 (long run).
+        ///
+        /// Fixed thresholds rather than quantiles of the athlete's own distribution: a
+        /// marathoner's easy day and long day mean the same thing in June as in a taper
+        /// week, and a relative scale would repaint the whole wall every time a big week
+        /// landed. 13.1 is the top band because a half is the shape of a long run.
+        var level: Int {
+            switch miles {
+            case ..<0.05: return 0
+            case ..<4:    return 1
+            case ..<8:    return 2
+            case ..<13.1: return 3
+            default:      return 4
+            }
+        }
+    }
+
+    /// A year of the wall, laid out as week columns of 7 weekday rows (Mon…Sun).
+    ///
+    /// `nil` slots are days outside the year — the leading gap before Jan 1 lands on its
+    /// real weekday, and the trailing gap after Dec 31. Without them the grid would shear
+    /// by a day or two per year and the weekday rows would stop meaning anything.
+    struct YearBlock: Identifiable, Equatable {
+        let year: Int
+        let weeks: [[Day?]]     // each inner array is exactly 7 entries, Mon…Sun
+        let miles: Double
+        let runCount: Int
+
+        var id: Int { year }
+    }
+
+    /// Per-day totals for every day that carries at least one run.
+    static func dayTotals(_ runs: [RunSummary], calendar: Calendar = RunHistory.calendar) -> [Date: Day] {
+        Dictionary(grouping: runs) { calendar.startOfDay(for: $0.start) }
+            .mapValues { sameDay in
+                Day(
+                    date: calendar.startOfDay(for: sameDay[0].start),
+                    miles: sameDay.reduce(0) { $0 + $1.miles },
+                    runCount: sameDay.count,
+                    runIDs: sameDay.sorted { $0.start < $1.start }.map(\.id)
+                )
+            }
+    }
+
+    /// The whole archive as year blocks, newest year first.
+    static func wall(_ runs: [RunSummary], calendar: Calendar = RunHistory.calendar) -> [YearBlock] {
+        guard !runs.isEmpty else { return [] }
+        let totals = dayTotals(runs, calendar: calendar)
+        let years = Set(runs.map { calendar.component(.year, from: $0.start) }).sorted(by: >)
+
+        return years.compactMap { year -> YearBlock? in
+            guard let jan1 = calendar.date(from: DateComponents(year: year, month: 1, day: 1)),
+                  let dec31 = calendar.date(from: DateComponents(year: year, month: 12, day: 31))
+            else { return nil }
+
+            // Weekday index with Monday = 0, matching the calendar's Mon-first weeks.
+            func row(_ date: Date) -> Int {
+                (calendar.component(.weekday, from: date) - calendar.firstWeekday + 7) % 7
+            }
+
+            var weeks: [[Day?]] = []
+            var column = [Day?](repeating: nil, count: 7)
+            var cursor = jan1
+
+            while cursor <= dec31 {
+                let r = row(cursor)
+                column[r] = totals[cursor] ?? Day(date: cursor, miles: 0, runCount: 0, runIDs: [])
+                if r == 6 {
+                    weeks.append(column)
+                    column = [Day?](repeating: nil, count: 7)
+                }
+                guard let next = calendar.date(byAdding: .day, value: 1, to: cursor) else { break }
+                cursor = next
+            }
+            if column.contains(where: { $0 != nil }) { weeks.append(column) }
+
+            let inYear = runs.filter { calendar.component(.year, from: $0.start) == year }
+            return YearBlock(
+                year: year,
+                weeks: weeks,
+                miles: inYear.reduce(0) { $0 + $1.miles },
+                runCount: inYear.count
+            )
+        }
+    }
 }

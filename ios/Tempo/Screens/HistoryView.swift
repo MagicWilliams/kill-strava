@@ -17,6 +17,7 @@ struct HistoryView: View {
     @State private var filter: Filter = .all
     @State private var months: [RunHistory.Month] = []
     @State private var records = RunHistory.Records()
+    @State private var wall: [RunHistory.YearBlock] = []
 
     enum Filter: String, CaseIterable, Identifiable {
         case all, tenK, half, records
@@ -50,6 +51,7 @@ struct HistoryView: View {
                 LazyVStack(alignment: .leading, spacing: 14, pinnedViews: [.sectionHeaders]) {
                     header
                     totals
+                    wallCard
                     recordsCard
                     filterRow
                     archive
@@ -62,13 +64,20 @@ struct HistoryView: View {
             backButton
         }
         .toolbar(.hidden, for: .navigationBar)
-        .task(id: "\(store.runs.count)-\(filter.rawValue)") { rebuild() }
+        .task(id: store.runs.count) { rebuildArchive() }
+        .task(id: "\(store.runs.count)-\(filter.rawValue)") { rebuildMonths() }
     }
 
-    /// Records always describe the whole archive; only the list below is filtered — a
-    /// "PR" badge that came and went with the filter would be lying about the run.
-    private func rebuild() {
+    /// Records and the wall always describe the whole archive — a "PR" badge that came and
+    /// went with the filter would be lying about the run, and a wall that emptied when you
+    /// tapped "Half+" would be reporting rest days that were not rest days. Kept off the
+    /// filter's task so tapping a chip doesn't recompute five years of calendar cells.
+    private func rebuildArchive() {
         records = RunHistory.records(store.runs)
+        wall = RunHistory.wall(store.runs)
+    }
+
+    private func rebuildMonths() {
         let visible = filter == .all
             ? store.runs
             : store.runs.filter { filter.matches($0, records: records) }
@@ -91,6 +100,14 @@ struct HistoryView: View {
         let miles = Int(records.totalMiles.rounded()).formatted()
         guard let first = records.firstRun else { return "\(runs) runs · \(miles) mi" }
         return "\(runs) runs · \(miles) mi since \(first.formatted(.dateTime.month(.abbreviated).year()))"
+    }
+
+    @ViewBuilder private var wallCard: some View {
+        if !wall.isEmpty {
+            TrainingWall(blocks: wall) { runID in
+                if let run = store.runs.first(where: { $0.id == runID }) { router.openRun(run) }
+            }
+        }
     }
 
     private var totals: some View {

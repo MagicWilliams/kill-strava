@@ -169,4 +169,68 @@ final class RunHistoryTests: XCTestCase {
         let s = RunHistory.streaks(runs, now: now, calendar: cal)
         XCTAssertGreaterThanOrEqual(s.longest, s.current)
     }
+
+    // MARK: - The wall
+
+    func testWallGroupsMultipleRunsOnOneDay() {
+        let totals = RunHistory.dayTotals(
+            [run("2026-08-27", miles: 4), run("2026-08-27", miles: 3), run("2026-08-26", miles: 6)],
+            calendar: cal
+        )
+        XCTAssertEqual(totals.count, 2)
+        XCTAssertEqual(totals[date("2026-08-27")]?.miles ?? 0, 7, accuracy: 0.01, "a double day sums")
+        XCTAssertEqual(totals[date("2026-08-27")]?.runCount, 2)
+    }
+
+    func testIntensityBuckets() {
+        func level(_ miles: Double) -> Int {
+            RunHistory.Day(date: date("2026-08-27"), miles: miles, runCount: miles > 0 ? 1 : 0, runIDs: []).level
+        }
+        XCTAssertEqual(level(0), 0, "a rest day is empty, not faint")
+        XCTAssertEqual(level(3), 1)
+        XCTAssertEqual(level(6), 2)
+        XCTAssertEqual(level(10), 3)
+        XCTAssertEqual(level(20), 4, "a half or longer tops the scale")
+    }
+
+    /// The grid shears if Jan 1 isn't padded onto its real weekday, and every weekday row
+    /// below it stops meaning anything.
+    func testYearGridAlignsJanuaryFirstToItsWeekday() {
+        // 2026-01-01 is a Thursday → Monday-first row index 3.
+        let block = RunHistory.wall([run("2026-01-01", miles: 5)], calendar: cal)[0]
+        XCTAssertEqual(block.year, 2026)
+        XCTAssertNil(block.weeks[0][0], "Mon Dec 29 is not part of 2026")
+        XCTAssertNil(block.weeks[0][2], "Wed Dec 31 is not part of 2026")
+        XCTAssertNotNil(block.weeks[0][3], "Thu Jan 1 is the year's first real cell")
+        XCTAssertEqual(block.weeks[0][3]?.miles ?? 0, 5, accuracy: 0.01)
+    }
+
+    func testEveryWeekColumnHasSevenRows() {
+        let block = RunHistory.wall([run("2026-03-15", miles: 5)], calendar: cal)[0]
+        XCTAssertTrue(block.weeks.allSatisfy { $0.count == 7 })
+        XCTAssertGreaterThanOrEqual(block.weeks.count, 52)
+        XCTAssertLessThanOrEqual(block.weeks.count, 54)
+    }
+
+    func testWallCoversRestDaysNotJustRunDays() {
+        let block = RunHistory.wall([run("2026-06-10", miles: 5)], calendar: cal)[0]
+        let filled = block.weeks.flatMap { $0 }.compactMap { $0 }
+        XCTAssertEqual(filled.count, 365, "2026 is not a leap year — every day gets a cell")
+        XCTAssertEqual(filled.filter(\.didRun).count, 1, "only one of them was run")
+    }
+
+    func testWallYearsAreNewestFirstWithTotals() {
+        let blocks = RunHistory.wall(
+            [run("2024-05-01", miles: 8), run("2026-05-01", miles: 5), run("2026-05-02", miles: 6)],
+            calendar: cal
+        )
+        XCTAssertEqual(blocks.map(\.year), [2026, 2024])
+        XCTAssertEqual(blocks[0].miles, 11, accuracy: 0.01)
+        XCTAssertEqual(blocks[0].runCount, 2)
+        XCTAssertEqual(blocks[1].runCount, 1)
+    }
+
+    func testEmptyArchiveHasNoWall() {
+        XCTAssertTrue(RunHistory.wall([], calendar: cal).isEmpty)
+    }
 }
