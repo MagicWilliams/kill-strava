@@ -23,6 +23,20 @@ import Foundation
 /// Pure and deterministic so the rules can be pinned without a fake Supabase.
 enum RunFetch {
 
+    /// Rows per page when reading the archive.
+    ///
+    /// PostgREST's own default cap is 1,000; asking for exactly that many per page means a
+    /// full page and a capped page are indistinguishable, so the loop could never tell "more
+    /// to come" from "server truncated me". A page below the cap makes a short page mean
+    /// exactly one thing: the end.
+    static let pageSize = 500
+
+    /// Upper bound on how many runs a single read will assemble. Not a product limit — a
+    /// leash, so a paging bug cannot spin against the database forever. Roughly twenty years
+    /// of running six days a week.
+    static let maxRuns = 6_000
+
+
     /// What a read of Supabase `runs` came back with.
     enum Response: Equatable {
         /// The server answered; these rows are the corrected record.
