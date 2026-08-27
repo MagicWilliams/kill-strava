@@ -18,6 +18,7 @@ struct HistoryView: View {
     @State private var months: [RunHistory.Month] = []
     @State private var records = RunHistory.Records()
     @State private var wall: [RunHistory.YearBlock] = []
+    @State private var rail: [RunHistory.YearMark] = []
 
     enum Filter: String, CaseIterable, Identifiable {
         case all, tenK, half, records
@@ -47,19 +48,22 @@ struct HistoryView: View {
         ZStack(alignment: .topLeading) {
             Tokens.Palette.canvas.ignoresSafeArea()
 
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 14, pinnedViews: [.sectionHeaders]) {
-                    header
-                    totals
-                    wallCard
-                    recordsCard
-                    filterRow
-                    archive
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 14, pinnedViews: [.sectionHeaders]) {
+                        header
+                        totals
+                        wallCard
+                        recordsCard
+                        filterRow
+                        archive
+                    }
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, 32)
                 }
-                .padding(.horizontal, 20)
-                .padding(.bottom, 32)
+                .scrollIndicators(.hidden)
+                .overlay(alignment: .trailing) { yearRail(proxy) }
             }
-            .scrollIndicators(.hidden)
 
             backButton
         }
@@ -82,11 +86,14 @@ struct HistoryView: View {
         rebuildMonths()
     }
 
+    /// The rail is derived from `months`, never from `store.runs`, so it can only ever offer
+    /// a year the list is actually showing. That is what keeps a jump honest under a filter.
     private func rebuildMonths() {
         let visible = filter == .all
             ? store.runs
             : store.runs.filter { filter.matches($0, records: records) }
         months = RunHistory.byMonth(visible)
+        rail = RunHistory.yearRail(months)
     }
 
     // MARK: - Header
@@ -223,6 +230,59 @@ struct HistoryView: View {
             }
             Spacer()
         }
+    }
+
+    // MARK: - Year rail
+
+    /// The jump-to-year control: a column of years down the right edge, Photos-style.
+    ///
+    /// It lives in the overlay rather than in the `LazyVStack` on purpose. The obvious
+    /// alternative — a second chip row under the filters — is unreachable exactly when it is
+    /// wanted, because it scrolls away with everything else, and pinning it is not available
+    /// here: this stack already pins the month headers, and a second pinned header would just
+    /// push the first one off the top. Floating the rail outside the scroll view means it is
+    /// on screen at 2021 as much as at the top.
+    ///
+    /// It costs the outer ~32pt of the row width, which is the page margin plus the card's own
+    /// padding — it stops short of the chevron rather than sitting on top of it.
+    ///
+    /// It is a jump list, not a position indicator: nothing here highlights the year you are
+    /// currently looking at, because knowing that means watching the scroll offset, which this
+    /// screen deliberately does not do.
+    @ViewBuilder private func yearRail(_ proxy: ScrollViewProxy) -> some View {
+        if !rail.isEmpty {
+            VStack(spacing: 0) {
+                ForEach(rail) { mark in
+                    Button {
+                        jump(to: mark, with: proxy)
+                    } label: {
+                        Text(String(mark.year))
+                            .font(Tokens.Font.mono(10))
+                            .foregroundStyle(Tokens.Palette.textSecondary)
+                            .frame(width: 30, height: 30)
+                            .contentShape(Rectangle())
+                    }
+                    // The press tick is suppressed so the jump's own landing tick is the only
+                    // haptic: one tap, one thing happening.
+                    .buttonStyle(Pressable(haptic: false))
+                    .accessibilityLabel("Jump to \(String(mark.year)), \(mark.runCount) runs")
+                }
+            }
+            .padding(.vertical, 6)
+            .background(.ultraThinMaterial, in: Capsule())
+            .padding(.trailing, 2)
+        }
+    }
+
+    /// Deliberately **not** animated.
+    ///
+    /// An animated `scrollTo` across ~1,200 lazily-built rows asks SwiftUI to interpolate
+    /// through offsets for sections it has not measured yet, so the travel visibly overshoots
+    /// and corrects. An instant jump lands once. The haptic is what says the tap registered,
+    /// since there is no motion to say it.
+    private func jump(to mark: RunHistory.YearMark, with proxy: ScrollViewProxy) {
+        proxy.scrollTo(mark.anchor, anchor: .top)
+        Haptics.land()
     }
 
     // MARK: - The archive

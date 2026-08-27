@@ -75,6 +75,70 @@ final class RunHistoryTests: XCTestCase {
         XCTAssertEqual(weeks.count, 2, "a Sunday and the following Monday are different training weeks")
     }
 
+    // MARK: - Year rail
+
+    /// Every test here groups into months first, because that is the path the screen takes:
+    /// the rail is built from the sections already on screen, never from the raw archive.
+    /// It is the reason a jump cannot land on a month that a filter removed.
+    private func rail(_ runs: [RunSummary]) -> [RunHistory.YearMark] {
+        RunHistory.yearRail(RunHistory.byMonth(runs, calendar: cal), calendar: cal)
+    }
+
+    func testYearRailListsEveryYearNewestFirst() {
+        let marks = rail([run("2021-06-01", miles: 5), run("2024-02-11", miles: 8), run("2026-08-02", miles: 6)])
+        XCTAssertEqual(marks.map(\.year), [2026, 2024, 2021], "the rail reads top-to-bottom like the list does")
+    }
+
+    func testYearRailAnchorsOnTheNewestMonthOfTheYear() {
+        let marks = rail([run("2024-02-11", miles: 8), run("2024-11-30", miles: 4), run("2026-01-05", miles: 5)])
+        XCTAssertEqual(
+            marks.first { $0.year == 2024 }?.anchor,
+            date("2024-11-01"),
+            "landing on a year means landing at its top, which is its newest month"
+        )
+    }
+
+    /// The invariant the whole design rests on: the anchor is a section that exists.
+    func testYearRailAnchorIsAlwaysASectionOnScreen() {
+        let runs = [run("2026-08-02", miles: 5), run("2025-12-31", miles: 9),
+                    run("2023-03-14", miles: 7), run("2021-06-01", miles: 4)]
+        let months = RunHistory.byMonth(runs, calendar: cal)
+        let marks = RunHistory.yearRail(months, calendar: cal)
+        let onScreen = Set(months.map(\.id))
+
+        XCTAssertEqual(marks.count, 4)
+        for mark in marks {
+            XCTAssertTrue(onScreen.contains(mark.anchor), "\(mark.year) points at a month that is rendered")
+        }
+    }
+
+    /// Jumping to a year while "Half+" is active must land on that year's half-plus runs, so
+    /// a year whose runs the filter removed cannot still be offered — an affordance that
+    /// scrolls you into nothing is worse than one that isn't there.
+    func testYearRailFollowsTheActiveFilter() {
+        let runs = [run("2026-08-02", miles: 14), run("2024-05-05", miles: 4), run("2021-06-01", miles: 20)]
+        let halfPlus = runs.filter { $0.miles >= RunHistory.Band.half.minMiles }
+
+        XCTAssertEqual(rail(runs).map(\.year), [2026, 2024, 2021])
+        XCTAssertEqual(rail(halfPlus).map(\.year), [2026, 2021], "2024 has no half-plus run to land on")
+    }
+
+    func testYearRailCountsTheRunsItWouldJumpTo() {
+        let marks = rail([run("2026-08-02", miles: 5), run("2026-03-02", miles: 5), run("2021-06-01", miles: 5)])
+        XCTAssertEqual(marks.first { $0.year == 2026 }?.runCount, 2, "two months, two runs")
+        XCTAssertEqual(marks.first { $0.year == 2021 }?.runCount, 1)
+    }
+
+    /// A rail with one destination is not a rail; it's a button that does what scrolling to
+    /// the top already does.
+    func testSingleYearArchiveIsOfferedNoRail() {
+        XCTAssertTrue(rail([run("2026-08-02", miles: 5), run("2026-01-02", miles: 5)]).isEmpty)
+    }
+
+    func testEmptyArchiveIsOfferedNoRail() {
+        XCTAssertTrue(rail([]).isEmpty)
+    }
+
     // MARK: - Records
 
     func testLongestRunWins() {
