@@ -58,11 +58,16 @@ final class HealthService {
                 let meters = Int(workout.totalDistance?.doubleValue(for: .meter()) ?? 0)
                 let hr = workout.statistics(for: HKQuantityType(.heartRate))?
                     .averageQuantity()?.doubleValue(for: bpm)
+                // Two clocks, both straight off the workout record: `duration` is the time
+                // the workout was actually running (HealthKit excludes paused stretches),
+                // and start→end is the wall clock. They differ only when the athlete
+                // stopped. See TimeAccounting.
                 return RunSummary(
                     id: workout.uuid,
                     start: workout.startDate,
                     distanceM: meters,
                     durationS: Int(workout.duration),
+                    elapsedS: Int(workout.endDate.timeIntervalSince(workout.startDate)),
                     avgHR: hr.map { Int($0.rounded()) },
                     externalID: workout.uuid.uuidString
                 )
@@ -82,7 +87,8 @@ final class HealthService {
 
         // Dedupe rule lives in RunDedupe (pure + unit-tested) — see that file for why
         // the uuid constraint alone is not enough.
-        var kept = RunDedupe.newRuns(from: summaries, existing: existing)
+        let reconciled = RunDedupe.reconcile(candidates: summaries, existing: existing)
+        var kept = reconciled.inserts
 
         // The Garmin re-export signature: a large batch collapsing to almost nothing.
         // Silent when healthy (a normal refresh drops everything it already has); the
@@ -95,6 +101,21 @@ final class HealthService {
                                      "dropped": "\(dropped)",
                                      "kept": "\(kept.count)"])
         }
+
+        // A dropped twin sometimes carries the run's other clock. Enriching an existing row
+        // with it is safe — it only fills a column that was empty.
+        await patchElapsed(reconciled.elapsedPatches)
+
+        // The mirror case is not safe and is not automated: the stored row holds the LONGER
+        // duration, so its "moving time" is really elapsed and its pace has been reading
+        // slow. Correcting it rewrites history, so it gets reported and left alone.
+        if !reconciled.suspectedElapsedStored.isEmpty {
+            Telemetry.info("sync.elapsed_stored_as_moving", "rows whose duration looks like elapsed time",
+                           context: ["count": "\(reconciled.suspectedElapsedStored.count)",
+                                     "ids": reconciled.suspectedElapsedStored.prefix(10)
+                                        .map(\.uuidString).joined(separator: ",")])
+        }
+
         guard !kept.isEmpty else { return 0 }
 
         // Garmin doesn't associate HR with its workouts — enrich new rows from the
@@ -112,6 +133,7 @@ final class HealthService {
                 start_time: run.start,
                 distance_m: run.distanceM,
                 duration_s: run.durationS,
+                elapsed_duration_s: run.elapsedS,
                 avg_pace_sec: run.paceSecPerMile,
                 avg_hr: run.avgHR
             )
@@ -121,6 +143,50 @@ final class HealthService {
             .upsert(inserts, onConflict: "user_id,source,external_id", ignoreDuplicates: true)
             .execute()
         return inserts.count
+    }
+
+    /// Fill `elapsed_duration_s` on rows that were ingested before it existed.
+    ///
+    /// Purely additive: only ever writes a column that is currently null, never touches
+    /// `duration_s`, and skips corrected rows (the athlete's edit is the record). Failures
+    /// are ignored on purpose — a missing elapsed time costs a line on the detail page,
+    /// and the next refresh tries again.
+    private func patchElapsed(_ patches: [UUID: Int]) async {
+        guard !patches.isEmpty else { return }
+        struct Patch: Encodable { let elapsed_duration_s: Int }
+        for (id, seconds) in patches {
+            _ = try? await Supa.client
+                .from("runs")
+                .update(Patch(elapsed_duration_s: seconds))
+                .eq("id", value: id.uuidString)
+                .is("elapsed_duration_s", value: nil)
+                .execute()
+        }
+    }
+
+    /// Backfill elapsed time for the archive, from the workouts this refresh already read.
+    ///
+    /// The sync reads every workout in Health on every refresh anyway (that is its own
+    /// problem — see issue #37), so the wall clock for a five-year-old run is already in
+    /// memory here. Matching it to the stored row by HealthKit uuid costs nothing extra:
+    /// no additional HealthKit queries, one small update per row that is missing it.
+    ///
+    /// Capped per refresh so a first run doesn't fire two thousand updates; a handful of
+    /// refreshes clear the backlog and then it never does anything again.
+    func backfillElapsed(_ dbRuns: [RunSummary], from summaries: [RunSummary], limit: Int = 200) async -> [UUID: Int] {
+        let byExternalID = Dictionary(
+            summaries.compactMap { s in s.externalID.map { ($0, s) } },
+            uniquingKeysWith: { first, _ in first }
+        )
+        var patches: [UUID: Int] = [:]
+        for run in dbRuns where run.elapsedS == nil && !run.corrected && run.source == "healthkit" {
+            if patches.count >= limit { break }
+            guard let ext = run.externalID, let match = byExternalID[ext],
+                  let elapsed = match.elapsedS, elapsed > run.durationS else { continue }
+            patches[run.id] = elapsed
+        }
+        await patchElapsed(patches)
+        return patches
     }
 
     /// Repair pass: recent DB rows that predate HR enrichment get their avg HR filled

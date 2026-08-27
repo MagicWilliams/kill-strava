@@ -8,8 +8,11 @@ import Foundation
 struct Run: Codable, Identifiable, Hashable {
     let id: UUID
     let startTime: Date
-    let distanceM: Int
+    /// Moving time — see `TimeAccounting`. Everything that computes on a run uses this.
     let durationS: Int
+    /// Wall clock, when known. Additive: nil for every run ingested before migration 0009.
+    let elapsedDurationS: Int?
+    let distanceM: Int
     let avgPaceSec: Int?
     let avgHr: Int?
 
@@ -18,6 +21,7 @@ struct Run: Codable, Identifiable, Hashable {
         case startTime = "start_time"
         case distanceM = "distance_m"
         case durationS = "duration_s"
+        case elapsedDurationS = "elapsed_duration_s"
         case avgPaceSec = "avg_pace_sec"
         case avgHr = "avg_hr"
     }
@@ -34,7 +38,8 @@ struct RunInsert: Encodable {
     let external_id: String
     let start_time: Date
     let distance_m: Int
-    let duration_s: Int
+    let duration_s: Int             // moving time
+    let elapsed_duration_s: Int?    // wall clock; nil when the source didn't say
     let avg_pace_sec: Int?
     let avg_hr: Int?
 }
@@ -47,16 +52,30 @@ struct RunSummary: Identifiable, Hashable {
     let id: UUID          // Supabase row id (or HKWorkout uuid on the ingest/fallback path)
     let start: Date
     let distanceM: Int
+    /// **Moving time.** The default clock everywhere — labels, pace, load, records.
+    /// See `TimeAccounting` for why a run carries two of these.
     let durationS: Int
+    /// Wall clock start→finish, when the source recorded it. `var` for the same reason
+    /// `avgHR` is: the sync backfills it onto rows that predate migration 0009.
+    var elapsedS: Int? = nil
     var avgHR: Int?       // var: HR backfill fills it in when Garmin didn't associate samples
     var corrected: Bool = false
     var source: String = "healthkit"
     var externalID: String? = nil   // HKWorkout uuid for healthkit rows → detail-series lookup
 
     var miles: Double { Double(distanceM) / 1609.34 }
-    var paceSecPerMile: Int? { miles > 0.05 ? Int(Double(durationS) / miles) : nil }
+
+    /// Pace over **moving** time. This is the pace on every label and in every record;
+    /// the elapsed-time pace lives on the detail page and nowhere else.
+    var paceSecPerMile: Int? { TimeAccounting.paceSecPerMile(seconds: durationS, miles: miles) }
+
+    /// Both clocks, invariants enforced. Falls back to a stopless run when elapsed is unknown.
+    var clocks: TimeAccounting.Clocks {
+        TimeAccounting.resolve(movingS: durationS, elapsedS: elapsedS)
+    }
 
     /// "5.1 mi · 9:10 /mi · 138 bpm" (drops what's unknown).
+    /// The pace here is deliberately the moving pace — see `paceSecPerMile`.
     var metricsLine: String {
         var parts = [String(format: "%.1f mi", miles)]
         if let pace = paceSecPerMile { parts.append(PaceModel.format(pace) + " /mi") }
