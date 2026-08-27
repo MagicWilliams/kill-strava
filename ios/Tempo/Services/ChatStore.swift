@@ -175,7 +175,7 @@ final class ChatStore: ObservableObject {
         do {
             switch action.type {
             case "amend_run":          try await applyAmend(action)
-            case "add_run":            try await applyAdd(action)
+            case "add_run":            try await applyAdd(action, messageID: messageID)
             case "set_risk_tolerance": try await applyRiskTolerance(action, runStore: runStore)
             case "update_athlete":     try await applyAthleteUpdate(action, runStore: runStore)
             case "create_plan":        try await applyCreatePlan(action, runStore: runStore)
@@ -268,7 +268,10 @@ final class ChatStore: ObservableObject {
         try await Supa.client.from("runs").update(patch).eq("id", value: runID).execute()
     }
 
-    private func applyAdd(_ action: ProposedAction) async throws {
+    /// Log a run the coach proposed. `messageID` is the card the offer came on: it is what
+    /// gives the row its identity, so confirming the same offer twice writes one run and not
+    /// two (see `Engine/ManualRunIdentity.swift`).
+    private func applyAdd(_ action: ProposedAction, messageID: UUID) async throws {
         guard let uid = Supa.userID?.uuidString,
               let start = action.start_time,
               let distance = action.distance_m,
@@ -276,7 +279,7 @@ final class ChatStore: ObservableObject {
 
         struct ManualInsert: Encodable {
             let user_id: String
-            var source = "manual"
+            var source = ManualRunIdentity.source
             let external_id: String
             let start_time: String
             let distance_m: Int
@@ -288,7 +291,7 @@ final class ChatStore: ObservableObject {
         let miles = Double(distance) / 1609.34
         let row = ManualInsert(
             user_id: uid,
-            external_id: UUID().uuidString,
+            external_id: ManualRunIdentity.externalID(forProposalIn: messageID),
             start_time: start,
             distance_m: distance,
             duration_s: duration,
@@ -296,7 +299,15 @@ final class ChatStore: ObservableObject {
             avg_hr: action.avg_hr,
             correction_note: action.note
         )
-        try await Supa.client.from("runs").insert(row).execute()
+        // Upsert, not insert, and for the same reason the ingest path does it
+        // (`HealthService.sync`): a second Confirm must be a no-op, not an error. A
+        // plain insert would raise on the unique constraint, the card would go to `failed`,
+        // and the athlete would be invited to retry a write that had already landed — a
+        // false failure on top of the duplicate this change exists to prevent.
+        try await Supa.client
+            .from("runs")
+            .upsert(row, onConflict: "user_id,source,external_id", ignoreDuplicates: true)
+            .execute()
     }
 
     private func applyRiskTolerance(_ action: ProposedAction, runStore: RunStore) async throws {
