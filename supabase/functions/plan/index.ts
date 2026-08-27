@@ -313,8 +313,11 @@ Deno.serve(async (req) => {
     const wantsStrength = profile?.wants_strength ?? false;
 
     const since = new Date(Date.now() - 120 * 86400_000).toISOString();
+    // `.is("superseded_by", null)` — duplicates retired by migration 0008 would otherwise
+    // inflate every volume feature the plan shape is built from.
     const { data: runs } = await supa.from("runs")
       .select("start_time,distance_m,duration_s,avg_hr")
+      .is("superseded_by", null)
       .gte("start_time", since).order("start_time", { ascending: true });
     const features = extractFeatures((runs ?? []) as RunRow[]);
 
