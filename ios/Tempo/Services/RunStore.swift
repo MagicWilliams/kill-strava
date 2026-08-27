@@ -250,9 +250,13 @@ final class RunStore: ObservableObject {
     }
 
     private func fetchFromSupabase() async throws -> [RunSummary] {
+        // `superseded_by` marks a row as a duplicate of another run (migration 0008 —
+        // Garmin re-exports that predate the ingest dedupe). Retired rows are kept for
+        // reversibility but must never reach a total, a record, or the coach's context.
         let rows: [RunRow] = try await Supa.client
             .from("runs")
             .select("id,start_time,distance_m,duration_s,avg_hr,corrected,source,external_id")
+            .is("superseded_by", value: nil)
             .order("start_time", ascending: false)
             .execute()
             .value
