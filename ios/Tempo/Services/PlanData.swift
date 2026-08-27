@@ -323,17 +323,13 @@ extension RunStore {
 
     // MARK: Projection (Stage F, v1) — recomputed after every refresh
 
+    /// The rule itself lives in `Engine/ProjectionHistory.swift` so the detail chart can
+    /// replay it over past dates. Kept in one place deliberately: two copies would drift,
+    /// and the chart would start disagreeing with the card it was opened from.
     func recomputeProjection() async {
         guard var plan else { return }
-        let cutoff = Self.cal.date(byAdding: .day, value: -42, to: .now) ?? .now
-        let candidates = runs.filter { $0.start >= cutoff && $0.miles >= 2.5 }
-        guard let best = candidates.min(by: { ($0.paceSecPerMile ?? .max) < ($1.paceSecPerMile ?? .max) }),
-              let bestPace = best.paceSecPerMile else { return }
-        let projected = Int(PaceModel.equivalentTime(
-            seconds: Double(bestPace) * best.miles,
-            from: best.miles,
-            to: RaceDistance.marathon.miles
-        ))
+        guard let projected = ProjectionHistory.projection(runs, asOf: .now, calendar: Self.cal)?.finishS else { return }
+        // 30-second deadband: a write per refresh for a sub-minute wobble is noise, not news.
         guard abs((plan.projected_finish_s ?? 0) - projected) > 30 else { return }
         plan.projected_finish_s = projected
         self.plan = plan

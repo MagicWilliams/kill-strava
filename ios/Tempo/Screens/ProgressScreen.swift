@@ -27,31 +27,43 @@ struct ProgressScreen: View {
     @ViewBuilder private var projected: some View {
         let projection = store.plan?.projected_finish_s
         let goalTime = store.goal?.goalTimeSeconds
-        Card(glow: true) {
-            HStack {
-                SectionLabel("Projected finish", color: Tokens.Palette.volt)
-                Spacer()
-                if let projection, let goalTime {
-                    if projection <= goalTime {
-                        Tag(text: "on track")
-                    } else {
-                        Tag(text: "behind goal", fg: Tokens.Palette.warning, bg: Tokens.Palette.inset)
+        // Tapping through is where the number stops being a verdict: the detail page shows
+        // the single run it came from and how much it has bounced around getting here.
+        Button {
+            router.openProjection()
+        } label: {
+            Card(glow: true) {
+                HStack {
+                    SectionLabel("Projected finish", color: Tokens.Palette.volt)
+                    Spacer()
+                    if let projection, let goalTime {
+                        if projection <= goalTime {
+                            Tag(text: "on track")
+                        } else {
+                            Tag(text: "behind goal", fg: Tokens.Palette.warning, bg: Tokens.Palette.inset)
+                        }
+                    }
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(Tokens.Palette.textTertiary)
+                }
+                HStack(alignment: .firstTextBaseline, spacing: 12) {
+                    Text(projection.map(PaceModel.formatFinish) ?? "—:—:—")
+                        .font(Tokens.Font.display(40))
+                        .foregroundStyle(projection == nil ? Tokens.Palette.textTertiary : Tokens.Palette.textPrimary)
+                    VStack(alignment: .leading, spacing: 1) {
+                        SectionLabel("Goal")
+                        Text(goalTime.map(PaceModel.formatFinish) ?? "3:15:00")
+                            .font(Tokens.Font.mono(15)).foregroundStyle(Tokens.Palette.textSecondary)
                     }
                 }
+                Text(projectionCaption(projection: projection, goalTime: goalTime))
+                    .font(Tokens.Font.ui(13)).foregroundStyle(Tokens.Palette.textSecondary)
+                    .multilineTextAlignment(.leading)
             }
-            HStack(alignment: .firstTextBaseline, spacing: 12) {
-                Text(projection.map(PaceModel.formatFinish) ?? "—:—:—")
-                    .font(Tokens.Font.display(40))
-                    .foregroundStyle(projection == nil ? Tokens.Palette.textTertiary : Tokens.Palette.textPrimary)
-                VStack(alignment: .leading, spacing: 1) {
-                    SectionLabel("Goal")
-                    Text(goalTime.map(PaceModel.formatFinish) ?? "3:15:00")
-                        .font(Tokens.Font.mono(15)).foregroundStyle(Tokens.Palette.textSecondary)
-                }
-            }
-            Text(projectionCaption(projection: projection, goalTime: goalTime))
-                .font(Tokens.Font.ui(13)).foregroundStyle(Tokens.Palette.textSecondary)
+            .contentShape(Rectangle())
         }
+        .buttonStyle(Pressable())
     }
 
     private func projectionCaption(projection: Int?, goalTime: Int?) -> String {
@@ -99,9 +111,19 @@ struct ProgressScreen: View {
             HStack {
                 SectionLabel("Recent runs")
                 Spacer()
-                Text("\(runs.count) IN 14 DAYS")
-                    .font(Tokens.Font.mono(10)).tracking(1.2)
-                    .foregroundStyle(Tokens.Palette.textTertiary)
+                // The doorway to the archive. This card shows two weeks; the athlete has
+                // 2,000+ runs, and until now there was no screen that could show them.
+                Button {
+                    router.openHistory()
+                } label: {
+                    HStack(spacing: 3) {
+                        Text("ALL \(store.runs.count.formatted())")
+                            .font(Tokens.Font.mono(10)).tracking(1.2)
+                        Image(systemName: "chevron.right").font(.system(size: 9, weight: .bold))
+                    }
+                    .foregroundStyle(Tokens.Palette.volt)
+                }
+                .buttonStyle(Pressable())
             }
             if runs.isEmpty {
                 Text(store.phase == .loading ? "Reading Apple Health…" : "Nothing in the last two weeks.")
@@ -127,6 +149,25 @@ struct ProgressScreen: View {
                             .font(.system(size: 11))
                             .foregroundStyle(Tokens.Palette.textTertiary)
                     }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(Pressable())
+            }
+            if !runs.isEmpty {
+                Rectangle().fill(Tokens.Palette.divider).frame(height: 1)
+                Button {
+                    router.openHistory()
+                } label: {
+                    HStack {
+                        Text("Browse every run")
+                            .font(Tokens.Font.ui(13, .medium))
+                            .foregroundStyle(Tokens.Palette.volt)
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(Tokens.Palette.volt)
+                    }
+                    .frame(height: 28)
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(Pressable())

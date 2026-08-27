@@ -11,6 +11,26 @@
 const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
 const MODEL = "claude-sonnet-5";
 
+// Sonnet 5 thinks by default (adaptive), and thinking is drawn from the SAME
+// max_tokens budget as the visible reply. The original ceilings (1200 chat /
+// 400 takeaway) were sized for a model that didn't think: the coach spent the
+// entire 1200 on thinking, returned a lone thinking block with no text, and
+// every message came back "Lost my train of thought there." The retry used the
+// same ceiling, so it failed identically — the fallback line was unreachable
+// in theory and unavoidable in practice.
+//
+// max_tokens is a ceiling, not a target: thinking stops on its own and billing
+// is on tokens actually produced, so a generous ceiling costs nothing and is
+// the only thing standing between a long answer and a mid-sentence cut. Effort
+// is the dial that actually bounds thinking — medium, because the coach does
+// real arithmetic (corrected pace/distance totals for amend_run) and must land
+// tool calls reliably, but doesn't need to deliberate over 2–6 sentences.
+const SAMPLING = {
+  max_tokens: 16000,
+  thinking: { type: "adaptive" },
+  output_config: { effort: "medium" },
+} as const;
+
 const PERSONA = `You are Coach, the in-app running coach for Tempo — a marathon training app.
 
 Voice: calm expert. Measured, specific, honest. No hype, no exclamation marks, no emoji.
@@ -227,7 +247,7 @@ Deno.serve(async (req) => {
       },
       body: JSON.stringify({
         model: MODEL,
-        max_tokens: takeaway ? 400 : 1200,
+        ...SAMPLING,
         system,
         ...(takeaway ? {} : { tools: TOOLS }),
         messages: wireMessages.map((m) => ({
@@ -269,7 +289,7 @@ Deno.serve(async (req) => {
         headers: { "x-api-key": apiKey, "anthropic-version": "2023-06-01", "content-type": "application/json" },
         body: JSON.stringify({
           model: MODEL,
-          max_tokens: 600,
+          ...SAMPLING,
           system,
           tools: TOOLS,
           messages: [
@@ -296,7 +316,7 @@ Deno.serve(async (req) => {
         headers: { "x-api-key": apiKey, "anthropic-version": "2023-06-01", "content-type": "application/json" },
         body: JSON.stringify({
           model: MODEL,
-          max_tokens: takeaway ? 400 : 1200,
+          ...SAMPLING,
           system,
           ...(takeaway ? {} : { tools: TOOLS }),
           messages: wireMessages.map((m) => ({
