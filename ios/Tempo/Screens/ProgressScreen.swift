@@ -27,31 +27,43 @@ struct ProgressScreen: View {
     @ViewBuilder private var projected: some View {
         let projection = store.plan?.projected_finish_s
         let goalTime = store.goal?.goalTimeSeconds
-        Card(glow: true) {
-            HStack {
-                SectionLabel("Projected finish", color: Tokens.Palette.volt)
-                Spacer()
-                if let projection, let goalTime {
-                    if projection <= goalTime {
-                        Tag(text: "on track")
-                    } else {
-                        Tag(text: "behind goal", fg: Tokens.Palette.warning, bg: Tokens.Palette.inset)
+        // Tapping through is where the number stops being a verdict: the detail page shows
+        // the single run it came from and how much it has bounced around getting here.
+        Button {
+            router.openProjection()
+        } label: {
+            Card(glow: true) {
+                HStack {
+                    SectionLabel("Projected finish", color: Tokens.Palette.volt)
+                    Spacer()
+                    if let projection, let goalTime {
+                        if projection <= goalTime {
+                            Tag(text: "on track")
+                        } else {
+                            Tag(text: "behind goal", fg: Tokens.Palette.warning, bg: Tokens.Palette.inset)
+                        }
+                    }
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(Tokens.Palette.textTertiary)
+                }
+                HStack(alignment: .firstTextBaseline, spacing: 12) {
+                    Text(projection.map(PaceModel.formatFinish) ?? "—:—:—")
+                        .font(Tokens.Font.display(40))
+                        .foregroundStyle(projection == nil ? Tokens.Palette.textTertiary : Tokens.Palette.textPrimary)
+                    VStack(alignment: .leading, spacing: 1) {
+                        SectionLabel("Goal")
+                        Text(goalTime.map(PaceModel.formatFinish) ?? "3:15:00")
+                            .font(Tokens.Font.mono(15)).foregroundStyle(Tokens.Palette.textSecondary)
                     }
                 }
+                Text(projectionCaption(projection: projection, goalTime: goalTime))
+                    .font(Tokens.Font.ui(13)).foregroundStyle(Tokens.Palette.textSecondary)
+                    .multilineTextAlignment(.leading)
             }
-            HStack(alignment: .firstTextBaseline, spacing: 12) {
-                Text(projection.map(PaceModel.formatFinish) ?? "—:—:—")
-                    .font(Tokens.Font.display(40))
-                    .foregroundStyle(projection == nil ? Tokens.Palette.textTertiary : Tokens.Palette.textPrimary)
-                VStack(alignment: .leading, spacing: 1) {
-                    SectionLabel("Goal")
-                    Text(goalTime.map(PaceModel.formatFinish) ?? "3:15:00")
-                        .font(Tokens.Font.mono(15)).foregroundStyle(Tokens.Palette.textSecondary)
-                }
-            }
-            Text(projectionCaption(projection: projection, goalTime: goalTime))
-                .font(Tokens.Font.ui(13)).foregroundStyle(Tokens.Palette.textSecondary)
+            .contentShape(Rectangle())
         }
+        .buttonStyle(Pressable())
     }
 
     private func projectionCaption(projection: Int?, goalTime: Int?) -> String {
