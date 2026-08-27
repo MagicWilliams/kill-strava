@@ -34,7 +34,7 @@ struct ProgressScreen: View {
         } label: {
             Card(glow: true) {
                 HStack {
-                    SectionLabel("Projected finish", color: Tokens.Palette.volt)
+                    SectionLabel("Projected finish", color: Tokens.Palette.accentText)
                     Spacer()
                     if let projection, let goalTime {
                         if projection <= goalTime {
@@ -100,7 +100,7 @@ struct ProgressScreen: View {
             HStack {
                 Text("8 WKS AGO").mono(10, Tokens.Palette.textTertiary)
                 Spacer()
-                Text("THIS WK · \(store.thisWeekMiles, specifier: "%.1f") MI").mono(10, Tokens.Palette.volt)
+                Text("THIS WK · \(store.thisWeekMiles, specifier: "%.1f") MI").mono(10, Tokens.Palette.accentText)
             }
         }
     }
@@ -121,7 +121,7 @@ struct ProgressScreen: View {
                             .font(Tokens.Font.mono(10)).tracking(1.2)
                         Image(systemName: "chevron.right").font(.system(size: 9, weight: .bold))
                     }
-                    .foregroundStyle(Tokens.Palette.volt)
+                    .foregroundStyle(Tokens.Palette.accentText)
                 }
                 .buttonStyle(Pressable())
             }
@@ -161,11 +161,11 @@ struct ProgressScreen: View {
                     HStack {
                         Text("Browse every run")
                             .font(Tokens.Font.ui(13, .medium))
-                            .foregroundStyle(Tokens.Palette.volt)
+                            .foregroundStyle(Tokens.Palette.accentText)
                         Spacer()
                         Image(systemName: "chevron.right")
                             .font(.system(size: 11, weight: .semibold))
-                            .foregroundStyle(Tokens.Palette.volt)
+                            .foregroundStyle(Tokens.Palette.accentText)
                     }
                     .frame(height: 28)
                     .contentShape(Rectangle())
@@ -241,7 +241,7 @@ struct ProgressScreen: View {
     private func phaseSeg(width: CGFloat, fill: CGFloat) -> some View {
         ZStack(alignment: .leading) {
             Capsule().fill(Tokens.Palette.divider)
-            Capsule().fill(Tokens.Palette.volt).frame(width: max(0, width * fill))
+            Capsule().fill(Tokens.Palette.voltMark).frame(width: max(0, width * fill))
         }
         .frame(width: max(0, width))
     }
@@ -264,11 +264,11 @@ struct TrajectoryChart: View {
                     let h = geo.size.height * CGFloat(value / mx)
                     let proj = index >= actual.count
                     RoundedRectangle(cornerRadius: 2)
-                        .fill(Tokens.Palette.volt.opacity(proj ? 0.16 : 1))
+                        .fill(Tokens.Palette.voltMark.opacity(proj ? 0.16 : 1))
                         .overlay {
                             if proj {
                                 RoundedRectangle(cornerRadius: 2)
-                                    .strokeBorder(Tokens.Palette.volt.opacity(0.45), lineWidth: 1)
+                                    .strokeBorder(Tokens.Palette.voltMark.opacity(0.45), lineWidth: 1)
                             }
                         }
                         .frame(width: bw, height: max(2, h))

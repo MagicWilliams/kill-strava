@@ -25,7 +25,7 @@ struct YouView: View {
     @ViewBuilder private var goal: some View {
         Card(glow: true) {
             HStack {
-                SectionLabel("Your goal", color: Tokens.Palette.volt)
+                SectionLabel("Your goal", color: Tokens.Palette.accentText)
                 Spacer()
                 if let projected = store.plan?.projected_finish_s,
                    let target = store.goal?.goalTimeSeconds {
@@ -115,7 +115,7 @@ struct YouView: View {
             HStack {
                 Text(label).font(Tokens.Font.ui(13, .medium)).foregroundStyle(Tokens.Palette.textPrimary)
                 Spacer()
-                Text(value).font(Tokens.Font.mono(13)).foregroundStyle(Tokens.Palette.volt)
+                Text(value).font(Tokens.Font.mono(13)).foregroundStyle(Tokens.Palette.accentText)
                 Text(date.formatted(.dateTime.month(.abbreviated).day()))
                     .font(Tokens.Font.mono(11)).foregroundStyle(Tokens.Palette.textTertiary)
                     .frame(width: 52, alignment: .trailing)
@@ -135,7 +135,7 @@ struct YouView: View {
                 Spacer()
                 Button { router.showCoach() } label: {
                     Text("Change via Coach")
-                        .font(Tokens.Font.ui(12, .semibold)).foregroundStyle(Tokens.Palette.volt)
+                        .font(Tokens.Font.ui(12, .semibold)).foregroundStyle(Tokens.Palette.accentText)
                 }
                 .buttonStyle(Pressable())
             }

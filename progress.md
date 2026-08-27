@@ -2,7 +2,7 @@
 
 > Read me first each session. Architecture + build sequence: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
-_Last updated: 2026-08-27 (coach unbroken; the run archive opens up)_
+_Last updated: 2026-08-27 (design system v3: light theme, tinted wells, a motion layer)_
 
 ## Where we are
 
@@ -16,7 +16,39 @@ Build sequence status (numbers from ARCHITECTURE.md):
 - [ ] **5. Progress (CTL/ATL/Form)** — not started (needs plan engine)
 - [~] **6. Engine on server** — `coach` Edge Function deployed (v1, ACTIVE) — Claude (`claude-sonnet-5`) via plain fetch, `ANTHROPIC_API_KEY` set as function secret. Plan/adapt functions still to come.
 - [x] **7. Coach chat** — live end-to-end: ChatStore → Edge Function → Claude, grounded in a `CoachContext` snapshot (last 21 days of runs + 8 weeks mileage + goal). History persists in `coach_messages`. Auto-opens with a data-grounded status read; quick-reply chips. Smoke-tested 2026-07-08 with a real reply.
-- [ ] **8. Polish + TestFlight**
+- [~] **8. Polish + TestFlight** — design system **v3** landed as a pilot (issue #40): tokens
+  resolve light/dark from the trait environment, cards are tinted wells instead of bordered
+  surfaces, and there's a real motion layer. Today + the tab bar are converted; nine screens
+  still to roll out. TestFlight not started.
+
+## Design system v3 — the facelift (interviewed David 2026-08-27)
+
+Decisions, so the remaining nine screens get converted the same way:
+
+1. **Dual theme, follows system appearance.** Every `Tokens.Palette` member is a dynamic
+   `UIColor` behind a `Color`, so all ~270 existing call sites kept working untouched and
+   started responding to appearance for free. That's what let this ship as a pilot rather
+   than a big bang — un-converted screens are un-*tuned*, not broken.
+2. **Volt is a fill, never text.** `#CDFB45` is ~1.2:1 on white. Three tokens now split what
+   volt used to do alone: `volt` (fills with `onVolt` on top — buttons, the quality pill),
+   `accentText` (eyebrows, links, chart lines; olive ink on light, volt on dark), and
+   `voltMark` (gauge arcs, day dots, bars — anything bare that must be seen against the
+   ground). Deciding which one a usage needs is the bulk of converting a screen.
+3. **Cards are tinted wells.** No border, no shadow, both themes. `Tokens.Well` — neutral,
+   calm (rest), warm (quality), cool (long), accent, success/warning/danger. `InsetWell`
+   reads the enclosing card's tint from the environment so a nested panel recesses against
+   its actual parent.
+4. **Motion lives in `DesignSystem/Motion.swift`.** Six named curves, a `Drawn` wrapper for
+   gauges that sweep in on first paint, `.rolling()` for numbers that shouldn't snap, and
+   `Haptics`. Everything routes through `.motion(_:value:)` so Reduce Motion is honoured in
+   one place — SwiftUI does *not* do that for you.
+5. **`DesignTokenTests` pins the palette.** WCAG contrast for every text and status token
+   against every well at both depths, both themes, plus wall-ramp monotonicity. It caught
+   three real failures on first run, one of them pre-existing in the dark theme.
+
+**Still to convert:** Plan, Progress, Coach, You, RunDetail, History, Readiness, Projection,
+Onboarding. `Card(glow:)` is a temporary shim mapping to `Well.accent`; delete it when the
+last screen is done.
 
 ## Loose ends / ops
 

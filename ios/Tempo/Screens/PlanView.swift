@@ -35,7 +35,7 @@ struct PlanView: View {
 
     private var noPlan: some View {
         Card(glow: true) {
-            SectionLabel("Your plan", color: Tokens.Palette.volt)
+            SectionLabel("Your plan", color: Tokens.Palette.accentText)
             Text("Built from your data, not a template")
                 .font(Tokens.Font.display(22)).foregroundStyle(Tokens.Palette.textPrimary)
             Text("The coach assesses your real running history, proposes a goal, and generates a schedule anchored on what you actually do — phases emerge from what's missing.")
@@ -47,7 +47,7 @@ struct PlanView: View {
     private var countdown: some View {
         Card(glow: true) {
             HStack {
-                SectionLabel(store.goal?.raceName ?? "Race", color: Tokens.Palette.volt)
+                SectionLabel(store.goal?.raceName ?? "Race", color: Tokens.Palette.accentText)
                 Spacer()
                 if let day = store.goal?.raceDay {
                     Text(day.formatted(.dateTime.month(.abbreviated).day()))
@@ -115,7 +115,7 @@ struct PlanView: View {
                 }
                 Spacer()
                 if let target = week.target_mileage {
-                    Text(String(format: "%.0f mi", target)).font(Tokens.Font.mono(13)).foregroundStyle(Tokens.Palette.volt)
+                    Text(String(format: "%.0f mi", target)).font(Tokens.Font.mono(13)).foregroundStyle(Tokens.Palette.accentText)
                 }
             }
             Rectangle().fill(Tokens.Palette.divider).frame(height: 1)
@@ -140,7 +140,7 @@ struct PlanView: View {
         return HStack(spacing: 10) {
             Text(s.day.formatted(.dateTime.weekday(.abbreviated)).uppercased())
                 .font(Tokens.Font.mono(10)).tracking(1)
-                .foregroundStyle(isToday ? Tokens.Palette.volt : Tokens.Palette.textTertiary)
+                .foregroundStyle(isToday ? Tokens.Palette.accentText : Tokens.Palette.textTertiary)
                 .frame(width: 32, alignment: .leading)
             VStack(alignment: .leading, spacing: 1) {
                 HStack(spacing: 6) {
@@ -166,7 +166,7 @@ struct PlanView: View {
             } else if s.status == "skipped" || missed {
                 Image(systemName: "minus.circle").font(.system(size: 14)).foregroundStyle(Tokens.Palette.textTertiary)
             } else if s.isQuality {
-                Circle().fill(Tokens.Palette.volt).frame(width: 7, height: 7)
+                Circle().fill(Tokens.Palette.voltMark).frame(width: 7, height: 7)
             }
         }
         .frame(minHeight: 26)

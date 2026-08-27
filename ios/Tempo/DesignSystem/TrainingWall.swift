@@ -74,10 +74,19 @@ struct TrainingWall: View {
         .frame(width: width, height: height, alignment: .leading)
         .contentShape(Rectangle())
         .gesture(scrub(block, width: width, height: height))
+        // Warm the generator before the finger lands, so the first tick of a scrub isn't
+        // the one that arrives late.
+        .onAppear { Haptics.warmUp() }
     }
 
     /// Maps a finger position onto a cell. Chart-style scrubbing, because a 4.5pt tap
     /// target would be unusable and shrinking the year to make one wouldn't be a wall.
+    ///
+    /// One selection tick per cell crossed. At 4.5pt a cell is smaller than the finger
+    /// covering it, so the readout above is the only thing telling you where you are —
+    /// and looking up to check costs you your place. The haptic is what lets you feel the
+    /// grid instead of watching it, which is the difference between scrubbing a year and
+    /// hunting for a day.
     private func scrub(_ block: RunHistory.YearBlock, width: CGFloat, height: CGFloat) -> some Gesture {
         DragGesture(minimumDistance: 0)
             .onChanged { value in
@@ -85,20 +94,17 @@ struct TrainingWall: View {
                 let row = Int(value.location.y / (cell + gap))
                 guard block.weeks.indices.contains(col), (0..<7).contains(row),
                       let day = block.weeks[col][row] else { return }
-                if day != selected { selected = day }
+                if day != selected {
+                    selected = day
+                    Haptics.select()
+                }
             }
     }
 
     private func color(for day: RunHistory.Day?) -> Color {
         guard let day else { return .clear }
         if day == selected { return Tokens.Palette.textPrimary }
-        switch day.level {
-        case 0:  return Tokens.Palette.inset
-        case 1:  return Tokens.Palette.volt.opacity(0.25)
-        case 2:  return Tokens.Palette.volt.opacity(0.45)
-        case 3:  return Tokens.Palette.volt.opacity(0.7)
-        default: return Tokens.Palette.volt
-        }
+        return Tokens.Wall.ramp[min(day.level, Tokens.Wall.ramp.count - 1)]
     }
 
     // MARK: - Readout + legend
@@ -114,7 +120,7 @@ struct TrainingWall: View {
                         .foregroundStyle(Tokens.Palette.textPrimary)
                     Spacer()
                     if day.didRun {
-                        Text(String(format: "%.1f mi", day.miles)).mono(13, Tokens.Palette.volt)
+                        Text(String(format: "%.1f mi", day.miles)).mono(13, Tokens.Palette.accentText)
                         if day.runCount > 1 {
                             Text("×\(day.runCount)").mono(11, Tokens.Palette.textTertiary)
                         }

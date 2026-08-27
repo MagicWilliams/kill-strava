@@ -113,8 +113,8 @@ struct CoachView: View {
 
     private var header: some View {
         HStack(spacing: 12) {
-            Circle().fill(Color(hex: 0x1E2417)).frame(width: 44, height: 44)
-                .overlay(Text("C").font(Tokens.Font.display(18)).foregroundStyle(Tokens.Palette.volt))
+            Circle().fill(Tokens.Well.accent.insetFill).frame(width: 44, height: 44)
+                .overlay(Text("C").font(Tokens.Font.display(18)).foregroundStyle(Tokens.Palette.accentText))
             VStack(alignment: .leading, spacing: 2) {
                 Text("Coach").font(Tokens.Font.display(22)).foregroundStyle(Tokens.Palette.textPrimary)
                 Text(onboarding ? "Setup interview · a few questions" : "Calm expert · sees your real runs")
@@ -219,7 +219,7 @@ struct CoachView: View {
                 }
             case .applying:
                 HStack(spacing: 10) {
-                    ProgressView().controlSize(.small).tint(Tokens.Palette.volt)
+                    ProgressView().controlSize(.small).tint(Tokens.Palette.accentText)
                     Text(chat.busyLabel ?? "Applying…")
                         .font(Tokens.Font.ui(13)).foregroundStyle(Tokens.Palette.textSecondary)
                 }
@@ -252,7 +252,7 @@ struct CoachView: View {
         case .applied: return Tokens.Palette.success
         case .failed: return Tokens.Palette.danger
         case .dismissed: return Tokens.Palette.textTertiary
-        default: return Tokens.Palette.volt
+        default: return Tokens.Palette.accentText
         }
     }
 
@@ -345,7 +345,7 @@ struct TypingDots: View {
         HStack(spacing: 5) {
             ForEach(0..<3, id: \.self) { i in
                 Circle()
-                    .fill(Tokens.Palette.volt)
+                    .fill(Tokens.Palette.voltMark)
                     .frame(width: 7, height: 7)
                     .scaleEffect(animating ? 1.0 : 0.55)
                     .opacity(animating ? 1.0 : 0.35)
