@@ -11,7 +11,10 @@ enum Supa {
             // session immediately (uses the default Keychain storage, so our anonymous
             // session still persists across launches). Silences the supabase-swift
             // deprecation warning; becomes the default in the next major version.
-            auth: SupabaseClientOptions.AuthOptions(emitLocalSessionAsInitialSession: true),
+            auth: SupabaseClientOptions.AuthOptions(
+                storage: sessionStorage,
+                emitLocalSessionAsInitialSession: true
+            ),
             global: SupabaseClientOptions.GlobalOptions(session: session)
         )
     )
@@ -26,6 +29,26 @@ enum Supa {
         config.waitsForConnectivity = false   // offline is an answer, not something to wait for
         return URLSession(configuration: config)
     }()
+
+    /// Where the auth session is persisted.
+    ///
+    /// supabase-swift stores the session in the Keychain by default. In the iOS Simulator
+    /// that write fails silently: `signInAnonymously()` returns a perfectly good session,
+    /// and one line later `auth.session` and `auth.currentUser` are both empty — so every
+    /// call that guards on `Supa.userID` quietly does nothing, and the launch gate reports
+    /// "Couldn't load your profile" for a profile it never asked for.
+    ///
+    /// The Keychain is right on a device and stays there. This swap is simulator-only,
+    /// matching the backend split in SupabaseConfig: the simulator is a throwaway
+    /// environment, and an anonymous token in its UserDefaults is not a secret worth
+    /// protecting.
+    private static var sessionStorage: any AuthLocalStorage {
+        #if targetEnvironment(simulator)
+        return SimulatorSessionStorage()
+        #else
+        return AuthClient.Configuration.defaultLocalStorage
+        #endif
+    }
 
     /// Current signed-in user id, if any.
     static var userID: UUID? {
@@ -43,7 +66,13 @@ enum Supa {
         if (try? await client.auth.session) != nil { return true }
         do {
             _ = try await client.auth.signInAnonymously()
-            return true
+            // Verify the session actually landed rather than trusting the call that made it.
+            // A sign-in that succeeds on the wire but cannot be read back is, to every
+            // caller downstream, identical to never having signed in — they all guard on
+            // `Supa.userID`. Returning `true` there reports a success we cannot back up, and
+            // the athlete gets "Couldn't load your profile" for a profile nothing ever asked
+            // for. Same rule as LaunchGate: a failure must never wear another failure's face.
+            return (try? await client.auth.session) != nil
         } catch {
             Telemetry.error("auth.anonymous_sign_in_failed", error)
             return false
@@ -59,4 +88,11 @@ enum Supa {
             .upsert(ProfileInsert(id: uid), onConflict: "id", ignoreDuplicates: true)
             .execute()
     }
+}
+
+/// UserDefaults-backed session storage. Simulator only — see `Supa.sessionStorage`.
+private struct SimulatorSessionStorage: AuthLocalStorage {
+    func store(key: String, value: Data) throws { UserDefaults.standard.set(value, forKey: key) }
+    func retrieve(key: String) throws -> Data? { UserDefaults.standard.data(forKey: key) }
+    func remove(key: String) throws { UserDefaults.standard.removeObject(forKey: key) }
 }
