@@ -5,9 +5,6 @@ struct ProgressScreen: View {
     @EnvironmentObject private var store: RunStore
     @EnvironmentObject private var router: TabRouter
 
-    /// v1 beta: fixed race target until Goal Setup is wired.
-    static let raceDate = Calendar.current.date(from: DateComponents(year: 2026, month: 10, day: 11))!
-
     var body: some View {
         Screen(title: "Progress", subtitle: subtitle) {
             projected
@@ -18,10 +15,13 @@ struct ProgressScreen: View {
         .refreshable { await store.refresh() }
     }
 
+    /// The countdown is whatever the athlete's actual goal says — name, date, and the
+    /// no-goal case included. The rule lives in `Engine/RaceCountdown.swift`; the header
+    /// that used to hardcode Chicago is the reason it's pinned there (#36).
     private var subtitle: String {
-        let days = Calendar.current.dateComponents([.day], from: .now, to: Self.raceDate).day ?? 0
-        let weeks = Int((Double(days) / 7.0).rounded(.up))
-        return "\(weeks) weeks to Chicago"
+        RaceCountdown.state(
+            raceName: store.goal?.raceName, raceDay: store.goal?.raceDay, now: .now
+        ).subtitle
     }
 
     @ViewBuilder private var projected: some View {
