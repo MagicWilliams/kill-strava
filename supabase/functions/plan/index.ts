@@ -15,6 +15,22 @@ import { createClient } from "npm:@supabase/supabase-js@2";
 
 const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
 const MODEL = "claude-sonnet-5";
+
+// Same scar as coach/index.ts (#16): Sonnet 5 thinks by default, and thinking is drawn from
+// the SAME max_tokens budget as the output. The old ceiling of 1500 was sized for a model
+// that didn't think — one deliberation over phase math and there is nothing left to emit the
+// tool call with, and this function's failure is a bare 502 "no shape proposed" with no plan
+// built. Rarer than the coach bug only because plans are created rarely, not because it was
+// any less broken.
+//
+// Forced tool_choice alongside thinking is fine here: that combination is restricted on
+// Amazon Bedrock only, and this calls the Claude API directly.
+const SAMPLING = {
+  max_tokens: 16000,
+  thinking: { type: "adaptive" },
+  output_config: { effort: "medium" },
+} as const;
+
 const MI = 1609.34;
 
 // ── Pace math (port of ios/Tempo/Engine/TrainingPaces.swift) ─────────────────
@@ -329,7 +345,7 @@ features: ${JSON.stringify(features, null, 1)}
       method: "POST",
       headers: { "x-api-key": apiKey, "anthropic-version": "2023-06-01", "content-type": "application/json" },
       body: JSON.stringify({
-        model: MODEL, max_tokens: 1500, system,
+        model: MODEL, ...SAMPLING, system,
         tools: [SHAPE_TOOL], tool_choice: { type: "tool", name: "propose_plan_shape" },
         messages: [{ role: "user", content: "Propose the plan shape." }],
       }),
@@ -340,7 +356,12 @@ features: ${JSON.stringify(features, null, 1)}
     }
     const ai = await resp.json();
     const shape = ai.content?.find((b: { type: string }) => b.type === "tool_use")?.input as Shape | undefined;
-    if (!shape) return Response.json({ error: "no shape proposed" }, { status: 502 });
+    if (!shape) {
+      // The one line that turns "the plan button did nothing" into a diagnosis. Its twin in
+      // coach/index.ts is what identified the thinking-budget bug from a single log query.
+      console.error("no shape proposed", JSON.stringify({ stop_reason: ai.stop_reason, usage: ai.usage }));
+      return Response.json({ error: "no shape proposed" }, { status: 502 });
+    }
 
     // Normalize phase weeks to exactly planWeeks (guard against model arithmetic).
     const sum = shape.phases.reduce((n, p) => n + p.weeks, 0);
