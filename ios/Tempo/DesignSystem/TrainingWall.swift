@@ -43,18 +43,31 @@ struct TrainingWall: View {
 
     // MARK: - Grid
 
+    /// Drawn with `Canvas`, not a grid of `RoundedRectangle`s.
+    ///
+    /// A year is 371 cells; six years of archive would be ~2,200 SwiftUI views in one
+    /// scroll section, each with its own identity and layout pass, for something that is
+    /// visually one picture. Canvas draws the whole year in a single immediate-mode pass.
+    /// Nothing is lost: hit testing was never per-cell — the scrub already maps a finger
+    /// position onto a cell arithmetically.
     private func grid(_ block: RunHistory.YearBlock) -> some View {
         let width = CGFloat(block.weeks.count) * (cell + gap) - gap
         let height = 7 * (cell + gap) - gap
 
-        return HStack(alignment: .top, spacing: gap) {
-            ForEach(Array(block.weeks.enumerated()), id: \.offset) { _, week in
-                VStack(spacing: gap) {
-                    ForEach(0..<7, id: \.self) { row in
-                        RoundedRectangle(cornerRadius: 1, style: .continuous)
-                            .fill(color(for: week[row]))
-                            .frame(width: cell, height: cell)
-                    }
+        return Canvas { context, _ in
+            for (col, week) in block.weeks.enumerated() {
+                for row in 0..<7 {
+                    guard let day = week[row] else { continue }
+                    let rect = CGRect(
+                        x: CGFloat(col) * (cell + gap),
+                        y: CGFloat(row) * (cell + gap),
+                        width: cell,
+                        height: cell
+                    )
+                    context.fill(
+                        Path(roundedRect: rect, cornerRadius: 1, style: .continuous),
+                        with: .color(color(for: day))
+                    )
                 }
             }
         }
