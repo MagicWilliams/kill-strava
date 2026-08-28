@@ -71,4 +71,92 @@ final class RunDedupeTests: XCTestCase {
         XCTAssertTrue(RunDedupe.newRuns(from: [], existing: [run(0)]).isEmpty)
         XCTAssertEqual(RunDedupe.newRuns(from: [run(0)], existing: []).count, 1)
     }
+
+    // MARK: - Two clocks, one run
+
+    /// One run at a fixed distance, recorded against a specific clock.
+    private func clocked(_ secondsFromEpoch: Int, meters: Int, durationS: Int,
+                         avgHR: Int? = nil, id: UUID = UUID()) -> RunSummary {
+        RunSummary(
+            id: id,
+            start: Date(timeIntervalSince1970: TimeInterval(secondsFromEpoch)),
+            distanceM: meters,
+            durationS: durationS,
+            avgHR: avgHR
+        )
+    }
+
+    func testTwoClocksInOneBatchMergeInsteadOfDroppingOne() {
+        // The 2022-04-03 shape: 6.50 mi exported twice, 58:28 moving and 1:02:26 elapsed.
+        // The old rule kept whichever HealthKit returned first and binned the other.
+        let moving = clocked(0, meters: 10461, durationS: 3508)
+        let elapsed = clocked(1, meters: 10461, durationS: 3746)
+        let kept = RunDedupe.newRuns(from: [elapsed, moving], existing: [])
+
+        XCTAssertEqual(kept.count, 1, "still one run — this is not two runs")
+        XCTAssertEqual(kept.first?.durationS, 3508, "the shorter clock is moving time")
+        XCTAssertEqual(kept.first?.elapsedS, 3746, "the longer clock is kept, not discarded")
+        XCTAssertEqual(kept.first?.clocks.stoppedS, 238)
+    }
+
+    func testMergeKeepsHeartRateFromWhicheverCopyCarriedIt() {
+        // Garmin associates HR with one export and not the other; the merged run should
+        // not lose it just because the moving-time copy happened to arrive without it.
+        let moving = clocked(0, meters: 10461, durationS: 3508, avgHR: nil)
+        let elapsed = clocked(2, meters: 10461, durationS: 3746, avgHR: 152)
+        XCTAssertEqual(RunDedupe.newRuns(from: [moving, elapsed], existing: []).first?.avgHR, 152)
+    }
+
+    func testNearMissDistanceIsStillDroppedNotMerged() {
+        // Two devices recording one outing: within a few hundred metres but not identical.
+        // Dedupe must still collapse them to one row, and must NOT invent a stopped time
+        // out of two unrelated GPS traces.
+        let a = clocked(0, meters: 10108, durationS: 2895)
+        let b = clocked(3, meters: 10286, durationS: 2965)
+        let kept = RunDedupe.newRuns(from: [a, b], existing: [])
+        XCTAssertEqual(kept.count, 1)
+        XCTAssertNil(kept.first?.elapsedS, "different traces are not two clocks on one run")
+    }
+
+    func testASecondClockTeachesAnExistingRowItsElapsedTime() {
+        let stored = clocked(0, meters: 10461, durationS: 3508)
+        let elapsedCopy = clocked(1, meters: 10461, durationS: 3746)
+        let result = RunDedupe.reconcile(candidates: [elapsedCopy], existing: [stored])
+
+        XCTAssertTrue(result.inserts.isEmpty, "the run is already recorded")
+        XCTAssertEqual(result.elapsedPatches[stored.id], 3746)
+    }
+
+    func testARowHoldingElapsedTimeIsReportedRatherThanRewritten() {
+        // The stored row has the LONGER duration, so its "moving time" is really elapsed
+        // and its pace has been reading slow for years. Fixing that rewrites history, so
+        // the rule reports it and changes nothing.
+        let stored = clocked(0, meters: 10461, durationS: 3746)
+        let movingCopy = clocked(1, meters: 10461, durationS: 3508)
+        let result = RunDedupe.reconcile(candidates: [movingCopy], existing: [stored])
+
+        XCTAssertTrue(result.inserts.isEmpty)
+        XCTAssertTrue(result.elapsedPatches.isEmpty, "never silently rewrite duration_s")
+        XCTAssertEqual(result.suspectedElapsedStored, [stored.id])
+    }
+
+    func testACorrectedRowIsNeverTouched() {
+        // The athlete's own edit is the record. A re-export must not amend it, even
+        // additively — the corrected duration is not the same quantity HealthKit measured.
+        var stored = clocked(0, meters: 10461, durationS: 3508)
+        stored.corrected = true
+        let elapsedCopy = clocked(1, meters: 10461, durationS: 3746)
+        let result = RunDedupe.reconcile(candidates: [elapsedCopy], existing: [stored])
+        XCTAssertTrue(result.elapsedPatches.isEmpty)
+    }
+
+    func testAPlainReExportStillCarriesNothingNew() {
+        // Same distance, same duration: migration 0008's class. Nothing to learn.
+        let stored = clocked(0, meters: 10461, durationS: 3508)
+        let copy = clocked(2, meters: 10461, durationS: 3508)
+        let result = RunDedupe.reconcile(candidates: [copy], existing: [stored])
+        XCTAssertTrue(result.inserts.isEmpty)
+        XCTAssertTrue(result.elapsedPatches.isEmpty)
+        XCTAssertTrue(result.suspectedElapsedStored.isEmpty)
+    }
 }

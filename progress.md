@@ -50,6 +50,42 @@ Decisions, so the remaining nine screens get converted the same way:
 Onboarding. `Card(glow:)` is a temporary shim mapping to `Well.accent`; delete it when the
 last screen is done.
 
+## Moving time vs elapsed time — the two clocks (2026-08-27)
+
+David's read on the #30 duplicates: they are not all junk, some are Strava's **elapsed** vs
+**moving** time for one run. Checking the 194 overlapping pairs against the real database,
+that is true of a specific, identifiable subset and not of the rest:
+
+| Class | Pairs | Signature | What it is |
+|---|---|---|---|
+| A | 25 | same distance **and** duration | plain re-export — 0008's class |
+| B | 71 | **same distance to the meter**, durations differ | **one run, two clocks** ✅ |
+| C | 86 | distance within 5% but not equal | two devices recording one outing |
+| D | 58 | distance differs >5% (up to 24×) | fragments, watch left running, splits vs whole |
+
+Class B is mechanical and now handled: distance identical to the meter proves one GPS trace,
+and moving time can never exceed elapsed, so the shorter clock is moving and there is no
+judgment call. Migration 0009 folds each pair into one run carrying both. **C and D are
+still David's call** — every simple rule gets them wrong, and on 2023-11-19 "keep the
+longest" deletes the actual marathon in favour of the blob recorded afterwards.
+
+Decisions worth keeping:
+
+1. **`duration_s` keeps its meaning: moving time.** Elapsed went into a *new* column, so
+   every pace, total, record, load score, and the plan function's feature extraction read
+   the same number they always did. Nothing shifts when the migration lands.
+2. **Moving time is the default everywhere; the detail page is the only place elapsed
+   appears.** Labels, pace, and mileage are moving. The detail page's Time card is the one
+   place the app says which clock it is using.
+3. **Stopped time under 30 s is noise, not a stop.** Half the whole-hour re-import pairs
+   differ by 1–8 seconds — a re-export rounding differently, not standing still. Both the
+   migration and `TimeAccounting` refuse to call that a stop.
+4. **Ingest folds instead of dropping.** `RunDedupe.reconcile` keeps the second copy's clock
+   rather than binning it, so the case that created this mess cannot recur silently.
+5. **Never auto-rewrite `duration_s`.** Where the stored row holds the *longer* clock, its
+   pace has been reading slow for years — fixing it rewrites history, so it is reported via
+   telemetry (`sync.elapsed_stored_as_moving`) and left alone.
+
 ## Loose ends / ops
 
 - ~~Fonts~~ **Fonts added 2026-07-08** — all 6 ttfs in `Resources/Fonts/`, PostScript names verified against `Tokens.swift`, confirmed bundled in the built .app.

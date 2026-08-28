@@ -25,6 +25,7 @@ struct RunDetailView: View {
                         titleRow
                         heroStats
                         coachRead
+                        timeAccounting
                         statsGrid
                         if let detail = model.detail, !detail.series.isEmpty {
                             paceHRChart(detail)
@@ -224,12 +225,21 @@ struct RunDetailView: View {
     // MARK: - Stats
 
     /// Big distance number + the two facts you check first. Corrected DB totals win.
+    ///
+    /// The headline time is **moving time**, always, and it is read off the stored run
+    /// rather than off HealthKit. Those used to be the same number; since migration 0009
+    /// they are not necessarily — a run whose two clocks arrived as two records now has
+    /// its moving clock in `duration_s`, and HealthKit's copy may be the elapsed one.
+    /// Preferring the workout here would put a slow pace under a fast run.
     private var heroStats: some View {
         let d = model.detail
         let corrected = run.corrected
         let miles = corrected ? run.miles : (d?.miles ?? run.miles)
-        let pace = corrected ? run.paceSecPerMile : (d?.avgPaceSec ?? run.paceSecPerMile)
-        let time = corrected ? run.durationS : (d?.timerS ?? run.durationS)
+        let time = run.durationS
+        // Derived from the two numbers beside it rather than read off HealthKit, so the
+        // three cannot disagree on screen — distance ÷ time must equal the pace printed
+        // between them.
+        let pace = TimeAccounting.paceSecPerMile(seconds: time, miles: miles)
         return HStack(alignment: .firstTextBaseline, spacing: 8) {
             Text(String(format: "%.2f", miles))
                 .font(Tokens.Font.display(52)).foregroundStyle(Tokens.Palette.textPrimary)
@@ -245,17 +255,70 @@ struct RunDetailView: View {
         .padding(.top, -4)
     }
 
+    // MARK: - The two clocks
+
+    /// Moving time, elapsed time, and the gap between them.
+    ///
+    /// Every run has two honest answers to "how long did that take", and until now the app
+    /// picked one without saying which. They only differ when the athlete stopped — a light,
+    /// a water fountain, a conversation — and that difference is worth seeing: a long run
+    /// with twelve minutes of standing around is a different session from the same distance
+    /// run straight through, even though both report the same moving pace.
+    ///
+    /// Moving time is the default everywhere else in the app. This is the one place that
+    /// says so out loud, and the only place elapsed time is shown.
+    @ViewBuilder
+    private var timeAccounting: some View {
+        // The stored run is the record. HealthKit's wall clock only stands in for rows the
+        // backfill hasn't reached, and never for a corrected run — there the athlete's
+        // numbers are the truth and HealthKit describes a run that no longer matches.
+        let fallback = run.corrected ? nil : model.detail?.elapsedS
+        let elapsed = run.elapsedS ?? fallback
+        let clocks = TimeAccounting.resolve(movingS: run.durationS, elapsedS: elapsed)
+
+        if elapsed != nil {
+            Card {
+                SectionLabel("Time")
+                if clocks.hasMeaningfulStop {
+                    HStack(alignment: .top, spacing: 12) {
+                        clockColumn("MOVING", clocks.movingS, pace: true)
+                        clockColumn("ELAPSED", clocks.elapsedS, pace: true)
+                        clockColumn("STOPPED", clocks.stoppedS, pace: false)
+                    }
+                    Text("Pace, mileage, and this run's label all use moving time.")
+                        .font(Tokens.Font.ui(12)).foregroundStyle(Tokens.Palette.textTertiary)
+                } else {
+                    Text("Ran continuously — moving and elapsed time are the same.")
+                        .font(Tokens.Font.ui(13)).foregroundStyle(Tokens.Palette.textSecondary)
+                }
+            }
+        }
+    }
+
+    private func clockColumn(_ label: String, _ seconds: Int, pace showPace: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(format(seconds: seconds)).display(20)
+            SectionLabel(label)
+            if showPace, let p = TimeAccounting.paceSecPerMile(seconds: seconds, miles: run.miles) {
+                Text(PaceModel.format(p) + " /mi")
+                    .mono(11, Tokens.Palette.textTertiary)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
     private var statsGrid: some View {
         let d = model.detail
         // A corrected run's DB totals are the truth — raw HealthKit only covers the
         // recorded portion, so its time-accounting tiles are hidden to avoid contradiction.
         let corrected = run.corrected
+        // Time accounting moved out of this grid and into `timeAccounting`, which reads the
+        // stored clocks rather than re-deriving them from samples. Three tiles used to show
+        // moving/elapsed/elapsed-pace here from a second, sample-derived estimate; keeping
+        // both meant the page could print two different answers for the same question.
         let stats: [(String, String)?] = [
-            corrected ? nil : d?.elapsedPaceSec.map { ("ELAPSED PACE", PaceModel.format($0) + " /mi") },
             d?.bestPaceSec.map { ("BEST PACE", PaceModel.format($0) + " /mi") },
             corrected ? nil : d?.avgSpeedMph.map { ("AVG SPEED", String(format: "%.1f mph", $0)) },
-            corrected ? nil : d.map { ("MOVING TIME", format(seconds: $0.movingS)) },
-            corrected ? nil : d.map { ("ELAPSED TIME", format(seconds: $0.elapsedS)) },
             (run.avgHR ?? d?.avgHR).map { ("AVG HR", "\($0) bpm") },
             d?.maxHR.map { ("MAX HR", "\($0) bpm") },
             d?.elevGainM.map { ("ELEV GAIN", String(format: "%.0f ft", $0 * 3.28084)) },

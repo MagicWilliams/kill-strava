@@ -152,6 +152,14 @@ final class RunStore: ObservableObject {
             if let idx = runs.firstIndex(where: { $0.id == id }) { runs[idx].avgHR = bpm }
         }
 
+        // Same shape, for the wall clock: rows written before elapsed time was stored get
+        // it from the workouts this refresh already read. Runs out after a few passes.
+        if !ingested.isEmpty {
+            for (id, seconds) in await health.backfillElapsed(runs, from: ingested) {
+                if let idx = runs.firstIndex(where: { $0.id == id }) { runs[idx].elapsedS = seconds }
+            }
+        }
+
         await matchRunsToSessions()
         await autoAdaptMissedQuality()
         await recomputeProjection()
@@ -243,6 +251,7 @@ final class RunStore: ObservableObject {
         let start_time: Date
         let distance_m: Int
         let duration_s: Int
+        let elapsed_duration_s: Int?
         let avg_hr: Int?
         let corrected: Bool
         let source: String
@@ -269,7 +278,7 @@ final class RunStore: ObservableObject {
         while true {
             let page: [RunRow] = try await Supa.client
                 .from("runs")
-                .select("id,start_time,distance_m,duration_s,avg_hr,corrected,source,external_id")
+                .select("id,start_time,distance_m,duration_s,elapsed_duration_s,avg_hr,corrected,source,external_id")
                 .is("superseded_by", value: nil)
                 .order("start_time", ascending: false)
                 .range(from: offset, to: offset + RunFetch.pageSize - 1)
@@ -288,6 +297,7 @@ final class RunStore: ObservableObject {
                 start: $0.start_time,
                 distanceM: $0.distance_m,
                 durationS: $0.duration_s,
+                elapsedS: $0.elapsed_duration_s,
                 avgHR: $0.avg_hr,
                 corrected: $0.corrected,
                 source: $0.source,
@@ -444,7 +454,14 @@ struct CoachContext: Encodable {
         let id: String
         let date: String
         let miles: Double
+        /// Over moving time — the same pace the athlete sees on the run's label.
         let pace_per_mile: String?
+        /// Minutes spent stopped mid-run, present only when there were any worth naming.
+        /// A long run broken up by ten minutes of standing around is a different session
+        /// from the same distance run straight through, and the coach can only say so if
+        /// it is told. Absent means "no stops recorded", not "ran continuously" — runs
+        /// ingested before elapsed time was stored simply don't know.
+        let stopped_min: Int?
         let avg_hr: Int?
         let corrected: Bool
     }
@@ -540,6 +557,7 @@ extension RunStore {
                     date: $0.start.formatted(day),
                     miles: ($0.miles * 10).rounded() / 10,
                     pace_per_mile: $0.paceSecPerMile.map(PaceModel.format),
+                    stopped_min: $0.clocks.hasMeaningfulStop ? $0.clocks.stoppedS / 60 : nil,
                     avg_hr: $0.avgHR,
                     corrected: $0.corrected
                 )
