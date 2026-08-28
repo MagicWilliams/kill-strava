@@ -73,6 +73,47 @@ enum RunHistory {
             .sorted { $0.weekStart > $1.weekStart }
     }
 
+    // MARK: - Year rail
+
+    /// One year offered as a jump target on the history screen.
+    struct YearMark: Identifiable, Equatable {
+        let year: Int
+        /// The month to scroll to — the *newest* month of that year that survives whatever
+        /// filter is active. Landing on a year means landing at its top, which is December
+        /// in a full year and whatever is left in a sparse one.
+        let anchor: Date
+        /// Runs in that year under the active filter. Read by the rail's accessibility label,
+        /// which is the only place a rail this narrow can say anything.
+        let runCount: Int
+
+        var id: Int { year }
+    }
+
+    /// The years a rendered month list can jump to, newest first.
+    ///
+    /// Takes the months the screen is *already showing* rather than the whole archive, and
+    /// that is the whole trick: the rail composes with the filter for free. A year appears
+    /// only if it has runs under the active filter, and its anchor is by construction a
+    /// section that exists on screen — so a jump can never land on nothing. Offering 2022
+    /// while "Half+" is active and then scrolling into an empty stretch would be worse than
+    /// not offering 2022 at all.
+    ///
+    /// Returns nothing for a single-year list. A rail with one destination is not a rail;
+    /// it is a button that does what the top of the screen already does.
+    static func yearRail(_ months: [Month], calendar: Calendar = RunHistory.calendar) -> [YearMark] {
+        let byYear = Dictionary(grouping: months) { calendar.component(.year, from: $0.start) }
+        guard byYear.count > 1 else { return [] }
+        return byYear
+            .map { year, inYear in
+                YearMark(
+                    year: year,
+                    anchor: inYear.map(\.start).max() ?? inYear[0].start,
+                    runCount: inYear.reduce(0) { $0 + $1.runCount }
+                )
+            }
+            .sorted { $0.year > $1.year }
+    }
+
     // MARK: - Records
 
     /// A "fastest run" record is scoped to a minimum distance, so a blistering 1-mile

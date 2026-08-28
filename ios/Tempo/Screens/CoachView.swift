@@ -188,34 +188,45 @@ struct CoachView: View {
 
             switch state {
             case .pending, .failed:
-                if state == .failed {
-                    Text("That didn't go through — Confirm to retry.")
-                        .font(Tokens.Font.ui(12)).foregroundStyle(Tokens.Palette.danger)
-                }
-                HStack(spacing: 8) {
-                    Button {
-                        Task { _ = await chat.confirm(messageID, runStore: store) }
-                    } label: {
-                        Text(state == .failed ? "Retry" : "Confirm")
-                            .font(Tokens.Font.ui(14, .bold))
-                            .foregroundStyle(Tokens.Palette.onVolt)
-                            .padding(.horizontal, 18).padding(.vertical, 9)
-                            .background(Tokens.Palette.volt)
-                            .clipShape(Capsule())
+                if chat.confirmQueue.isAwaitingTurn(messageID) {
+                    // Tapped, but a confirm ahead of it is still applying. Leaving the buttons
+                    // up would be a lie twice over: the tap is already banked, and tapping
+                    // again does nothing (#38).
+                    HStack(spacing: 10) {
+                        ProgressView().controlSize(.small).tint(Tokens.Palette.textTertiary)
+                        Text("Queued — one change at a time…")
+                            .font(Tokens.Font.ui(13)).foregroundStyle(Tokens.Palette.textTertiary)
                     }
-                    .buttonStyle(Pressable())
-                    Button {
-                        Task { await chat.dismiss(messageID, runStore: store) }
-                    } label: {
-                        Text("Dismiss")
-                            .font(Tokens.Font.ui(14, .medium))
-                            .foregroundStyle(Tokens.Palette.textSecondary)
-                            .padding(.horizontal, 14).padding(.vertical, 9)
-                            .background(Tokens.Palette.surface)
-                            .clipShape(Capsule())
-                            .overlay(Capsule().strokeBorder(Tokens.Palette.elevated, lineWidth: 1))
+                } else {
+                    if state == .failed {
+                        Text("That didn't go through — Confirm to retry.")
+                            .font(Tokens.Font.ui(12)).foregroundStyle(Tokens.Palette.danger)
                     }
-                    .buttonStyle(Pressable())
+                    HStack(spacing: 8) {
+                        Button {
+                            Task { _ = await chat.confirm(messageID, runStore: store) }
+                        } label: {
+                            Text(state == .failed ? "Retry" : "Confirm")
+                                .font(Tokens.Font.ui(14, .bold))
+                                .foregroundStyle(Tokens.Palette.onVolt)
+                                .padding(.horizontal, 18).padding(.vertical, 9)
+                                .background(Tokens.Palette.volt)
+                                .clipShape(Capsule())
+                        }
+                        .buttonStyle(Pressable())
+                        Button {
+                            Task { await chat.dismiss(messageID, runStore: store) }
+                        } label: {
+                            Text("Dismiss")
+                                .font(Tokens.Font.ui(14, .medium))
+                                .foregroundStyle(Tokens.Palette.textSecondary)
+                                .padding(.horizontal, 14).padding(.vertical, 9)
+                                .background(Tokens.Palette.surface)
+                                .clipShape(Capsule())
+                                .overlay(Capsule().strokeBorder(Tokens.Palette.elevated, lineWidth: 1))
+                        }
+                        .buttonStyle(Pressable())
+                    }
                 }
             case .applying:
                 HStack(spacing: 10) {
