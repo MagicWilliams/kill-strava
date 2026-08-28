@@ -48,6 +48,18 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: studio.delight.tempo
         TARGETED_DEVICE_FAMILY: "1"
         GENERATE_INFOPLIST_FILE: NO
+  TempoUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    deploymentTarget: "17.0"
+    sources:
+      - path: TempoUITests
+    dependencies:
+      - target: Tempo
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: studio.delight.tempo.uitests
+        GENERATE_INFOPLIST_FILE: YES
   TempoTests:
     type: bundle.unit-test
     platform: iOS
@@ -61,6 +73,16 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: studio.delight.tempo.tests
         GENERATE_INFOPLIST_FILE: YES
 schemes:
+  TempoUI:
+    build:
+      targets:
+        Tempo: all
+        TempoUITests: [test]
+    test:
+      targets:
+        - TempoUITests
+    run:
+      config: Debug
   Tempo:
     build:
       targets:
