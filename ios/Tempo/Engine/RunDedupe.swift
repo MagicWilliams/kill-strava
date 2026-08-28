@@ -50,6 +50,25 @@ enum RunDedupe {
         /// meaning the row holds elapsed time in the moving-time column, and its pace has
         /// been reading slow. Reported, never auto-corrected: see below.
         var suspectedElapsedStored: [UUID] = []
+
+        /// Candidates dropped that we already hold under that exact HealthKit uuid. The
+        /// boring majority of every single refresh — ~1,690 of 2,038 on David's phone — and
+        /// the reason the drop count on its own says nothing. Counted, not reported.
+        var droppedAlreadyStored: Int = 0
+
+        /// Candidates dropped by the start-time window while carrying a uuid that has never
+        /// been stored. This, and only this, is the Garmin re-export signal: the same run
+        /// wearing a new id. `SyncPass.reExportSignal` decides when it is worth an event.
+        var droppedUnknownUUID: Int = 0
+
+        /// Which of the two buckets a dropped candidate belongs in.
+        fileprivate mutating func countDrop(_ candidate: RunSummary, knownIDs: Set<String>) {
+            if let ext = candidate.externalID, knownIDs.contains(ext) {
+                droppedAlreadyStored += 1
+            } else {
+                droppedUnknownUUID += 1
+            }
+        }
     }
 
     /// Dedupe, but keep the information the old rule threw away.
@@ -76,6 +95,10 @@ enum RunDedupe {
         window: TimeInterval = windowSeconds
     ) -> Reconciliation {
         var result = Reconciliation()
+        // Which candidates are already ours by uuid. The DB's unique constraint catches
+        // these anyway; knowing *which* drops they were is what keeps the re-export signal
+        // from firing on a perfectly healthy refresh.
+        let knownIDs = Set(existing.compactMap(\.externalID))
 
         for candidate in candidates {
             let isNear = { (other: RunSummary) in
@@ -91,6 +114,7 @@ enum RunDedupe {
                         result.suspectedElapsedStored.append(match.id)
                     }
                 }
+                result.countDrop(candidate, knownIDs: knownIDs)
                 continue
             }
 
@@ -99,6 +123,7 @@ enum RunDedupe {
                 if isOtherClock(result.inserts[i], candidate) {
                     result.inserts[i] = merged(result.inserts[i], candidate)
                 }
+                result.countDrop(candidate, knownIDs: knownIDs)
                 continue
             }
 
