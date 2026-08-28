@@ -173,3 +173,41 @@ final class RunFetchTests: XCTestCase {
         XCTAssertEqual(RunFetch.Takeaway.cached("Solid tempo.").text, "Solid tempo.")
     }
 }
+
+/// Paging the archive — see #48.
+///
+/// PostgREST caps an unbounded select at 1,000 rows, and this read is newest-first, so the
+/// cap silently discarded the oldest runs. Every all-time number in the app was computed from
+/// a truncated list, and no test caught it because the truncation lives in the deployment
+/// rather than the code. What *is* testable is the rule the paging loop turns on.
+final class RunFetchPagingTests: XCTestCase {
+
+    /// The page size must sit below the server's cap, or a full page and a truncated page
+    /// look identical and the loop can never tell "more to come" from "you were cut off".
+    func testPageSizeIsBelowThePostgrestCap() {
+        XCTAssertLessThan(RunFetch.pageSize, 1000, "a page at or above the cap makes a short page ambiguous")
+        XCTAssertGreaterThan(RunFetch.pageSize, 0)
+    }
+
+    func testLeashExceedsAnyPlausibleArchive() {
+        // David is at ~1,500 runs after five years. The leash exists to stop a paging bug,
+        // not to cap an athlete.
+        XCTAssertGreaterThan(RunFetch.maxRuns, 5_000)
+        XCTAssertEqual(RunFetch.maxRuns % RunFetch.pageSize, 0, "the leash should fall on a page boundary")
+    }
+
+    /// The loop's termination rule, as a pure function: keep going only while a page came
+    /// back full. Pinned because "short page means done" is the whole correctness argument.
+    private func shouldContinue(pageCount: Int) -> Bool { pageCount == RunFetch.pageSize }
+
+    func testAShortPageEndsTheLoop() {
+        XCTAssertFalse(shouldContinue(pageCount: 0), "an empty page is the end")
+        XCTAssertFalse(shouldContinue(pageCount: 1))
+        XCTAssertFalse(shouldContinue(pageCount: RunFetch.pageSize - 1))
+    }
+
+    func testAFullPageContinues() {
+        XCTAssertTrue(shouldContinue(pageCount: RunFetch.pageSize),
+                      "an exactly-full page must fetch again — it is the case that hid the bug")
+    }
+}

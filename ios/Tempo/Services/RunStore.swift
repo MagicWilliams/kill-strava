@@ -249,17 +249,39 @@ final class RunStore: ObservableObject {
         let external_id: String?
     }
 
+    /// Read every run, a page at a time.
+    ///
+    /// PostgREST caps an unbounded select at 1,000 rows. This read is newest-first, so the
+    /// cap silently discarded the *oldest* runs — which is why it survived so long: weekly
+    /// mileage, readiness, and the coach's 21-day context were all correct, and until the
+    /// History screen shipped there was no surface that could show the far end of the
+    /// archive. David's earliest ~474 runs, all of 2021 among them, had never been displayed
+    /// (#48). Every all-time figure computed from this list was quietly wrong.
+    ///
+    /// Paged rather than solved by raising the server's `max-rows`: that moves the cliff
+    /// instead of removing it, and the next athlete with a longer history falls off it.
     private func fetchFromSupabase() async throws -> [RunSummary] {
         // `superseded_by` marks a row as a duplicate of another run (migration 0008 —
         // Garmin re-exports that predate the ingest dedupe). Retired rows are kept for
         // reversibility but must never reach a total, a record, or the coach's context.
-        let rows: [RunRow] = try await Supa.client
-            .from("runs")
-            .select("id,start_time,distance_m,duration_s,avg_hr,corrected,source,external_id")
-            .is("superseded_by", value: nil)
-            .order("start_time", ascending: false)
-            .execute()
-            .value
+        var rows: [RunRow] = []
+        var offset = 0
+        while true {
+            let page: [RunRow] = try await Supa.client
+                .from("runs")
+                .select("id,start_time,distance_m,duration_s,avg_hr,corrected,source,external_id")
+                .is("superseded_by", value: nil)
+                .order("start_time", ascending: false)
+                .range(from: offset, to: offset + RunFetch.pageSize - 1)
+                .execute()
+                .value
+            rows.append(contentsOf: page)
+            // A short page is the last page. An exactly-full final page costs one extra
+            // round trip that comes back empty — cheaper than guessing at a total.
+            if page.count < RunFetch.pageSize { break }
+            offset += RunFetch.pageSize
+            if offset >= RunFetch.maxRuns { break }   // a leash, so a bad cursor cannot spin forever
+        }
         return rows.map {
             RunSummary(
                 id: $0.id,
