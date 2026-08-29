@@ -150,6 +150,77 @@ final class RunDedupeTests: XCTestCase {
         XCTAssertTrue(result.elapsedPatches.isEmpty)
     }
 
+    // MARK: - Why a candidate was dropped
+
+    /// A stored row as the DB returns it: its own row id, the HealthKit uuid in
+    /// `externalID`. That column is the only thing that distinguishes a workout we already
+    /// hold from one wearing a new id.
+    private func stored(_ minutesFromEpoch: Int, externalID: String) -> RunSummary {
+        var run = self.run(minutesFromEpoch)
+        run.externalID = externalID
+        return run
+    }
+
+    /// A HealthKit candidate, whose `externalID` is its own workout uuid.
+    private func candidate(_ minutesFromEpoch: Int, externalID: String = UUID().uuidString) -> RunSummary {
+        var run = self.run(minutesFromEpoch)
+        run.externalID = externalID
+        return run
+    }
+
+    func testAHealthyRefreshExplainsEveryDropAndSignalsNothing() {
+        // The ordinary case, and the one that made the old signal useless: a full HealthKit
+        // read re-offers the whole archive, and every dropped candidate is a workout we
+        // already store under that exact uuid. 1,690 drops, nothing to report (#37).
+        let ids = (0..<50).map { _ in UUID().uuidString }
+        let existing = ids.enumerated().map { stored($0.offset * 24 * 60, externalID: $0.element) }
+        let candidates = ids.enumerated().map { candidate($0.offset * 24 * 60, externalID: $0.element) }
+
+        let result = RunDedupe.reconcile(candidates: candidates, existing: existing)
+        XCTAssertTrue(result.inserts.isEmpty)
+        XCTAssertEqual(result.droppedAlreadyStored, 50)
+        XCTAssertEqual(result.droppedUnknownUUID, 0, "a workout we already hold is not evidence of anything")
+    }
+
+    func testAReExportUnderFreshUUIDsIsCountedSeparately() {
+        // What the signal is actually for: the same runs arriving with uuids we have never
+        // stored. Dedupe still drops them — but this is the one that is worth an event.
+        let ids = (0..<3).map { _ in UUID().uuidString }
+        let existing = ids.enumerated().map { stored($0.offset * 24 * 60, externalID: $0.element) }
+        let reExported = (0..<3).map { candidate($0 * 24 * 60 + 1) }   // new uuids, clock drifted
+
+        let result = RunDedupe.reconcile(candidates: reExported, existing: existing)
+        XCTAssertTrue(result.inserts.isEmpty)
+        XCTAssertEqual(result.droppedUnknownUUID, 3)
+        XCTAssertEqual(result.droppedAlreadyStored, 0)
+    }
+
+    func testBothCopiesArrivingInOneBatchCountAsUnknown() {
+        // Nothing in the DB to compare against, so the collision is between two candidates.
+        // A second uuid for a run we are about to write is the re-export shape too.
+        let result = RunDedupe.reconcile(candidates: [candidate(600), candidate(602)], existing: [])
+        XCTAssertEqual(result.inserts.count, 1)
+        XCTAssertEqual(result.droppedUnknownUUID, 1)
+    }
+
+    func testEveryDropLandsInExactlyOneBucket() {
+        // The counts have to add up, or the signal is arguing with the drop total.
+        let known = UUID().uuidString
+        let existing = [stored(0, externalID: known), stored(24 * 60, externalID: UUID().uuidString)]
+        let candidates = [
+            candidate(0, externalID: known),   // already ours
+            candidate(24 * 60 + 1),            // re-export of the second stored run
+            candidate(48 * 60),                // genuinely new
+            candidate(48 * 60 + 1)             // ...and its twin, inside this batch
+        ]
+        let result = RunDedupe.reconcile(candidates: candidates, existing: existing)
+        XCTAssertEqual(result.inserts.count, 1)
+        XCTAssertEqual(result.droppedAlreadyStored + result.droppedUnknownUUID,
+                       candidates.count - result.inserts.count)
+        XCTAssertEqual(result.droppedAlreadyStored, 1)
+        XCTAssertEqual(result.droppedUnknownUUID, 2)
+    }
+
     func testAPlainReExportStillCarriesNothingNew() {
         // Same distance, same duration: migration 0008's class. Nothing to learn.
         let stored = clocked(0, meters: 10461, durationS: 3508)

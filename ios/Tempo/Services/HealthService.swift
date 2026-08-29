@@ -81,6 +81,13 @@ final class HealthService {
     /// Second dedupe layer: Garmin re-exports the SAME run as a brand-new HKWorkout
     /// (new uuid) whenever its Health settings change — uuid dedupe can't catch that,
     /// so any candidate starting within ±5 min of an already-recorded run is skipped.
+    ///
+    /// **The order here is the fix for #37: dedupe, write, then report.** HR enrichment
+    /// used to sit between the dedupe and the upsert, one serial HealthKit query per new
+    /// run, on the premise that "kept is small". With a five-year archive `kept` was 348,
+    /// the refresh never reached the write, and nothing was persisted or logged — the same
+    /// 348 recomputed on every launch. Nothing that queries HealthKit may run before the
+    /// upsert; enrichment happens after it, capped, in `backfillMissingHR`. See `SyncPass`.
     @discardableResult
     func sync(_ summaries: [RunSummary], existing: [RunSummary]) async throws -> Int {
         guard let userID = Supa.userID?.uuidString, !summaries.isEmpty else { return 0 }
@@ -88,19 +95,9 @@ final class HealthService {
         // Dedupe rule lives in RunDedupe (pure + unit-tested) — see that file for why
         // the uuid constraint alone is not enough.
         let reconciled = RunDedupe.reconcile(candidates: summaries, existing: existing)
-        var kept = reconciled.inserts
+        let kept = reconciled.inserts
 
-        // The Garmin re-export signature: a large batch collapsing to almost nothing.
-        // Silent when healthy (a normal refresh drops everything it already has); the
-        // agent looks for the shape where many candidates arrive and many are dropped,
-        // which is what a settings-change re-export looks like from in here.
-        let dropped = summaries.count - kept.count
-        if dropped > 0 && summaries.count >= 5 {
-            Telemetry.info("sync.dedupe_dropped", "re-export suspected",
-                           context: ["candidates": "\(summaries.count)",
-                                     "dropped": "\(dropped)",
-                                     "kept": "\(kept.count)"])
-        }
+        reportDedupeDrops(reconciled, candidates: summaries.count, kept: kept.count)
 
         // A dropped twin sometimes carries the run's other clock. Enriching an existing row
         // with it is safe — it only fills a column that was empty.
@@ -118,13 +115,10 @@ final class HealthService {
 
         guard !kept.isEmpty else { return 0 }
 
-        // Garmin doesn't associate HR with its workouts — enrich new rows from the
-        // time window before they're written (kept is small: only new runs).
-        for i in kept.indices where kept[i].avgHR == nil {
-            let end = kept[i].start.addingTimeInterval(TimeInterval(kept[i].durationS))
-            kept[i].avgHR = await windowAverageHR(start: kept[i].start, end: end)
-        }
-
+        // Runs Garmin exported without HR are written with `avg_hr` null and filled in
+        // afterwards by `backfillMissingHR`, which runs on every refresh and is capped.
+        // A recent run gets its heart rate in this same refresh, one update later —
+        // a second the write no longer waits on.
         let inserts = kept.map { run in
             RunInsert(
                 user_id: userID,
@@ -142,7 +136,49 @@ final class HealthService {
             .from("runs")
             .upsert(inserts, onConflict: "user_id,source,external_id", ignoreDuplicates: true)
             .execute()
+
+        // Only reachable once the write has returned. #37 hid for weeks because the sole
+        // number the app reported was computed before the upsert, so "kept 348" and "wrote
+        // 0" could disagree in silence. The date range is here because it settles what the
+        // backlog actually is: one sync tells us whether those runs are the archive's
+        // missing years or last week's.
+        let report = SyncPass.writeReport(for: kept)
+        Telemetry.info("sync.inserted", "runs written",
+                       context: ["count": "\(report.count)",
+                                 "oldest": report.oldest ?? "-",
+                                 "newest": report.newest ?? "-"])
         return inserts.count
+    }
+
+    /// The Garmin re-export signature — reported only when it is actually news.
+    ///
+    /// A healthy refresh re-reads all of HealthKit and drops everything already stored,
+    /// so the raw drop count is ~1,690 every time and means nothing. What the gate looks
+    /// at is candidates carrying a uuid we have never stored, and only when that number
+    /// has moved since the last refresh. The rule is pure and pinned in `SyncPass`.
+    private func reportDedupeDrops(_ reconciled: RunDedupe.Reconciliation,
+                                   candidates: Int, kept: Int) {
+        let unexplained = reconciled.droppedUnknownUUID
+        let lastSeen = Self.lastUnexplainedDrops
+        // Recorded every pass, reported or not, so the comparison tracks the real trend.
+        Self.lastUnexplainedDrops = unexplained
+
+        guard SyncPass.reExportSignal(unexplained: unexplained, lastSeen: lastSeen) else { return }
+        Telemetry.info("sync.dedupe_dropped", "re-export suspected",
+                       context: ["candidates": "\(candidates)",
+                                 "kept": "\(kept)",
+                                 "already_stored": "\(reconciled.droppedAlreadyStored)",
+                                 "unknown_uuid": "\(unexplained)",
+                                 "last_seen": lastSeen.map(String.init) ?? "none"])
+    }
+
+    /// The previous refresh's unexplained-drop count, so a standing condition is reported
+    /// once instead of on every launch. UserDefaults on purpose: losing it costs one
+    /// duplicate event, which is a far cheaper failure than a table full of them.
+    private static let unexplainedDropsKey = "sync.dedupeDrops.unknownUUID.lastSeen"
+    private static var lastUnexplainedDrops: Int? {
+        get { UserDefaults.standard.object(forKey: unexplainedDropsKey) as? Int }
+        set { UserDefaults.standard.set(newValue, forKey: unexplainedDropsKey) }
     }
 
     /// Fill `elapsed_duration_s` on rows that were ingested before it existed.
@@ -190,15 +226,16 @@ final class HealthService {
     }
 
     /// Repair pass: recent DB rows that predate HR enrichment get their avg HR filled
-    /// from HealthKit's time window. Capped per refresh so sync stays snappy; a few
-    /// refreshes clear the backlog. Corrected rows are never touched (coach-set values).
-    func backfillMissingHR(_ dbRuns: [RunSummary], limit: Int = 25) async -> [UUID: Int] {
+    /// from HealthKit's time window. Corrected rows are never touched (coach-set values).
+    ///
+    /// This is where HR enrichment lives now — *after* the write, never in front of it
+    /// (#37). Which rows qualify, and how many, is decided by `SyncPass.hrEnrichmentTargets`
+    /// so the cap is a tested number rather than a loop condition: no refresh can turn a
+    /// 348-run backlog into 348 serial HealthKit queries again.
+    func backfillMissingHR(_ dbRuns: [RunSummary], limit: Int = SyncPass.hrEnrichmentLimit) async -> [UUID: Int] {
         guard Self.isAvailable else { return [:] }
-        let cutoff = Calendar.current.date(byAdding: .day, value: -90, to: .now) ?? .now
         var updated: [UUID: Int] = [:]
-        for run in dbRuns where run.avgHR == nil && !run.corrected
-            && run.source == "healthkit" && run.start >= cutoff {
-            if updated.count >= limit { break }
+        for run in SyncPass.hrEnrichmentTargets(rows: dbRuns, limit: limit) {
             let end = run.start.addingTimeInterval(TimeInterval(run.durationS))
             guard let bpm = await windowAverageHR(start: run.start, end: end) else { continue }
             struct Patch: Encodable { let avg_hr: Int }
