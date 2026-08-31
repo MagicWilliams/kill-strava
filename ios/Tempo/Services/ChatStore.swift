@@ -246,14 +246,18 @@ final class ChatStore: ObservableObject {
         messages[idx].actionState = .applying
         busyLabel = Self.busyLabel(for: action.type)
         defer { busyLabel = nil }
+        // What the action wants said about itself, held until after the confirmation turn is
+        // in the transcript. The plan paths are the only ones that narrate; letting them
+        // append it themselves is what put the result above the tap that asked for it (#39).
+        var narration: String?
         do {
             switch action.type {
             case "amend_run":          try await applyAmend(action)
             case "add_run":            try await applyAdd(action, messageID: messageID)
             case "set_risk_tolerance": try await applyRiskTolerance(action, runStore: runStore)
             case "update_athlete":     try await applyAthleteUpdate(action, runStore: runStore)
-            case "create_plan":        try await applyCreatePlan(action, runStore: runStore)
-            case "update_plan_settings": try await applyPlanSettings(action, runStore: runStore)
+            case "create_plan":        narration = try await applyCreatePlan(action, runStore: runStore)
+            case "update_plan_settings": narration = try await applyPlanSettings(action, runStore: runStore)
             case "update_session":     try await applyUpdateSession(action, runStore: runStore)
             case "complete_onboarding": await applyCompleteOnboarding(runStore: runStore)
             default:
@@ -271,7 +275,10 @@ final class ChatStore: ObservableObject {
         }
         messages[idx].actionState = .applied
         persist(.applied, for: messageID)
+        // Causal order: the tap, then what it did. Both go in before the acknowledgement round
+        // trip, so the coach is answering a transcript that already reads correctly.
         append(.user, "Confirmed — \(action.displaySummary)")
+        if let narration { append(.coach, narration) }
         let reloaded = await runStore.reloadFromSupabase()
         if !reloaded {
             // The write landed; only the re-read didn't. Saying nothing here is what makes
@@ -461,12 +468,14 @@ final class ChatStore: ObservableObject {
         runStore.setRiskTolerance(level)
     }
 
-    private func applyCreatePlan(_ action: ProposedAction, runStore: RunStore) async throws {
+    /// Returns the line to narrate, for the caller to place — see `PlanNarration`.
+    private func applyCreatePlan(_ action: ProposedAction, runStore: RunStore) async throws -> String? {
         guard let goalTime = action.goal_time_s, let raceDate = action.race_date else { throw ActionError.badParams }
-        try await invokePlanEngine(goalTimeS: goalTime, raceName: action.race_name, raceDate: raceDate, runStore: runStore)
+        return try await invokePlanEngine(goalTimeS: goalTime, raceName: action.race_name, raceDate: raceDate, runStore: runStore)
     }
 
-    private func applyPlanSettings(_ action: ProposedAction, runStore: RunStore, regenerate: Bool = true) async throws {
+    /// Returns the line to narrate, for the caller to place — see `PlanNarration`.
+    private func applyPlanSettings(_ action: ProposedAction, runStore: RunStore, regenerate: Bool = true) async throws -> String? {
         guard let uid = Supa.userID?.uuidString,
               action.days_per_week != nil || action.long_run_day != nil else { throw ActionError.badParams }
         struct Patch: Encodable { let days_per_week: Int?; let long_run_day: Int? }
@@ -474,13 +483,14 @@ final class ChatStore: ObservableObject {
             .update(Patch(days_per_week: action.days_per_week, long_run_day: action.long_run_day))
             .eq("id", value: uid).execute()
         runStore.setPlanSettings(daysPerWeek: action.days_per_week, longRunDay: action.long_run_day)
-        guard regenerate else { return }
+        guard regenerate else { return nil }
         // Cascade: settings change regenerates the plan forward + recomputes projection.
         if let goal = runStore.goal, let t = goal.goalTimeSeconds, !goal.raceDate.isEmpty {
-            try await invokePlanEngine(goalTimeS: t, raceName: goal.raceName, raceDate: goal.raceDate, runStore: runStore)
+            return try await invokePlanEngine(goalTimeS: t, raceName: goal.raceName, raceDate: goal.raceDate, runStore: runStore)
         } else if !onboardingMode {
-            append(.coach, "Settings saved. No active plan to rebuild yet — they'll shape the plan when we create it.")
+            return PlanNarration.settingsSavedWithoutPlan
         }
+        return nil
     }
 
     /// Adapt a single session (move it, change its content, or skip it).
@@ -512,9 +522,14 @@ final class ChatStore: ObservableObject {
         await runStore.loadPlan()
     }
 
-    /// Calls the /plan Edge Function (assessment → shape → generated schedule) and
-    /// narrates the result into the conversation.
-    private func invokePlanEngine(goalTimeS: Int, raceName: String?, raceDate: String, runStore: RunStore) async throws {
+    /// Calls the /plan Edge Function (assessment → shape → generated schedule) and returns
+    /// the line describing what came back.
+    ///
+    /// It deliberately does not append that line itself. It used to, and since it runs inside
+    /// the confirmed-action switch, the result landed above the "Confirmed — …" turn that
+    /// asked for it (#39). Handing the line back lets the caller — which knows whether a
+    /// confirmation turn precedes it — decide where it goes.
+    private func invokePlanEngine(goalTimeS: Int, raceName: String?, raceDate: String, runStore: RunStore) async throws -> String? {
         struct Req: Encodable { let goal_time_s: Int; let race_name: String?; let race_date: String }
         struct Rep: Decodable {
             let weeks: Int?
@@ -529,17 +544,14 @@ final class ChatStore: ObservableObject {
             options: FunctionInvokeOptions(body: Req(goal_time_s: goalTimeS, race_name: raceName, race_date: raceDate))
         )
         await runStore.loadPlan()
-        if let weeks = rep.weeks {
-            var lines = ["Plan is live: \(weeks) weeks (\((rep.archetype ?? "custom").replacingOccurrences(of: "_", with: " ")))."]
-            if let s = rep.start_weekly_mi, let p = rep.peak_weekly_mi {
-                lines.append("Volume runs \(String(format: "%.0f", s)) → \(String(format: "%.0f", p)) mi/wk.")
-            }
-            if let proj = rep.projected_finish_s {
-                lines.append("Projection today: \(PaceModel.formatFinish(proj)).")
-            }
-            if let why = rep.rationale { lines.append(why) }
-            append(.coach, lines.joined(separator: " "))
-        }
+        return PlanNarration.planIsLive(PlanNarration.PlanResult(
+            weeks: rep.weeks,
+            archetype: rep.archetype,
+            rationale: rep.rationale,
+            projectedFinishSeconds: rep.projected_finish_s,
+            startWeeklyMiles: rep.start_weekly_mi,
+            peakWeeklyMiles: rep.peak_weekly_mi
+        ))
     }
 
     private func applyAthleteUpdate(_ action: ProposedAction, runStore: RunStore) async throws {
@@ -594,7 +606,8 @@ final class ChatStore: ObservableObject {
                             switch action.type {
                             case "update_athlete":       try await self.applyAthleteUpdate(action, runStore: store)
                             case "update_plan_settings":
-                                try await self.applyPlanSettings(action, runStore: store, regenerate: false)
+                                // `regenerate: false` — nothing to narrate; the rebuild below is.
+                                _ = try await self.applyPlanSettings(action, runStore: store, regenerate: false)
                                 settingsTouched = true
                             case "set_risk_tolerance":   try await self.applyRiskTolerance(action, runStore: store)
                             case "complete_onboarding":  await store.markOnboarded()
@@ -605,7 +618,13 @@ final class ChatStore: ObservableObject {
                         }
                     }
                     if settingsTouched, let goal = store.goal, let t = goal.goalTimeSeconds, !goal.raceDate.isEmpty {
-                        try? await self.invokePlanEngine(goalTimeS: t, raceName: goal.raceName, raceDate: goal.raceDate, runStore: store)
+                        // No confirmation turn to sit under here — the interview applied these
+                        // silently — so the narration goes in on its own.
+                        if let line = try? await self.invokePlanEngine(
+                            goalTimeS: t, raceName: goal.raceName, raceDate: goal.raceDate, runStore: store
+                        ) {
+                            self.append(.coach, line)
+                        }
                     }
                 }
             }
