@@ -26,7 +26,10 @@ struct ProgressScreen: View {
 
     @ViewBuilder private var projected: some View {
         let projection = store.plan?.projected_finish_s
-        let goalTime = store.goal?.goalTimeSeconds
+        let goal = store.goalLine
+        // One notion of "there is a target" for the whole card: the tag, the caption and the
+        // Goal column all read it here, so they cannot disagree about what's known (#44).
+        let goalTime = goal.seconds
         // Tapping through is where the number stops being a verdict: the detail page shows
         // the single run it came from and how much it has bounced around getting here.
         Button {
@@ -48,13 +51,17 @@ struct ProgressScreen: View {
                         .foregroundStyle(Tokens.Palette.textTertiary)
                 }
                 HStack(alignment: .firstTextBaseline, spacing: 12) {
-                    Text(projection.map(PaceModel.formatFinish) ?? "—:—:—")
+                    Text(projection.map(PaceModel.formatFinish) ?? GoalLine.unknownFinish)
                         .font(Tokens.Font.display(40))
                         .foregroundStyle(projection == nil ? Tokens.Palette.textTertiary : Tokens.Palette.textPrimary)
                     VStack(alignment: .leading, spacing: 1) {
                         SectionLabel("Goal")
-                        Text(goalTime.map(PaceModel.formatFinish) ?? "3:15:00")
-                            .font(Tokens.Font.mono(15)).foregroundStyle(Tokens.Palette.textSecondary)
+                        // Dashes, not a borrowed 3:15:00 (#44). With no goal this sits beside
+                        // a projection that already renders as dashes; the two now admit to
+                        // the same ignorance instead of one of them bluffing.
+                        Text(goal.finishTime)
+                            .font(Tokens.Font.mono(15))
+                            .foregroundStyle(goalTime == nil ? Tokens.Palette.textTertiary : Tokens.Palette.textSecondary)
                     }
                 }
                 Text(projectionCaption(projection: projection, goalTime: goalTime))
