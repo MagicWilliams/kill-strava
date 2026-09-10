@@ -522,17 +522,24 @@ struct CoachContext: Encodable {
 }
 
 extension RunStore {
-    /// v1 beta: the goal is fixed to the reference athlete until Goal Setup is wired.
-    static let goalDescription =
-        "Sub-3:15 at the Chicago Marathon on 2026-10-11. Rebuilding from a small base after an inconsistent year — currently in base-building."
+    /// What the goal is, for anything that has to describe it. The decision — including
+    /// every case where there is nothing to describe — lives in `Engine/GoalLine.swift`;
+    /// the `static let goalDescription` that used to assert sub-3:15 at Chicago to the
+    /// coach before the athlete had any goal is the reason it's pinned there (#44).
+    var goalLine: GoalLine.State {
+        GoalLine.state(
+            raceName: goal?.raceName,
+            raceDate: goal?.raceDate,
+            goalTimeSeconds: goal?.goalTimeSeconds,
+            hasGoal: goal != nil
+        )
+    }
 
     func coachContext(onboarding: Bool = false) -> CoachContext {
         let day = Date.FormatStyle(date: .abbreviated, time: .omitted)
         return CoachContext(
             today: Date.now.formatted(day),
-            goal: goal.map { g in
-                "\(g.raceName ?? "Race") on \(g.raceDate), target \(PaceModel.formatFinish(g.goalTimeSeconds ?? 0))"
-            } ?? Self.goalDescription + " (no plan yet — assess and propose one when the athlete is ready)",
+            goal: goalLine.coachLine,
             risk_tolerance: riskTolerance,
             max_hr: effectiveMaxHR,
             max_hr_basis: maxHRIsMeasured ? "measured" : "estimated (220 − age)",
