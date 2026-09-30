@@ -12,6 +12,10 @@
 // The LLM never writes sessions or paces — it tunes shape within bounds; math is code.
 
 import { createClient } from "npm:@supabase/supabase-js@2";
+import {
+  equivalentTime, fmtPace, generate, MI, mondayOf, racePlacement,
+  sessionDate, type Shape, trainingPaces,
+} from "./generator.ts";
 
 const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
 const MODEL = "claude-sonnet-5";
@@ -31,43 +35,12 @@ const SAMPLING = {
   output_config: { effort: "medium" },
 } as const;
 
-const MI = 1609.34;
-
-// ── Pace math (port of ios/Tempo/Engine/TrainingPaces.swift) ─────────────────
-function equivalentTime(t1: number, d1: number, d2: number): number {
-  return t1 * Math.pow(d2 / d1, 1.06);
-}
-function trainingPaces(goalSeconds: number) {
-  const marathonMi = 26.2188;
-  const tenMile = equivalentTime(goalSeconds, marathonMi, 10.0);
-  const threshold = tenMile / 10.0;
-  const marathon = equivalentTime(goalSeconds, marathonMi, marathonMi) / marathonMi;
-  return {
-    easy: Math.round(threshold + 75),
-    marathon: Math.round(marathon),
-    threshold: Math.round(threshold),
-    interval: Math.round(threshold - 20),
-    repetition: Math.round(threshold - 40),
-  };
-}
-function fmtPace(sec: number): string {
-  return `${Math.floor(sec / 60)}:${String(Math.round(sec) % 60).padStart(2, "0")}`;
-}
-
 // ── Feature extraction ────────────────────────────────────────────────────────
 interface RunRow {
   start_time: string;
   distance_m: number;
   duration_s: number;
   avg_hr: number | null;
-}
-
-function mondayOf(d: Date): Date {
-  const x = new Date(d);
-  const day = (x.getUTCDay() + 6) % 7; // 0 = Monday
-  x.setUTCDate(x.getUTCDate() - day);
-  x.setUTCHours(0, 0, 0, 0);
-  return x;
 }
 
 function extractFeatures(runs: RunRow[]) {
@@ -165,127 +138,6 @@ const SHAPE_TOOL = {
   },
 };
 
-// ── Generator (deterministic) ─────────────────────────────────────────────────
-interface Shape {
-  archetype: string;
-  rationale: string;
-  phases: { name: string; weeks: number; focus: string; quality_per_week: number }[];
-  start_weekly_mi: number;
-  peak_weekly_mi: number;
-  long_run_start_mi: number;
-  long_run_peak_mi: number;
-}
-
-function qualitySession(phase: string, paces: ReturnType<typeof trainingPaces>, weekInPhase: number) {
-  const t = fmtPace(paces.threshold);
-  const i = fmtPace(paces.interval);
-  const mp = fmtPace(paces.marathon);
-  switch (phase) {
-    case "base":
-      return weekInPhase % 2 === 0
-        ? { type: "tempo", title: "Light tempo", detail: `15–20 min @ ${t} inside an easy run`, pace: paces.threshold }
-        : { type: "interval", title: "Strides", detail: `8×20s fast, full recovery, inside an easy run`, pace: paces.repetition };
-    case "build":
-      return weekInPhase % 2 === 0
-        ? { type: "threshold", title: "Threshold repeats", detail: `3×1 mi @ ${t} w/ 2:00 jog`, pace: paces.threshold }
-        : { type: "tempo", title: "Steady tempo", detail: `2×15 min @ ${t} w/ 3:00 jog`, pace: paces.threshold };
-    case "peak":
-      return weekInPhase % 2 === 0
-        ? { type: "tempo", title: "Marathon-pace blocks", detail: `2×3 mi @ ${mp} w/ 1 mi easy`, pace: paces.marathon }
-        : { type: "interval", title: "VO₂ intervals", detail: `5×1000m @ ${i} w/ 2:30 jog`, pace: paces.interval };
-    default: // taper
-      return { type: "tempo", title: "Race-pace touch", detail: `4×half-mile @ ${mp}, feel springy`, pace: paces.marathon };
-  }
-}
-
-function generate(shape: Shape, opts: {
-  startMonday: Date; daysPerWeek: number; longRunDay: number; paces: ReturnType<typeof trainingPaces>;
-  wantsStrength: boolean;
-}) {
-  const totalWeeks = shape.phases.reduce((n, p) => n + p.weeks, 0);
-  const buildWeeks = shape.phases.filter((p) => p.name !== "taper").reduce((n, p) => n + p.weeks, 0);
-  const weeks: { index: number; phase: string; focus: string; target: number; quality: number }[] = [];
-  let w = 0;
-  for (const phase of shape.phases) {
-    for (let k = 0; k < phase.weeks; k++) {
-      let target: number;
-      if (phase.name === "taper") {
-        const taperIdx = w - buildWeeks;
-        target = shape.peak_weekly_mi * [0.72, 0.55, 0.4][Math.min(taperIdx, 2)];
-      } else {
-        const f = buildWeeks <= 1 ? 1 : w / (buildWeeks - 1);
-        target = shape.start_weekly_mi + (shape.peak_weekly_mi - shape.start_weekly_mi) * f;
-        if ((w + 1) % 4 === 0) target *= 0.85; // step-back week
-      }
-      weeks.push({ index: w, phase: phase.name, focus: phase.focus, target: +target.toFixed(1), quality: phase.quality_per_week });
-      w++;
-    }
-  }
-
-  // Sessions per week. Weekday offsets are relative to the plan-week Monday (0=Mon…6=Sun).
-  const longOffset = (opts.longRunDay + 6) % 7; // convert 0=Sun…6=Sat → 0=Mon…6=Sun
-  const qualityOffsets = [1, 3].filter((o) => o !== longOffset); // Tue/Thu
-  const easyPreference = [0, 2, 4, 5, 1, 3].filter((o) => o !== longOffset);
-
-  const sessions: {
-    week_index: number; day_offset: number; type: string; title: string;
-    target_distance_m: number | null; target_pace_sec: number | null; structure: unknown;
-  }[] = [];
-
-  for (const wk of weeks) {
-    const f = buildWeeks <= 1 ? 1 : Math.min(wk.index / (buildWeeks - 1), 1);
-    let longMi = shape.long_run_start_mi + (shape.long_run_peak_mi - shape.long_run_start_mi) * f;
-    if (wk.phase === "taper") longMi = Math.min(longMi, wk.target * 0.4);
-    longMi = Math.min(longMi, wk.target * 0.4);
-
-    const qualityCount = Math.min(wk.quality, qualityOffsets.length);
-    const qualityMi = 5.5; // incl. warmup/cooldown
-    const easyCount = Math.max(opts.daysPerWeek - 1 - qualityCount, 0);
-    const easyTotal = Math.max(wk.target - longMi - qualityCount * qualityMi, easyCount * 2.5);
-    const easyMi = easyCount > 0 ? easyTotal / easyCount : 0;
-
-    sessions.push({
-      week_index: wk.index, day_offset: longOffset, type: "long", title: "Long run",
-      target_distance_m: Math.round(longMi * MI), target_pace_sec: opts.paces.easy,
-      structure: { detail: `${longMi.toFixed(1)} mi steady @ ~${fmtPace(opts.paces.easy)}, conversational` },
-    });
-    for (let q = 0; q < qualityCount; q++) {
-      const s = qualitySession(wk.phase, opts.paces, wk.index);
-      sessions.push({
-        week_index: wk.index, day_offset: qualityOffsets[q], type: s.type, title: s.title,
-        target_distance_m: Math.round(qualityMi * MI), target_pace_sec: s.pace,
-        structure: { detail: s.detail },
-      });
-    }
-    let placed = 0;
-    const usedOffsets = new Set<number>([longOffset, ...qualityOffsets.slice(0, qualityCount)]);
-    for (const off of easyPreference) {
-      if (placed >= easyCount) break;
-      if (usedOffsets.has(off)) continue;
-      usedOffsets.add(off);
-      sessions.push({
-        week_index: wk.index, day_offset: off, type: "easy", title: "Easy run",
-        target_distance_m: Math.round(easyMi * MI), target_pace_sec: opts.paces.easy,
-        structure: { detail: `${easyMi.toFixed(1)} mi relaxed @ ~${fmtPace(opts.paces.easy)}` },
-      });
-      placed++;
-    }
-    // Prescribed strength (athlete opted in): lands on a non-running day,
-    // dialed back during taper.
-    if (opts.wantsStrength && wk.phase !== "taper") {
-      const free = [1, 4, 2, 5, 0, 3, 6].find((o) => !usedOffsets.has(o));
-      if (free !== undefined) {
-        sessions.push({
-          week_index: wk.index, day_offset: free, type: "cross", title: "Strength",
-          target_distance_m: null, target_pace_sec: null,
-          structure: { detail: "30–40 min: squats, lunges, calf raises, hips, core — heavy enough to matter, light enough to run tomorrow." },
-        });
-      }
-    }
-  }
-  return { weeks, sessions, totalWeeks };
-}
-
 // ── HTTP handler ──────────────────────────────────────────────────────────────
 Deno.serve(async (req) => {
   if (req.method !== "POST") return Response.json({ error: "POST only" }, { status: 405 });
@@ -322,10 +174,11 @@ Deno.serve(async (req) => {
     const features = extractFeatures((runs ?? []) as RunRow[]);
 
     const startMonday = mondayOf(new Date());
-    const raceDay = new Date(race_date + "T12:00:00Z");
-    const weeksToRace = Math.floor((raceDay.getTime() - startMonday.getTime()) / (7 * 86400_000));
+    const weeksToRace = racePlacement(startMonday, race_date).weekIndex;
     if (weeksToRace < 2) return Response.json({ error: "race is too close for a plan" }, { status: 400 });
-    const planWeeks = weeksToRace; // race week's partial days ride in the final taper week
+    // TRAINING weeks only — the shape excludes race week by contract, and generate()
+    // appends it. Read this as "the plan is one week longer than the shape it came from".
+    const planWeeks = weeksToRace;
 
     // Claude proposes the shape (forced tool call).
     const system = `You design the SHAPE of a running plan for Tempo. The athlete's real data and constraints are below. Rules:
@@ -374,7 +227,10 @@ features: ${JSON.stringify(features, null, 1)}
     }
 
     const paces = trainingPaces(goal_time_s);
-    const generated = generate(shape, { startMonday, daysPerWeek, longRunDay, paces, wantsStrength });
+    const generated = generate(shape, {
+      startMonday, daysPerWeek, longRunDay, paces, wantsStrength,
+      raceDate: race_date, raceName: race_name ?? null,
+    });
 
     // Projection: Riegel current fitness, nudged toward goal by volume adequacy.
     const projected = features.riegel_current_marathon_s ?? Math.round(goal_time_s * 1.06);
@@ -411,11 +267,9 @@ features: ${JSON.stringify(features, null, 1)}
     const weekIdByIndex = new Map((weekIds ?? []).map((w: { id: string; week_index: number }) => [w.week_index, w.id]));
 
     const sessionRows = generated.sessions.map((s) => {
-      const date = new Date(startMonday);
-      date.setUTCDate(date.getUTCDate() + s.week_index * 7 + s.day_offset);
       return {
         plan_id: plan.id, week_id: weekIdByIndex.get(s.week_index) ?? null, user_id: uid,
-        date: date.toISOString().slice(0, 10), type: s.type, title: s.title,
+        date: sessionDate(startMonday, s.week_index, s.day_offset), type: s.type, title: s.title,
         target_distance_m: s.target_distance_m, target_pace_sec: s.target_pace_sec,
         structure: s.structure, status: "planned",
       };
