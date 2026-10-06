@@ -54,6 +54,7 @@ struct HistoryView: View {
                         header
                         totals
                         wallCard
+                        bestEffortsCard
                         recordsCard
                         filterRow
                         archive
@@ -135,6 +136,74 @@ struct HistoryView: View {
 
     private var hours: String {
         Int((Double(records.totalDurationS) / 3600).rounded()).formatted()
+    }
+
+    // MARK: - Best efforts
+
+    /// The real PR table: the fastest segment of each distance found *anywhere inside* a
+    /// run (#25). It sits above "Records" on purpose — "fastest 10K+ run" is the weaker
+    /// claim of the two, and the strong one should not be the thing you scroll past.
+    ///
+    /// Absent entirely until migration 0011 is applied. A table that cannot be filled is
+    /// not shown empty.
+    @ViewBuilder private var bestEffortsCard: some View {
+        if store.bestEfforts.available, !store.bestEfforts.bests.isEmpty {
+            // Read once per render, not once per row: `effortsProgress` walks the whole
+            // archive, and this view body re-runs on every scroll frame.
+            let progress = store.effortsProgress
+            Card {
+                SectionLabel("Best efforts", color: Tokens.Palette.accentText)
+
+                ForEach(BestEfforts.distances) { distance in
+                    if let best = store.bestEfforts.best(distance.key) {
+                        bestEffortRow(distance, best)
+                    }
+                }
+
+                if !progress.isComplete {
+                    // A PR table that is 40% backfilled says so. A confident wrong number is
+                    // the failure mode every engine bug on this board shares.
+                    Text("Scanning the archive — \(progress.percent)% done (\(progress.scanned.formatted()) of \(progress.total.formatted()) runs). These can still improve.")
+                        .font(Tokens.Font.ui(11))
+                        .foregroundStyle(Tokens.Palette.textTertiary)
+                        .padding(.top, 2)
+                }
+            }
+        }
+    }
+
+    /// One distance. Tapping opens the run that holds it; a record pointing at a run this
+    /// screen doesn't have (a retired duplicate) simply renders without the chevron.
+    @ViewBuilder private func bestEffortRow(
+        _ distance: BestEfforts.Distance,
+        _ best: BestEffortsService.Best
+    ) -> some View {
+        let run = store.runs.first { $0.id == best.runID }
+        let pace = BestEfforts.paceSecPerMile(
+            BestEfforts.Effort(distanceM: best.distanceM, durationS: best.durationS)
+        )
+        Button {
+            if let run { router.openRun(run) }
+        } label: {
+            HStack(spacing: 8) {
+                Text(distance.label).font(Tokens.Font.ui(13)).foregroundStyle(Tokens.Palette.textSecondary)
+                Spacer()
+                Text(BestEfforts.formatTime(best.durationS)).mono(13, Tokens.Palette.textPrimary)
+                Text(pace.map { PaceModel.format($0) + " /mi" } ?? "—")
+                    .mono(11, Tokens.Palette.textTertiary)
+                    .frame(width: 58, alignment: .trailing)
+                if let run {
+                    Text(run.start.formatted(.dateTime.month(.abbreviated).year()))
+                        .mono(11, Tokens.Palette.textTertiary)
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 10)).foregroundStyle(Tokens.Palette.textTertiary)
+                }
+            }
+            .frame(height: 26)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(Pressable())
+        .disabled(run == nil)
     }
 
     // MARK: - Records
