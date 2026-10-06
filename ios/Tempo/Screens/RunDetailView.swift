@@ -40,6 +40,7 @@ struct RunDetailView: View {
                         if let detail = model.detail, detail.splits.count > 1 {
                             splitsCard(detail)
                         }
+                        bestEffortsCard
                         if run.corrected, let note = model.correctionNote {
                             editedStrip(note)
                         }
@@ -226,6 +227,38 @@ struct RunDetailView: View {
                     .foregroundStyle(Tokens.Palette.accentText)
             }
             .buttonStyle(.plain)
+        }
+    }
+
+    // MARK: - Best efforts
+
+    /// The fastest segment of each standard distance *inside this run* (#25), badged where
+    /// the run holds the all-time best.
+    ///
+    /// Read from `run_efforts` rather than recomputed here: the archive scan already paid
+    /// for the HealthKit read, and recomputing would make this page disagree with the PR
+    /// table on History the moment the two scans used different sample sets.
+    @ViewBuilder private var bestEffortsCard: some View {
+        if !model.efforts.isEmpty {
+            let holds = Set(store.bestEfforts.recordDistances(for: run.id))
+            Card {
+                SectionLabel("Best efforts in this run")
+                ForEach(model.efforts, id: \.distanceM) { effort in
+                    HStack(spacing: 8) {
+                        Text(BestEfforts.distance(forKey: effort.distanceM)?.label ?? "—")
+                            .font(Tokens.Font.ui(13)).foregroundStyle(Tokens.Palette.textSecondary)
+                        if holds.contains(effort.distanceM) {
+                            Tag(text: "PR")
+                        }
+                        Spacer()
+                        Text(BestEfforts.formatTime(effort.durationS)).mono(13, Tokens.Palette.textPrimary)
+                        Text(BestEfforts.paceSecPerMile(effort).map { PaceModel.format($0) + " /mi" } ?? "—")
+                            .mono(11, Tokens.Palette.textTertiary)
+                            .frame(width: 58, alignment: .trailing)
+                    }
+                    .frame(height: 26)
+                }
+            }
         }
     }
 
@@ -587,6 +620,9 @@ final class RunDetailStore: ObservableObject {
     @Published var takeaway: String?
     @Published var takeawayLoading = true
     @Published var correctionNote: String?
+    /// This run's sub-distance efforts (#25). Empty until the archive scan has reached this
+    /// run — and empty is also the right answer for a run too short to hold any.
+    @Published var efforts: [BestEfforts.Effort] = []
 
     private var started = false
 
@@ -608,6 +644,9 @@ final class RunDetailStore: ObservableObject {
         detail = await hkDetail
         loading = false
         correctionNote = extras?.correction_note
+        if runStore.bestEfforts.available {
+            efforts = await BestEffortsService().efforts(for: run.id)
+        }
 
         if let cached = extras?.coach_takeaway {
             takeaway = cached

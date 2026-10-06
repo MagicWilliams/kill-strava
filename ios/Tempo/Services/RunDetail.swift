@@ -94,6 +94,33 @@ final class RunDetailLoader {
         )
     }
 
+    /// Just the cumulative-distance curve for one run — no HR, no route, no splits.
+    ///
+    /// The sub-distance PR scan (#25) needs the distance timeline and nothing else, and it
+    /// needs it 1,476 times. `load` would also pull heart rate, step counts and the GPS
+    /// route for each of those runs, which is most of the cost of opening a run detail page
+    /// and all of it wasted here.
+    ///
+    /// An empty result is an answer, not a failure: a manual run has no workout behind it,
+    /// and some Garmin-written workouts have no distance samples at all. The caller marks
+    /// the run scanned either way — see `BestEffortsService`.
+    func distanceTimeline(run: RunSummary) async -> [BestEfforts.Point] {
+        guard run.source == "healthkit",
+              let ext = run.externalID, let hkID = UUID(uuidString: ext),
+              let workout = try? await workout(uuid: hkID) else { return [] }
+
+        let samples = (try? await quantitySamples(.distanceWalkingRunning, for: workout)) ?? []
+        let start = workout.startDate
+        let meterUnit = HKUnit.meter()
+        return BestEfforts.timeline(from: samples.map {
+            BestEfforts.Sample(
+                start: $0.startDate.timeIntervalSince(start),
+                end: $0.endDate.timeIntervalSince(start),
+                meters: $0.quantity.doubleValue(for: meterUnit)
+            )
+        })
+    }
+
     // MARK: - Queries
 
     private func workout(uuid: UUID) async throws -> HKWorkout? {

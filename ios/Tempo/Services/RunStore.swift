@@ -51,7 +51,14 @@ final class RunStore: ObservableObject {
     @Published var sessions: [SessionInfo] = []           // window: −7d … +14d
     @Published var todayCheckIn: CheckInInfo?
 
+    /// Sub-distance PRs (#25) — the fastest 5K *inside* a run, not the fastest 5K+ run.
+    /// Empty and `available == false` until migration 0011 is applied; see
+    /// `BestEffortsService` for why an absent table is reported rather than shown as zero.
+    @Published private(set) var bestEfforts = BestEffortsService.Snapshot()
+
     private let health = HealthService()
+    private let effortsService = BestEffortsService()
+    private var effortsBackfill: Task<Void, Never>?
 
     /// Training weeks run Mon–Sun.
     static let cal: Calendar = {
@@ -166,6 +173,81 @@ final class RunStore: ObservableObject {
         fitness = LoadModel.compute(runs: runs, checkInOK: todayCheckIn?.feelsOk)
         await loadTodayTakeaway()
         publishWidgetSnapshot()   // #76 — the widgets show exactly what this refresh produced
+        await refreshBestEfforts()
+    }
+
+    // MARK: - Sub-distance best efforts (#25)
+
+    /// Read the standing records, then keep the archive scan moving.
+    ///
+    /// Deliberately the last thing `refresh` does. The scan is a one-time pass over ~1,476
+    /// runs of HealthKit reads; nothing on Today or Plan waits for it, and it must never be
+    /// in front of something that does.
+    private func refreshBestEfforts() async {
+        let pending = !BestEfforts.nextSlice(rows: runs, scanned: bestEfforts.scanned, limit: 1).isEmpty
+        // Nothing unscanned and the table already loaded — don't re-read the whole marker
+        // column on every refresh for an answer that cannot have changed.
+        if bestEfforts.available && !pending { return }
+
+        let snapshot = await effortsService.snapshot()
+        // A failed read leaves whatever we already hold on screen rather than blanking the
+        // PR table: an unreachable table is not an empty one.
+        if snapshot.available { bestEfforts = snapshot }
+        guard bestEfforts.available else { return }
+        startEffortsBackfill()
+    }
+
+    /// Walk the unscanned archive a slice at a time until there is nothing left.
+    ///
+    /// One pass at a time — re-entering `refresh` while a scan is running must not start a
+    /// second one racing the first over the same runs. The task is cancelled on teardown
+    /// and resumes from the marker column next launch.
+    private func startEffortsBackfill() {
+        guard effortsBackfill == nil else { return }
+        effortsBackfill = Task { [weak self] in
+            guard let self else { return }
+            var scannedThisPass = 0
+            while !Task.isCancelled {
+                let slice = BestEfforts.nextSlice(rows: self.runs, scanned: self.bestEfforts.scanned)
+                if slice.isEmpty { break }
+
+                let covered = await self.effortsService.scanSlice(slice)
+                // Nothing written means the writes are failing, not that the work is done.
+                // Spinning on the same slice would read the whole archive out of HealthKit
+                // over and over for no result — stop and let the next refresh try again.
+                guard !covered.isEmpty else {
+                    Telemetry.warn("efforts.backfill_stalled",
+                                   "slice wrote nothing", context: ["slice": "\(slice.count)"])
+                    break
+                }
+                self.bestEfforts.scanned.formUnion(covered)
+                scannedThisPass += covered.count
+            }
+
+            if scannedThisPass > 0 {
+                // Records may have moved under us — re-read the standing bests so History
+                // and the coach see the same numbers.
+                let snapshot = await self.effortsService.snapshot()
+                if snapshot.available {
+                    self.bestEfforts = BestEffortsService.Snapshot(
+                        bests: snapshot.bests,
+                        scanned: snapshot.scanned.union(self.bestEfforts.scanned),
+                        available: true
+                    )
+                }
+                let progress = self.effortsProgress
+                Telemetry.info("efforts.backfill_pass", "sub-distance efforts scanned",
+                               context: ["runs": "\(scannedThisPass)",
+                                         "scanned": "\(progress.scanned)",
+                                         "total": "\(progress.total)"])
+            }
+            self.effortsBackfill = nil
+        }
+    }
+
+    /// How much of the archive the scan has covered — what History reports while it runs.
+    var effortsProgress: BestEfforts.Progress {
+        BestEfforts.progress(rows: runs, scanned: bestEfforts.scanned)
     }
 
     /// The coach read for today's completed session, previewed on Today.
@@ -502,6 +584,23 @@ struct CoachContext: Encodable {
         let known: [String: String]   // facts already on file — confirm, don't re-ask
     }
 
+    /// The athlete's standing sub-distance PRs — the fastest 5 K *inside* a run, not the
+    /// fastest 5 K+ run (#25). Seven rows at most, so the payload grows by a few hundred
+    /// tokens and not by a list per distance.
+    struct BestEffortsCtx: Encodable {
+        struct EffortCtx: Encodable {
+            let distance: String       // "5K"
+            let time: String           // "18:45"
+            let pace_per_mile: String?
+            let date: String
+            let run_id: String         // the run that holds it, for amend_run and for citing
+        }
+        /// Present only while the archive scan is unfinished. A coach quoting a PR table
+        /// that is 40 % backfilled has to know that is what it is quoting.
+        let note: String?
+        let efforts: [EffortCtx]
+    }
+
     let today: String
     let goal: String
     let risk_tolerance: String
@@ -521,6 +620,7 @@ struct CoachContext: Encodable {
     let check_in_today: String?
     let recent_runs: [RunCtx]      // last 21 days
     let weekly_mileage: [WeekCtx]  // last 8 weeks, oldest first
+    let best_efforts: BestEffortsCtx?   // nil until migration 0011 is applied
 }
 
 extension RunStore {
@@ -577,7 +677,43 @@ extension RunStore {
                     miles: ($0.miles * 10).rounded() / 10,
                     runs: $0.runCount
                 )
-            }
+            },
+            best_efforts: bestEffortsContext()
+        )
+    }
+
+    /// Sub-distance PRs for the coach, or nothing at all.
+    ///
+    /// Nothing at all in two cases, and they are different: the schema isn't there yet, or
+    /// no run has been scanned into a record. Either way the key is absent rather than
+    /// empty — an empty list reads as "this athlete has no PRs", which would be a claim
+    /// about his training rather than about our backfill.
+    private func bestEffortsContext() -> CoachContext.BestEffortsCtx? {
+        guard bestEfforts.available else { return nil }
+        let day = Date.FormatStyle(date: .abbreviated, time: .omitted)
+        let byID = Dictionary(runs.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+
+        let efforts = BestEfforts.distances.compactMap { d -> CoachContext.BestEffortsCtx.EffortCtx? in
+            guard let best = bestEfforts.best(d.key), let run = byID[best.runID] else { return nil }
+            let pace = BestEfforts.paceSecPerMile(
+                BestEfforts.Effort(distanceM: best.distanceM, durationS: best.durationS)
+            )
+            return CoachContext.BestEffortsCtx.EffortCtx(
+                distance: d.label,
+                time: BestEfforts.formatTime(best.durationS),
+                pace_per_mile: pace.map(PaceModel.format),
+                date: run.start.formatted(day),
+                run_id: run.id.uuidString
+            )
+        }
+        guard !efforts.isEmpty else { return nil }
+
+        let progress = effortsProgress
+        return CoachContext.BestEffortsCtx(
+            note: progress.isComplete
+                ? nil
+                : "Archive scan \(progress.percent)% complete (\(progress.scanned) of \(progress.total) runs) — these may still improve.",
+            efforts: efforts
         )
     }
 
