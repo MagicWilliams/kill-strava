@@ -56,8 +56,16 @@ final class RunStore: ObservableObject {
     /// `BestEffortsService` for why an absent table is reported rather than shown as zero.
     @Published private(set) var bestEfforts = BestEffortsService.Snapshot()
 
+    /// Overlapping pairs still waiting for the athlete's ruling (#30), newest first. Empty —
+    /// and the review row hidden — until migration 0012 is applied.
+    @Published private(set) var overlaps: [RunDedupe.OverlapPair] = []
+    @Published private(set) var overlapReview = OverlapReviewService.Snapshot()
+    /// The last ruling made on the review screen, for its Undo. One deep on purpose.
+    @Published private(set) var lastOverlapDecision: OverlapDecisionRecord?
+
     private let health = HealthService()
     private let effortsService = BestEffortsService()
+    private let overlapService = OverlapReviewService()
     private var effortsBackfill: Task<Void, Never>?
 
     /// Training weeks run Mon–Sun.
@@ -173,7 +181,65 @@ final class RunStore: ObservableObject {
         fitness = LoadModel.compute(runs: runs, checkInOK: todayCheckIn?.feelsOk)
         await loadTodayTakeaway()
         publishWidgetSnapshot()   // #76 — the widgets show exactly what this refresh produced
+        await refreshOverlapReview()
         await refreshBestEfforts()
+    }
+
+    // MARK: - Overlapping runs (#30)
+
+    /// A ruling as it was applied, with the run it took out of `runs` so Undo can put it back.
+    struct OverlapDecisionRecord: Equatable {
+        let resolution: RunDedupe.OverlapResolution
+        let retiredRun: RunSummary?
+    }
+
+    private func refreshOverlapReview() async {
+        let snapshot = await overlapService.snapshot()
+        // A failed read keeps what we already hold rather than flipping the feature off
+        // mid-session; before 0012 is applied there is nothing held, so it stays off.
+        if snapshot.available { overlapReview = snapshot }
+        recomputeOverlaps()
+    }
+
+    private func recomputeOverlaps() {
+        overlaps = overlapReview.available
+            ? RunDedupe.unresolvedOverlaps(in: runs, reviewed: overlapReview.reviewed)
+            : []
+    }
+
+    /// Rule on one pair. Returns false if the write did not land, in which case nothing on
+    /// screen changes — a decision that only *looks* saved comes back next launch.
+    ///
+    /// On success the retired run leaves `runs` here and now, exactly as the next read would
+    /// drop it (`superseded_by is not null`), so History's totals and records recompute
+    /// without a round trip through ~2,000 rows per tap.
+    func resolveOverlap(_ pair: RunDedupe.OverlapPair, _ verdict: RunDedupe.OverlapVerdict) async -> Bool {
+        guard let resolution = RunDedupe.resolution(for: pair, verdict) else { return false }
+        guard await overlapService.record(resolution) else { return false }
+
+        overlapReview.reviewed.insert(resolution.key)
+        var retiredRun: RunSummary?
+        if let retire = resolution.retire, let i = runs.firstIndex(where: { $0.id == retire }) {
+            retiredRun = runs.remove(at: i)
+        }
+        lastOverlapDecision = OverlapDecisionRecord(resolution: resolution, retiredRun: retiredRun)
+        recomputeOverlaps()
+        return true
+    }
+
+    /// Take back the last ruling: the retired run returns and the pair is asked about again.
+    func undoLastOverlapDecision() async -> Bool {
+        guard let last = lastOverlapDecision else { return false }
+        guard await overlapService.undo(last.resolution) else { return false }
+
+        overlapReview.reviewed.remove(last.resolution.key)
+        if let run = last.retiredRun, !runs.contains(where: { $0.id == run.id }) {
+            runs.append(run)
+            runs.sort { $0.start > $1.start }
+        }
+        lastOverlapDecision = nil
+        recomputeOverlaps()
+        return true
     }
 
     // MARK: - Sub-distance best efforts (#25)
@@ -290,6 +356,7 @@ final class RunStore: ObservableObject {
             runs = dbRuns
             phase = runs.isEmpty ? .empty : .ready
             dataWarning = nil
+            recomputeOverlaps()
             return true
         case .incomplete, .unreachable:
             dataWarning = RunFetch.Copy.editNotReflected

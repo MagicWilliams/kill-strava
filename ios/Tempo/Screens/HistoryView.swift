@@ -53,6 +53,7 @@ struct HistoryView: View {
                     LazyVStack(alignment: .leading, spacing: 14, pinnedViews: [.sectionHeaders]) {
                         header
                         totals
+                        overlapRow
                         wallCard
                         bestEffortsCard
                         recordsCard
@@ -131,6 +132,32 @@ struct HistoryView: View {
                 value: records.currentStreakDays > 0 ? "\(records.currentStreakDays)d" : "—",
                 label: records.currentStreakDays > 0 ? "Streak" : "Best \(records.longestStreakDays)d"
             )
+        }
+    }
+
+    /// The way into the overlap review (#30). Shown only while there is something to review:
+    /// every all-time number on this screen counts both runs of each pair until it is gone.
+    @ViewBuilder private var overlapRow: some View {
+        if !store.overlaps.isEmpty {
+            Button { router.openOverlapReview() } label: {
+                HStack(spacing: 10) {
+                    Image(systemName: "square.on.square")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(Tokens.Palette.warning)
+                    Text("Review overlapping runs (\(store.overlaps.count))")
+                        .font(Tokens.Font.ui(13, .semibold))
+                        .foregroundStyle(Tokens.Palette.textPrimary)
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 10)).foregroundStyle(Tokens.Palette.textTertiary)
+                }
+                .padding(.horizontal, 16)
+                .frame(height: 48)
+                .background(Tokens.Well.warning.fill)
+                .clipShape(RoundedRectangle(cornerRadius: Tokens.Radius.lg, style: .continuous))
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(Pressable())
         }
     }
 
