@@ -56,11 +56,16 @@ enum RunHistory {
             .sorted { $0.start > $1.start }
     }
 
+    /// The Monday that opens the training week holding `date`. The one place a run is
+    /// assigned to a week: `byWeek` and `MileageProgression` both key on it, so a
+    /// Sunday-night run cannot land in one week on History and another on Today.
+    static func weekStart(of date: Date, calendar: Calendar = RunHistory.calendar) -> Date {
+        calendar.dateInterval(of: .weekOfYear, for: date)?.start ?? date
+    }
+
     /// Runs grouped into Mon–Sun training weeks, newest week first.
     static func byWeek(_ runs: [RunSummary], calendar: Calendar = RunHistory.calendar) -> [WeekSummary] {
-        let groups = Dictionary(grouping: runs) { run -> Date in
-            calendar.dateInterval(of: .weekOfYear, for: run.start)?.start ?? run.start
-        }
+        let groups = Dictionary(grouping: runs) { weekStart(of: $0.start, calendar: calendar) }
         return groups
             .map { start, inWeek in
                 WeekSummary(
