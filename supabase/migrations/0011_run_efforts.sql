@@ -1,6 +1,6 @@
 -- Sub-distance best efforts — the fastest 5K *inside* a run, not the fastest 5K+ run (#25).
 --
--- Applied to production by the EM session on 2026-10-09 (via apply_migration).
+-- Applied to production by hand on 2026-10-09 (SQL editor — not in schema_migrations).
 --     Order matters only in that this is the next free number after 0010 (#64).
 --
 -- ── What this is ─────────────────────────────────────────────────────────────────────
