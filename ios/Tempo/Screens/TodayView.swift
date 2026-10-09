@@ -12,6 +12,7 @@ struct TodayView: View {
             session
             tomorrow
             week
+            mileageProgression
             lastRun
         }
         .refreshable { await store.refresh() }
@@ -288,6 +289,13 @@ struct TodayView: View {
             }
             dayDots
         }
+    }
+
+    /// The counter above says how far this week; this says compared with what. No tap
+    /// action: there is no mileage screen to push yet, and the Progress tab's card is a
+    /// shorter view of the same numbers rather than a deeper one.
+    private var mileageProgression: some View {
+        MileageProgressionCard(progression: MileageProgression.progression(runs: store.runs))
     }
 
     @ViewBuilder private var weekDelta: some View {
