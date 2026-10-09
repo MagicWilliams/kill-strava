@@ -82,6 +82,12 @@ step 2 and run again.
 - **Workflow warns "TestFlight not configured"**: a secret or the variable is missing (step 5).
 - **"No profiles for 'studio.delight.tempo' were found"**: the API key isn't Admin (step 4),
   or the App ID lacks HealthKit (step 2).
+- **"No profiles for 'studio.delight.tempo.widgets'" or an App Groups provisioning error**
+  (first run after the widgets, #76): the API key didn't register the extension or the group
+  itself. developer.apple.com → Identifiers → `+` → **App Groups** → `group.studio.delight.tempo`.
+  Then `+` → App IDs → App → `studio.delight.tempo.widgets` with **App Groups** ticked and the
+  group assigned, and add **App Groups** (same group) to `studio.delight.tempo` too. Re-run
+  the workflow.
 - **Upload rejected for SDK version**: Apple raised the minimum Xcode. Bump `runs-on` to the
   newest macOS runner.
 - **Build is "Missing Compliance"**: `ITSAppUsesNonExemptEncryption` fell out of

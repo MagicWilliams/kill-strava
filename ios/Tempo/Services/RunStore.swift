@@ -165,6 +165,7 @@ final class RunStore: ObservableObject {
         await recomputeProjection()
         fitness = LoadModel.compute(runs: runs, checkInOK: todayCheckIn?.feelsOk)
         await loadTodayTakeaway()
+        publishWidgetSnapshot()   // #76 — the widgets show exactly what this refresh produced
     }
 
     /// The coach read for today's completed session, previewed on Today.
@@ -190,6 +191,7 @@ final class RunStore: ObservableObject {
             guard let self else { return }
             if let generated = await TakeawayService.ensureTakeaway(for: run, store: self) {
                 self.todayTakeaway = generated
+                self.publishWidgetSnapshot()
             }
         }
     }

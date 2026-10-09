@@ -12,6 +12,14 @@ struct TempoApp: App {
                 .environmentObject(runs)
                 .environmentObject(router)
                 .task { await runs.start() }
+                // Widget taps (#76): Week opens Today, Coach opens the Coach tab.
+                .onOpenURL { url in
+                    switch WidgetLink(url: url) {
+                    case .today: router.show(.today)
+                    case .coach: router.show(.coach)
+                    case nil: break
+                    }
+                }
         }
     }
 }
