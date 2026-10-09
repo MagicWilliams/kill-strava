@@ -28,10 +28,17 @@ targets:
       path: Tempo/Info.plist
       properties:
         CFBundleDisplayName: Tempo
+        # Read from build settings, not hardcoded: TestFlight rejects a repeated build number,
+        # and CI stamps CURRENT_PROJECT_VERSION with the Actions run number on every upload.
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         UILaunchScreen: {}
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
         NSHealthShareUsageDescription: "Tempo reads your runs from Apple Health to build and adapt your training plan."
         NSHealthUpdateUsageDescription: "Tempo can mark planned workouts complete in Apple Health."
+        # HTTPS only, nothing custom — declaring it here skips the export-compliance
+        # question App Store Connect otherwise asks on every single TestFlight build.
+        ITSAppUsesNonExemptEncryption: false
         UIAppFonts:
           - SpaceGrotesk-Bold.ttf
           - Inter-Regular.ttf
@@ -48,6 +55,8 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: studio.delight.tempo
         TARGETED_DEVICE_FAMILY: "1"
         GENERATE_INFOPLIST_FILE: NO
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        CODE_SIGN_STYLE: Automatic
   TempoUITests:
     type: bundle.ui-testing
     platform: iOS

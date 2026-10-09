@@ -1,0 +1,135 @@
+name: TestFlight
+
+# Merged-but-not-on-the-phone was the root cause behind every "needs device check" on the
+# board (#59). This closes the last ten feet: every green `main` becomes a TestFlight build
+# that arrives on David's phone as a notification.
+#
+# Ships only what CI already proved: it runs after the CI workflow succeeds on main, and
+# checks out that exact commit — never a newer one that slipped in behind it.
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+  # A PR that touches the pipeline itself gets an unsigned archive, so a broken runner
+  # image or Release-only compile error shows up before merge instead of after.
+  pull_request:
+    paths:
+      - .github/workflows/testflight.yml
+      - ios/project.yml
+
+concurrency:
+  group: testflight
+  cancel-in-progress: false   # never abandon an upload halfway
+
+jobs:
+  ship:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    runs-on: macos-26
+    timeout-minutes: 40
+    env:
+      ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+      ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+      ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+      APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+      # Signed upload needs all four. Until they exist (see docs/TESTFLIGHT.md), say so
+      # loudly and fall back to an unsigned archive rather than failing every merge.
+      - name: Decide mode
+        id: mode
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "signed=false" >> "$GITHUB_OUTPUT"
+          elif [ -n "$ASC_KEY_ID" ] && [ -n "$ASC_ISSUER_ID" ] && [ -n "$ASC_KEY_P8" ] && [ -n "$APPLE_TEAM_ID" ]; then
+            echo "signed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::TestFlight not configured (ASC_* secrets / APPLE_TEAM_ID var missing) — unsigned archive only, nothing uploaded. See docs/TESTFLIGHT.md."
+            echo "signed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Show toolchain
+        run: xcodebuild -version
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate project
+        working-directory: ios
+        run: xcodegen generate
+
+      # Build numbers must strictly increase per marketing version. The run number does,
+      # and it ties every build on the phone back to the Actions run that made it.
+      - name: Archive (unsigned check)
+        if: steps.mode.outputs.signed != 'true'
+        working-directory: ios
+        run: |
+          set -o pipefail
+          xcodebuild -project Tempo.xcodeproj -scheme Tempo -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath "$RUNNER_TEMP/Tempo.xcarchive" \
+            -quiet archive CODE_SIGNING_ALLOWED=NO \
+            CURRENT_PROJECT_VERSION=${{ github.run_number }}
+
+      # Cloud-managed signing: Xcode fetches/creates the distribution certificate and
+      # profile through the App Store Connect API key, so no .p12 or profile ever lives in
+      # this repo or its secrets. The key needs the Admin role for that to work.
+      - name: Write API key
+        if: steps.mode.outputs.signed == 'true'
+        run: |
+          KEY_PATH="$RUNNER_TEMP/AuthKey_$ASC_KEY_ID.p8"
+          printf '%s' "$ASC_KEY_P8" > "$KEY_PATH"
+          echo "KEY_PATH=$KEY_PATH" >> "$GITHUB_ENV"
+
+      - name: Archive (signed)
+        if: steps.mode.outputs.signed == 'true'
+        working-directory: ios
+        run: |
+          set -o pipefail
+          xcodebuild -project Tempo.xcodeproj -scheme Tempo -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath "$RUNNER_TEMP/Tempo.xcarchive" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$KEY_PATH" \
+            -authenticationKeyID "$ASC_KEY_ID" \
+            -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
+            -quiet archive \
+            DEVELOPMENT_TEAM="$APPLE_TEAM_ID" \
+            CURRENT_PROJECT_VERSION=${{ github.run_number }}
+
+      - name: Upload to TestFlight
+        if: steps.mode.outputs.signed == 'true'
+        run: |
+          set -o pipefail
+          cat > "$RUNNER_TEMP/ExportOptions.plist" <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>method</key><string>app-store-connect</string>
+            <key>destination</key><string>upload</string>
+            <key>signingStyle</key><string>automatic</string>
+            <key>teamID</key><string>$APPLE_TEAM_ID</string>
+            <key>manageAppVersionAndBuildNumber</key><false/>
+            <key>uploadSymbols</key><true/>
+          </dict>
+          </plist>
+          EOF
+          xcodebuild -exportArchive \
+            -archivePath "$RUNNER_TEMP/Tempo.xcarchive" \
+            -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" \
+            -exportPath "$RUNNER_TEMP/export" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$KEY_PATH" \
+            -authenticationKeyID "$ASC_KEY_ID" \
+            -authenticationKeyIssuerID "$ASC_ISSUER_ID"
+          echo "Uploaded build ${{ github.run_number }} ($(git rev-parse --short HEAD)) — it appears in TestFlight after Apple finishes processing (~5–15 min)." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Remove API key
+        if: always()
+        run: rm -f "$RUNNER_TEMP"/AuthKey_*.p8
