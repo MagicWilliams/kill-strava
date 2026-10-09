@@ -112,17 +112,7 @@ struct ProjectionDetailView: View {
 
     private var hero: some View {
         Card(glow: true) {
-            HStack {
-                SectionLabel("Now", color: Tokens.Palette.accentText)
-                Spacer()
-                if let projection = displayedFinish, let goal = goalTime {
-                    if projection <= goal {
-                        Tag(text: "on track")
-                    } else {
-                        Tag(text: "behind goal", fg: Tokens.Palette.warning, bg: Tokens.Palette.inset)
-                    }
-                }
-            }
+            ProjectionStatusRow(projection: displayedFinish, goal: goalTime)
             HStack(alignment: .firstTextBaseline, spacing: 12) {
                 Text(displayedFinish.map(PaceModel.formatFinish) ?? "—:—:—")
                     .font(Tokens.Font.display(40))
@@ -366,6 +356,38 @@ struct ProjectionDetailView: View {
                 .font(Tokens.Font.ui(12)).foregroundStyle(Tokens.Palette.textSecondary)
                 .lineSpacing(3)
         }
+    }
+}
+
+/// The hero's top line: "NOW" on the left, the on-track tag on the right.
+///
+/// The row is exactly as wide as the width it's given, not the sum of its parts.
+/// A bare `HStack { label; Spacer(); tag }` gives the Spacer
+/// `offer − (label + tag + spacing)` and then reports the parts added back up. Text
+/// widths are thirds of a point, so the float sum lands a hair past the offer:
+/// 326.00000000000006 for 326 on a 402pt phone. The page column takes its widest child,
+/// the text-only cards below round that hair up to a whole device pixel, and the scroll
+/// content ends up a third of a point wider than the screen. That's enough for the
+/// whole page to drag sideways when nothing is off-screen (#74).
+struct ProjectionStatusRow: View {
+    let projection: Int?
+    let goal: Int?
+
+    var body: some View {
+        HStack {
+            SectionLabel("Now", color: Tokens.Palette.accentText)
+            Spacer()
+            if let projection, let goal {
+                if projection <= goal {
+                    Tag(text: "on track")
+                } else {
+                    Tag(text: "behind goal", fg: Tokens.Palette.warning, bg: Tokens.Palette.inset)
+                }
+            }
+        }
+        // Both bounds given, so the frame takes the offered width outright instead of
+        // deferring to the HStack's drifted sum.
+        .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
     }
 }
 
