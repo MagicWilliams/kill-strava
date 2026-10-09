@@ -7,8 +7,10 @@ struct TempoApp: App {
 
     var body: some Scene {
         WindowGroup {
+            // No `.preferredColorScheme` here: the app follows system appearance (design
+            // system v3, decision 1). A dark pin left over from the first shell sat on this
+            // line through build 10 and kept the light theme from ever appearing (#80).
             RootTabView()
-                .preferredColorScheme(.dark)
                 .environmentObject(runs)
                 .environmentObject(router)
                 .task { await runs.start() }

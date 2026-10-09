@@ -140,7 +140,9 @@ struct RunDetailView: View {
             }
             .padding(20)
         }
-        .preferredColorScheme(.dark)
+        // Follows system appearance, like the hero map it expands from: tapping a light
+        // hero shouldn't flip the route to a dark map. The close button stays legible
+        // because its token and material adapt together.
     }
 
     private var backButton: some View {
