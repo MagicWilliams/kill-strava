@@ -33,6 +33,7 @@ enum Route: Hashable {
     case history
     case projection
     case raceRecap(RunSummary)
+    case overlapReview
 }
 
 @MainActor
@@ -45,6 +46,7 @@ final class TabRouter: ObservableObject {
     func openHistory() { path.append(.history) }
     func openProjection() { path.append(.projection) }
     func openRaceRecap(_ run: RunSummary) { path.append(.raceRecap(run)) }
+    func openOverlapReview() { path.append(.overlapReview) }
 
     /// Pop everything and land on a tab (e.g. "Discuss with Coach").
     func showCoach() {
@@ -109,6 +111,7 @@ struct RootTabView: View {
                 case .history: HistoryView()
                 case .projection: ProjectionDetailView()
                 case .raceRecap(let run): RaceRecapView(run: run)
+                case .overlapReview: OverlapReviewView()
                 }
             }
         }
