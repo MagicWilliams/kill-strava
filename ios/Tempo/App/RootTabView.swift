@@ -33,18 +33,29 @@ enum Route: Hashable {
     case history
     case projection
     case raceRecap(RunSummary)
+    case changes
 }
 
 @MainActor
 final class TabRouter: ObservableObject {
     @Published var selection: Tab = .today
     @Published var path: [Route] = []
+    /// A coach message to scroll to when the Coach tab next shows — set by "See in chat"
+    /// on a What changed entry, consumed (cleared) by `CoachView`.
+    @Published var coachFocus: UUID?
 
     func openRun(_ run: RunSummary) { path.append(.run(run)) }
     func openReadiness() { path.append(.readiness) }
     func openHistory() { path.append(.history) }
     func openProjection() { path.append(.projection) }
     func openRaceRecap(_ run: RunSummary) { path.append(.raceRecap(run)) }
+    func openChanges() { path.append(.changes) }
+
+    /// Land on the Coach tab scrolled to one message.
+    func showCoachMessage(_ id: UUID) {
+        coachFocus = id
+        showCoach()
+    }
 
     /// Pop everything and land on a tab (e.g. "Discuss with Coach").
     func showCoach() {
@@ -109,6 +120,7 @@ struct RootTabView: View {
                 case .history: HistoryView()
                 case .projection: ProjectionDetailView()
                 case .raceRecap(let run): RaceRecapView(run: run)
+                case .changes: ChangesView()
                 }
             }
         }
