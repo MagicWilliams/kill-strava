@@ -33,6 +33,14 @@ struct RunDetail {
     var routeSegments: [RouteSegment] = []
     var hasRoute: Bool { !routeSegments.isEmpty }
 
+    /// The raw curves the race recap is computed from, as plain parallel arrays so
+    /// `RaceRecap` can stay pure: cumulative metres against seconds from the workout start,
+    /// and every HR sample against the same clock.
+    var cumulativeTimesS: [Double] = []
+    var cumulativeMeters: [Double] = []
+    var hrTimesS: [Double] = []
+    var hrBPM: [Double] = []
+
     // Time accounting (Garmin-style trio)
     var timerS: Int = 0          // workout duration as recorded
     var movingS: Int = 0         // derived: sample intervals actually moving
@@ -196,6 +204,10 @@ final class RunDetailLoader {
             timeline.append((t1, cum))
         }
         d.movingS = distance.isEmpty ? d.timerS : Int(movingS.rounded())
+        if !distance.isEmpty {
+            d.cumulativeTimesS = timeline.map(\.t)
+            d.cumulativeMeters = timeline.map(\.m)
+        }
 
         if d.miles > 0.05 {
             d.avgPaceSec = Int(Double(d.timerS) / d.miles)
@@ -223,6 +235,8 @@ final class RunDetailLoader {
         let hrPoints: [(t: Double, bpm: Double)] = heart.map {
             ($0.startDate.timeIntervalSince(start), $0.quantity.doubleValue(for: bpmUnit))
         }
+        d.hrTimesS = hrPoints.map(\.t)
+        d.hrBPM = hrPoints.map(\.bpm)
         if !hrPoints.isEmpty {
             let values = hrPoints.map(\.bpm)
             d.avgHR = Int((values.reduce(0, +) / Double(values.count)).rounded())

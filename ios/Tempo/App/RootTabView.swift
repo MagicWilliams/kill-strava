@@ -32,6 +32,7 @@ enum Route: Hashable {
     case readiness
     case history
     case projection
+    case raceRecap(RunSummary)
 }
 
 @MainActor
@@ -43,6 +44,7 @@ final class TabRouter: ObservableObject {
     func openReadiness() { path.append(.readiness) }
     func openHistory() { path.append(.history) }
     func openProjection() { path.append(.projection) }
+    func openRaceRecap(_ run: RunSummary) { path.append(.raceRecap(run)) }
 
     /// Pop everything and land on a tab (e.g. "Discuss with Coach").
     func showCoach() {
@@ -106,6 +108,7 @@ struct RootTabView: View {
                 case .readiness: ReadinessDetailView()
                 case .history: HistoryView()
                 case .projection: ProjectionDetailView()
+                case .raceRecap(let run): RaceRecapView(run: run)
                 }
             }
         }
