@@ -2,7 +2,7 @@
 
 > Read me first each session. Architecture + build sequence: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
-_Last updated: 2026-08-27 (design system v3: light theme, tinted wells, a motion layer)_
+_Last updated: 2026-10-09 (TestFlight pipeline — #59 answered B)_
 
 ## Where we are
 
@@ -185,6 +185,24 @@ Later wishlist (explicitly deferred): watch laps, weather, PR detection, share c
 - Run-detail wishlist: watch laps, weather, PR detection, share card, HR drift.
 
 ## Session log
+
+- **2026-10-09 — #59 answered B: TestFlight pipeline built, waiting on David's Apple-side setup.**
+  - `.github/workflows/testflight.yml`: runs after CI succeeds on `main`, checks out that exact
+    sha, archives Release with cloud-managed signing (App Store Connect API key, Admin role, so no
+    certs in the repo), uploads. Build number = Actions run number. Without the secrets it warns
+    and does an unsigned archive instead of failing. PRs touching the pipeline get the unsigned
+    archive as a pre-merge check.
+  - App had **no icon** (required for upload): placeholder volt bar-chart mark added. Version
+    strings now come from build settings (the Info.plist hardcoded `1`, so every upload would
+    have collided). `ITSAppUsesNonExemptEncryption: false` skips the per-build compliance question.
+  - **Identity scar:** phone builds were signed by the free Personal Team `2P8QGJVNJ7`. The paid
+    team ID differs → TestFlight install can't read the Keychain session → new empty anonymous
+    user. `supabase/ops/carry_over_athlete.sql` (dry-run first, David runs it) re-owns
+    the old user's rows (`402e4b96-61b4-418b-8e16-1d0b59cc943f`, 1,464 runs). All 9 user-owned
+    tables verified against production.
+  - David's checklist: `docs/TESTFLIGHT.md`. Verified locally: unsigned Release archive (icon +
+    plist land, build number stamps), device build, 210 tests green. Upload itself is unverified
+    until the secrets exist.
 
 - **2026-08-27 (the archive) — coach chat unbroken, and the Strava-replacement push begins.**
   - *The coach was answering every message with "Lost my train of thought there."* Root-caused
