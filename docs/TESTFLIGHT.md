@@ -11,8 +11,8 @@ last step needs his phone.
 ### 1. Team ID
 developer.apple.com → Account → **Membership details** → copy the **Team ID**.
 
-It will not be `2P8QGJVNJ7` — that is Xcode's free Personal Team, which is what every build
-so far has been signed with. That difference is why step 7 exists.
+For David it is `2P8QGJVNJ7`: the same ID Xcode's Personal Team used, because the paid
+membership kept it. That's why step 7 is normally a no-op.
 
 ### 2. Register the bundle ID
 developer.apple.com → Certificates, IDs & Profiles → **Identifiers** → `+` → App IDs → App.
@@ -66,17 +66,16 @@ accept the invite.
 From then on each merge to `main` that passes CI ships on its own, and the build number is the
 Actions run number.
 
-### 7. Carry your history across (once)
-The TestFlight build is signed by a different team than the Xcode build, so it can't read the
-old Keychain login. On first open it becomes a **new, empty anonymous user**. Your runs, plan,
-corrections and coach history are not lost; they still belong to the old user.
+### 7. Your history carries over on its own
+The login lives in the Keychain under *team ID + bundle ID*. Both are unchanged
+(`2P8QGJVNJ7`, `studio.delight.tempo`), so the TestFlight build reads the same anonymous
+session the Xcode builds did, and you open straight into your runs, plan and coach history.
 
-1. Delete the Xcode-installed Tempo if TestFlight refuses to install over it.
-2. Open the TestFlight build once. Grant Health. Let it sync, then close it.
-3. Run `supabase/ops/carry_over_athlete.sql` in the Supabase SQL editor (Tempo project):
-   paste the new user's id (newest row in Authentication → Users), run it as-is for the dry
-   run, check the counts, then uncomment step 2 and run again.
-4. Force-quit and reopen the app. Your plan and history should be back.
+**Only if the app opens empty** (it would mean the session didn't survive, e.g. the team ID
+ever changes): your data isn't gone, it still belongs to the old user. Run
+`supabase/ops/carry_over_athlete.sql` in the Supabase SQL editor with the new user's id
+(newest row in Authentication → Users). Run it as-is for the dry-run counts, then uncomment
+step 2 and run again.
 
 ## When it breaks
 

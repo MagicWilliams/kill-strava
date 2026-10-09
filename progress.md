@@ -195,9 +195,9 @@ Later wishlist (explicitly deferred): watch laps, weather, PR detection, share c
   - App had **no icon** (required for upload): placeholder volt bar-chart mark added. Version
     strings now come from build settings (the Info.plist hardcoded `1`, so every upload would
     have collided). `ITSAppUsesNonExemptEncryption: false` skips the per-build compliance question.
-  - **Identity scar:** phone builds were signed by the free Personal Team `2P8QGJVNJ7`. The paid
-    team ID differs → TestFlight install can't read the Keychain session → new empty anonymous
-    user. `supabase/ops/carry_over_athlete.sql` (dry-run first, David runs it) re-owns
+  - **Identity:** feared the paid team would have a new ID (→ TestFlight can't read the Keychain
+    session → new empty anonymous user). David confirmed it kept `2P8QGJVNJ7`, so the session
+    should carry over; the SQL below is kept as a fallback only. `supabase/ops/carry_over_athlete.sql` (dry-run first, David runs it) re-owns
     the old user's rows (`402e4b96-61b4-418b-8e16-1d0b59cc943f`, 1,464 runs). All 9 user-owned
     tables verified against production.
   - David's checklist: `docs/TESTFLIGHT.md`. Verified locally: unsigned Release archive (icon +

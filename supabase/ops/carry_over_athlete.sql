@@ -1,10 +1,11 @@
--- Carry the athlete's history over to a new anonymous user. Run by hand, once, by David.
+-- Carry the athlete's history over to a new anonymous user. Run by hand, once, by David —
+-- and ONLY if the app ever opens empty. As of 2026-10-09 the paid team kept ID 2P8QGJVNJ7,
+-- so TestFlight builds share the Keychain with the old Xcode builds and this isn't needed.
 -- NOT a migration — it lives outside supabase/migrations/ so nothing applies it by accident.
 --
 -- Why this exists: auth is anonymous, and the session lives in the iOS Keychain under the
--- signing team's ID. The Xcode builds were signed by the free Personal Team (2P8QGJVNJ7);
--- TestFlight builds are signed by the paid team, a different ID, so the TestFlight install
--- cannot see the old session. It signs in anonymously as a brand-new user, and the trigger
+-- signing team's ID. If a build is ever signed by a different team than the one that
+-- created the session, that install cannot see the old session. It signs in anonymously as a brand-new user, and the trigger
 -- in 0002_auth_profile_trigger gives that user an empty profile. Nothing is deleted — the
 -- 2,000+ runs, plan, corrections and coach history are all still on the old user — they are
 -- just owned by an identity the phone can no longer prove it is.
