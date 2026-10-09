@@ -23,6 +23,7 @@ struct RunDetailView: View {
                     hero
                     VStack(alignment: .leading, spacing: 16) {
                         titleRow
+                        raceRecapCard
                         heroStats
                         coachRead
                         timeAccounting
@@ -121,31 +122,7 @@ struct RunDetailView: View {
     }
 
     private func routeMap(_ detail: RunDetail, interactive: Bool) -> some View {
-        Map(initialPosition: .region(region(for: detail)), interactionModes: interactive ? .all : []) {
-            ForEach(detail.routeSegments) { seg in
-                MapPolyline(coordinates: seg.coords)
-                    .stroke(Tokens.Zone.all[seg.zone], style: StrokeStyle(lineWidth: 4, lineCap: .round, lineJoin: .round))
-            }
-        }
-        .mapStyle(.standard(pointsOfInterest: .excludingAll))
-    }
-
-    private func region(for detail: RunDetail) -> MKCoordinateRegion {
-        let coords = detail.routeSegments.flatMap(\.coords)
-        guard let first = coords.first else {
-            return MKCoordinateRegion(center: .init(latitude: 0, longitude: 0), span: .init(latitudeDelta: 1, longitudeDelta: 1))
-        }
-        var minLat = first.latitude, maxLat = first.latitude
-        var minLon = first.longitude, maxLon = first.longitude
-        for c in coords {
-            minLat = min(minLat, c.latitude); maxLat = max(maxLat, c.latitude)
-            minLon = min(minLon, c.longitude); maxLon = max(maxLon, c.longitude)
-        }
-        return MKCoordinateRegion(
-            center: .init(latitude: (minLat + maxLat) / 2, longitude: (minLon + maxLon) / 2),
-            span: .init(latitudeDelta: max((maxLat - minLat) * 1.4, 0.004),
-                        longitudeDelta: max((maxLon - minLon) * 1.4, 0.004))
-        )
+        RunRouteMap(detail: detail, interactive: interactive)
     }
 
     private var fullMap: some View {
@@ -192,6 +169,36 @@ struct RunDetailView: View {
                 .font(Tokens.Font.ui(13)).foregroundStyle(Tokens.Palette.textSecondary)
         }
         .padding(.top, 14)
+    }
+
+    /// The door to the race recap. Only on the run that *is* the goal race — see
+    /// `RaceRecap.isRace` — so every other run's page is exactly what it was.
+    @ViewBuilder private var raceRecapCard: some View {
+        if RaceRecap.isRace(run: run, goal: store.goal) {
+            Button { router.openRaceRecap(run) } label: {
+                Card(well: .accent) {
+                    HStack(spacing: 14) {
+                        Image(systemName: "flag.checkered")
+                            .font(.system(size: 18, weight: .bold))
+                            .foregroundStyle(Tokens.Palette.onVolt)
+                            .frame(width: 44, height: 44)
+                            .background(Tokens.Palette.volt, in: Circle())
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("Race recap")
+                                .font(Tokens.Font.ui(17, .bold)).foregroundStyle(Tokens.Palette.textPrimary)
+                            Text("\(store.goal?.raceName ?? RaceCountdown.unnamedRace) — every mat, both halves, where it turned")
+                                .font(Tokens.Font.ui(13)).foregroundStyle(Tokens.Palette.textSecondary)
+                                .multilineTextAlignment(.leading)
+                        }
+                        Spacer(minLength: 0)
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundStyle(Tokens.Palette.accentText)
+                    }
+                }
+            }
+            .buttonStyle(Pressable())
+        }
     }
 
     private var coachRead: some View {
