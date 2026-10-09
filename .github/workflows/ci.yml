@@ -69,7 +69,7 @@ jobs:
             -quiet test CODE_SIGNING_ALLOWED=NO
 
   edge:
-    name: Edge functions typecheck
+    name: Edge functions typecheck + tests
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -79,5 +79,9 @@ jobs:
           deno-version: v2.x
       - name: Typecheck
         run: deno check supabase/functions/*/index.ts
+      # The plan generator is pure arithmetic deciding whether a block reaches its race
+      # (#63). Typechecking it proved nothing; this is the gate that does.
+      - name: Test (edge function logic)
+        run: deno test supabase/functions/
       - name: Lint
         run: deno lint supabase/functions/ || true
