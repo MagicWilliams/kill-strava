@@ -158,3 +158,126 @@ enum RunDedupe {
         )
     }
 }
+
+// MARK: - Overlapping runs, for a human (#30)
+
+/// The duplicates no rule may resolve.
+///
+/// Migrations 0008 and 0009 retired every pair that is a duplicate *by construction* —
+/// identical distance to the meter. What is left are live runs that physically overlap in
+/// time yet disagree about what happened: two devices recording one outing, a run stored
+/// whole and as its splits, a watch left running after the finish. 2023-11-19 is the case
+/// that rules out automation: the marathon (26.68 mi / 188 min, 7:03/mi) sits beside the
+/// blob of the watch left running afterwards (27.59 mi / 304 min, HR 119), and both "keep
+/// the longest" and "keep the one with HR" delete the race.
+///
+/// So this finds pairs and never ranks them. Which run survives is the athlete's call, made
+/// one pair at a time on the review screen; a pair he has already ruled on — including
+/// "both are real" — must never come back, or the queue is endless.
+extension RunDedupe {
+
+    /// A pair of runs, independent of which one is passed first. `low` < `high` in the
+    /// database's uuid ordering, which is what `run_overlap_reviews` is keyed on (its check
+    /// constraint enforces `run_a < run_b`). Postgres compares uuids bytewise, which is the
+    /// same order as comparing the hex strings, so the string comparison here agrees.
+    struct OverlapKey: Hashable {
+        let low: UUID
+        let high: UUID
+
+        init(_ x: UUID, _ y: UUID) {
+            if x.uuidString < y.uuidString {
+                low = x; high = y
+            } else {
+                low = y; high = x
+            }
+        }
+    }
+
+    /// Two live runs whose clocks overlap. `earlier` is the one that started first — the
+    /// left column on the review screen. Nothing here says which one is right.
+    struct OverlapPair: Identifiable, Equatable {
+        let earlier: RunSummary
+        let later: RunSummary
+
+        var key: OverlapKey { OverlapKey(earlier.id, later.id) }
+        var id: OverlapKey { key }
+    }
+
+    /// What the athlete said about a pair.
+    enum OverlapVerdict: Equatable {
+        /// This run is the record; the other one in the pair is retired.
+        case keep(UUID)
+        /// Two separate runs that happen to overlap. Nothing is retired.
+        case bothReal
+    }
+
+    /// A verdict, translated into the writes it implies.
+    struct OverlapResolution: Equatable {
+        let key: OverlapKey
+        /// `run_overlap_reviews.decision`: `kept_a` / `kept_b` name the key's `low` / `high`
+        /// side, so the stored row means the same thing however the screen laid it out.
+        let decision: String
+        /// The row that gets `superseded_by = kept`, or nil for "both are real".
+        let retire: UUID?
+        let kept: UUID?
+    }
+
+    /// The writes a verdict implies — nil if it names a run that is not in the pair, which is
+    /// a bug and must never become a write against someone else's run.
+    static func resolution(for pair: OverlapPair, _ verdict: OverlapVerdict) -> OverlapResolution? {
+        let key = pair.key
+        switch verdict {
+        case .bothReal:
+            return OverlapResolution(key: key, decision: "both_real", retire: nil, kept: nil)
+        case .keep(let id):
+            guard id == key.low || id == key.high else { return nil }
+            let retire = id == key.low ? key.high : key.low
+            return OverlapResolution(
+                key: key,
+                decision: id == key.low ? "kept_a" : "kept_b",
+                retire: retire,
+                kept: id
+            )
+        }
+    }
+
+    /// Live runs that overlap and have not been reviewed, newest first.
+    ///
+    /// Overlap: the later run starts before the earlier one ends (`start + durationS`), the
+    /// same test as query 4 at the bottom of migration 0009 — with one difference. That query
+    /// pairs `a.id < b.id` *and* requires `b` to start no earlier than `a`, so a pair whose
+    /// earlier run happens to hold the larger uuid is never found. Here the pair is ordered by
+    /// time first and only keyed by id, so every overlap surfaces exactly once.
+    ///
+    /// - Parameters:
+    ///   - runs: the **live** archive — `superseded_by is null`, as `RunStore` reads it. A
+    ///     retired row is not a run any more, so it cannot be half of a pair; that is what
+    ///     makes a cluster of three collapse correctly once one of them is retired.
+    ///   - reviewed: pairs the athlete has already ruled on, from `run_overlap_reviews`.
+    ///
+    /// Corrected runs are deliberately included. An edit proves the athlete looked at the
+    /// numbers on one row; it says nothing about whether a twin of that run also exists.
+    static func unresolvedOverlaps(
+        in runs: [RunSummary],
+        reviewed: Set<OverlapKey>
+    ) -> [OverlapPair] {
+        let ordered = runs.sorted {
+            $0.start != $1.start ? $0.start < $1.start : $0.id.uuidString < $1.id.uuidString
+        }
+        var pairs: [OverlapPair] = []
+        for (i, a) in ordered.enumerated() {
+            let end = a.start.addingTimeInterval(TimeInterval(max(a.durationS, 0)))
+            var j = i + 1
+            // Sorted by start, so the first run starting at or after `end` closes the scan.
+            while j < ordered.count, ordered[j].start < end {
+                let pair = OverlapPair(earlier: a, later: ordered[j])
+                if !reviewed.contains(pair.key) { pairs.append(pair) }
+                j += 1
+            }
+        }
+        return pairs.sorted {
+            if $0.earlier.start != $1.earlier.start { return $0.earlier.start > $1.earlier.start }
+            return $0.later.start > $1.later.start
+        }
+    }
+}
