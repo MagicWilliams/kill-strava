@@ -34,6 +34,7 @@ enum Route: Hashable {
     case projection
     case raceRecap(RunSummary)
     case changes
+    case overlapReview
 }
 
 @MainActor
@@ -50,6 +51,7 @@ final class TabRouter: ObservableObject {
     func openProjection() { path.append(.projection) }
     func openRaceRecap(_ run: RunSummary) { path.append(.raceRecap(run)) }
     func openChanges() { path.append(.changes) }
+    func openOverlapReview() { path.append(.overlapReview) }
 
     /// Land on the Coach tab scrolled to one message.
     func showCoachMessage(_ id: UUID) {
@@ -121,6 +123,7 @@ struct RootTabView: View {
                 case .projection: ProjectionDetailView()
                 case .raceRecap(let run): RaceRecapView(run: run)
                 case .changes: ChangesView()
+                case .overlapReview: OverlapReviewView()
                 }
             }
         }
