@@ -4,7 +4,10 @@ struct CoachView: View {
     var onboarding = false
 
     @EnvironmentObject private var store: RunStore
+    @EnvironmentObject private var router: TabRouter
     @StateObject private var chat = ChatStore()
+    /// Changes applied this week, for the "What changed" row. Nil until the ledger answers.
+    @State private var changesThisWeek: Int?
     @State private var draft = ""
 
     /// iMessage-style drag-from-the-right to reveal per-message timestamps.
@@ -60,6 +63,7 @@ struct CoachView: View {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 18) {
                         header
+                        if !onboarding { changesRow }
                         ForEach(Array(chat.messages.enumerated()), id: \.element.id) { index, msg in
                             if index == 0 || !Calendar.current.isDate(msg.timestamp, inSameDayAs: chat.messages[index - 1].timestamp) {
                                 daySeparator(msg.timestamp)
@@ -84,10 +88,15 @@ struct CoachView: View {
                 )
                 .animation(.spring(duration: 0.3), value: timeReveal)
                 .onChange(of: chat.messages) { _, msgs in
+                    // Arriving from What changed → "See in chat": land on that message, not
+                    // the bottom.
+                    if scrollToFocus(proxy) { return }
                     if let last = msgs.last {
                         withAnimation { proxy.scrollTo(last.id, anchor: .bottom) }
                     }
                 }
+                // The tab was already alive under the pushed ledger, so no reload will fire.
+                .onChange(of: router.coachFocus) { _, _ in _ = scrollToFocus(proxy) }
                 .onChange(of: chat.isThinking) { _, thinking in
                     if thinking { withAnimation { proxy.scrollTo("thinking", anchor: .bottom) } }
                 }
@@ -109,6 +118,53 @@ struct CoachView: View {
             chat.runStore = store
             await chat.load(context: store.coachContext(onboarding: onboarding))
         }
+        // Re-count when a card goes green, so the row moves with the change just confirmed.
+        .task(id: chat.messages.filter { $0.actionState == .applied }.count) {
+            guard !onboarding, let entries = try? await ChangeLedgerService.load() else { return }
+            let applied = chat.messages
+                .filter { $0.action != nil && $0.actionState == .applied }
+                .map { (id: $0.id, date: $0.timestamp) }
+            changesThisWeek = ChangeLedger.countThisWeek(
+                entries, alsoApplied: applied, now: .now, calendar: RunStore.cal
+            )
+        }
+    }
+
+    /// Scroll to the message What changed asked for, if it is in the loaded history. Left
+    /// pending while it isn't: on a fresh Coach tab the history hasn't arrived yet. A message
+    /// older than what the chat loads simply never matches, and the view opens at the bottom.
+    private func scrollToFocus(_ proxy: ScrollViewProxy) -> Bool {
+        guard let focus = router.coachFocus,
+              chat.messages.contains(where: { $0.id == focus }) else { return false }
+        router.coachFocus = nil
+        proxy.scrollTo(focus, anchor: .center)
+        return true
+    }
+
+    /// Entry point to the ledger of applied changes (#88). One row on purpose: Coach home is
+    /// due a redesign (#87), and this should be trivially movable when it lands.
+    private var changesRow: some View {
+        Button { router.openChanges() } label: {
+            HStack(spacing: 10) {
+                Image(systemName: "clock.arrow.circlepath")
+                    .foregroundStyle(Tokens.Palette.accentText)
+                Text("What changed")
+                    .font(Tokens.Font.ui(14, .semibold)).foregroundStyle(Tokens.Palette.textPrimary)
+                Spacer()
+                if let count = changesThisWeek {
+                    Text(count == 0 ? "None this week" : "\(count) this week")
+                        .font(Tokens.Font.mono(11)).foregroundStyle(Tokens.Palette.textSecondary)
+                }
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Tokens.Palette.textTertiary)
+            }
+            .padding(.horizontal, 14).padding(.vertical, 11)
+            .background(Tokens.Palette.surface)
+            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(Pressable())
     }
 
     private var header: some View {
@@ -373,5 +429,5 @@ struct TypingDots: View {
 }
 
 #Preview {
-    CoachView().environmentObject(RunStore()).preferredColorScheme(.dark)
+    CoachView().environmentObject(RunStore()).environmentObject(TabRouter()).preferredColorScheme(.dark)
 }
