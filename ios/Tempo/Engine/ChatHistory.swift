@@ -36,6 +36,6 @@ enum ChatHistory {
                 let (first, second) = (date(a.element), date(b.element))
                 return first == second ? a.offset < b.offset : first < second
             }
-            .map(\.element)
+            .map { $0.element }   // not `\.element`: Swift has no key paths into tuples
     }
 }
