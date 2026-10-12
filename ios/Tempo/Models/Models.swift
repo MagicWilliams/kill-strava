@@ -62,6 +62,10 @@ struct RunSummary: Identifiable, Hashable {
     var corrected: Bool = false
     var source: String = "healthkit"
     var externalID: String? = nil   // HKWorkout uuid for healthkit rows → detail-series lookup
+    /// What the athlete said about it after (#120). Empty for anything read from HealthKit,
+    /// for every run that predates the journal, and for every run until migration 0016 is
+    /// applied — see `RunJournalPayload.isMissingColumn`.
+    var journal = RunJournalEntry()
 
     var miles: Double { Double(distanceM) / 1609.34 }
 
