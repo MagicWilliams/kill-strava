@@ -73,9 +73,11 @@ final class TrackMathTests: XCTestCase {
         }
     }
 
+    /// A finished run: every fix ingested, then closed the way the recorder closes it.
     private func record(_ fixes: [TrackMath.Fix]) -> TrackMath.Track {
         var track = TrackMath.Track(start: start)
         for f in fixes { track.ingest(f) }
+        track.close()
         return track
     }
 
@@ -213,6 +215,7 @@ final class TrackMathTests: XCTestCase {
         XCTAssertEqual(track.ingest(run[1]), .awaitingLock)
         XCTAssertEqual(track.ingest(run[2]), .accepted, "three in a row that agree")
         for f in run.dropFirst(3) { track.ingest(f) }
+        track.close()
 
         XCTAssertLessThan(percentError(track.distanceM, 2000), 1)
     }
@@ -225,6 +228,7 @@ final class TrackMathTests: XCTestCase {
         XCTAssertEqual(track.ingest(run[49]), .outOfOrder)
         XCTAssertEqual(track.ingest(run[20]), .outOfOrder)
         for f in run.dropFirst(50) { track.ingest(f) }
+        track.close()
 
         XCTAssertEqual(track.timeline.map(\.t), track.timeline.map(\.t).sorted())
         XCTAssertLessThan(percentError(track.distanceM, 500), 1)
@@ -243,7 +247,11 @@ final class TrackMathTests: XCTestCase {
             let d = 2000 + s * (1000.0 / 240)
             return fix(t: hardStartT + s, east: d * sin(bearing), north: d * cos(bearing))
         }
-        let track = record(easy + hard)
+        // Live — not closed. This is the screen mid-run, where distance trails the athlete
+        // by a step; the first version of the window counted that trail as standing still
+        // and read this 4:00/km as 4:17.
+        var track = TrackMath.Track(start: start)
+        for f in easy + hard { track.ingest(f) }
         let end = start.addingTimeInterval(hardStartT + 240)
         let summary = track.summary(unitMeters: km, now: end)
 
@@ -265,7 +273,8 @@ final class TrackMathTests: XCTestCase {
                 east: here.east + Double.random(in: -1.5...1.5, using: &rng),
                 north: here.north + Double.random(in: -1.5...1.5, using: &rng))
         }
-        var track = record(first)
+        var track = TrackMath.Track(start: start)
+        for f in first { track.ingest(f) }
         // The first few seconds of standing let the smoothed position catch up to where the
         // athlete actually stopped — that is real distance, the tail of the run. The wander
         // after it is what must add nothing.
@@ -283,6 +292,32 @@ final class TrackMathTests: XCTestCase {
         let moving = try XCTUnwrap(atLight.averagePaceMovingS)
         let elapsed = try XCTUnwrap(atLight.averagePaceElapsedS)
         XCTAssertGreaterThan(elapsed, moving, "the stop shows in elapsed pace only")
+    }
+
+    /// A 400 m rep: live, the distance trails by a step plus the smoothing lag — over 1 % of
+    /// something this short. Closing the run credits it, once.
+    func testClosingCreditsTheTrailingMetresOnce() {
+        var track = TrackMath.Track(start: start)
+        for f in straightLine(meters: 400, secPerKm: 200) { track.ingest(f) }
+        let live = track.distanceM
+        track.close()
+        let closed = track.distanceM
+        track.close()
+        print("[TrackMath] 400 m rep: live \(live) m, closed \(closed) m")
+
+        XCTAssertLessThan(live, 400)
+        XCTAssertEqual(closed, 400, accuracy: 0.5)
+        XCTAssertEqual(track.distanceM, closed, "a second close adds nothing")
+    }
+
+    /// Ten seconds without a credited step is a stop: the pace goes blank rather than
+    /// holding the last running number.
+    func testCurrentPaceGoesBlankShortlyAfterStopping() throws {
+        var track = TrackMath.Track(start: start)
+        for f in straightLine(meters: 1000, secPerKm: 300) { track.ingest(f) }
+        XCTAssertEqual(try XCTUnwrap(track.summary(unitMeters: km, now: start.addingTimeInterval(300)).currentPaceS),
+                       300, accuracy: 3)
+        XCTAssertNil(track.summary(unitMeters: km, now: start.addingTimeInterval(315)).currentPaceS)
     }
 
     func testNoPaceBeforeThereIsAWindow() {

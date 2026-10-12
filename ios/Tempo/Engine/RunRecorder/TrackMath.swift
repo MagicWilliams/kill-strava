@@ -88,9 +88,23 @@ enum TrackMath {
     /// Standing at a light should read "--", not a pace that slowly decays toward an hour.
     static let paceMaxLookbackS = 120.0
 
+    /// No credited distance for this long means stopped, and a stopped athlete has no
+    /// current pace.
+    ///
+    /// The window ends at the last *credited* point rather than at the wall clock: distance
+    /// is credited in `distanceStepM` steps behind a smoothing lag, so "now" is always a
+    /// second or two past the last point, and counting that gap as standing still read a
+    /// steady 5:00/km as 5:20 in testing. Running at any pace slower than a walk credits a
+    /// step every few seconds; ten without one is a stop, not a slow stride.
+    static let paceStaleS = 10.0
+
     /// Altitudes averaged before gain is measured — the trailing version of the smoothing
-    /// `RunDetailLoader` applies to imported routes (it can look ahead; a live run cannot).
-    static let altitudeSmoothingFixes = 5
+    /// `RunDetailLoader` applies to imported routes (it averages ±5 around each point; a
+    /// live run cannot look ahead, so it looks ten back). Elevation changes slowly enough
+    /// that ten seconds of lag costs under a metre at a split boundary, and five was not
+    /// enough: with ±3 m of per-fix noise a five-fix mean still swung 3 m often enough to
+    /// read a flat 30 minutes as ~50 m of climb.
+    static let altitudeSmoothingFixes = 10
 
     /// The climb has to reverse by this much before it counts as turning.
     ///
@@ -327,6 +341,24 @@ enum TrackMath {
             }
         }
 
+        /// Credit the last few metres when the run ends.
+        ///
+        /// Live, distance trails the athlete by up to one `distanceStepM` plus the smoothing
+        /// lag — invisible on a screen that updates every second, but on a short run it is
+        /// over 1 % of the total, and it should not be left on the road. Idempotent: a
+        /// second call has nothing left to credit.
+        mutating func close() {
+            guard let last = lastAccepted, let a = anchor else { return }
+            let tail = TrackMath.haversine(a.lat, a.lon, last.latitude, last.longitude)
+            guard tail > 0 else { return }
+            let prev = timeline[timeline.count - 1]
+            let t = max(last.timestamp.timeIntervalSince(start), prev.t)
+            let dt = t - prev.t
+            if dt > 0, tail / dt > TrackMath.stoppedSpeedMps { movingS += dt }
+            timeline.append(BestEfforts.Point(t: t, m: prev.m + tail))
+            anchor = (last.latitude, last.longitude)
+        }
+
         /// The numbers to show at `now` (wall clock). Elapsed runs to `now`, not to the last
         /// fix, so a GPS dropout does not freeze the clock.
         func summary(unitMeters: Double, now: Date) -> Summary {
@@ -410,20 +442,20 @@ enum TrackMath {
 
     // MARK: - Pace
 
-    /// Seconds per `unitMeters` over the most recent ≥`paceWindowS` *and* ≥`paceWindowM`.
+    /// Seconds per `unitMeters` over the most recent ≥`paceWindowS` *and* ≥`paceWindowM`,
+    /// ending at the last credited point.
     ///
-    /// The window ends at `now`, not at the last credited point, so stopping shows up at once
-    /// instead of the screen holding the last running pace. Nil before there is a full window
-    /// and when the window would reach back further than `paceMaxLookbackS`.
+    /// Nil before there is a full window, once nothing has been credited for `paceStaleS`
+    /// (stopped), and when covering the window took longer than `paceMaxLookbackS`.
     static func currentPace(timeline: [BestEfforts.Point], at now: Double, unitMeters: Double) -> Double? {
-        let mNow = meters(atTime: now, in: timeline)
-        guard mNow >= paceWindowM, now >= paceWindowS,
-              let crossing = time(atMeters: mNow - paceWindowM, in: timeline) else { return nil }
-        let startT = min(now - paceWindowS, crossing)
-        guard now - startT <= paceMaxLookbackS else { return nil }
-        let dm = mNow - meters(atTime: startT, in: timeline)
+        guard let end = timeline.last, now - end.t <= paceStaleS,
+              end.m >= paceWindowM, end.t >= paceWindowS,
+              let crossing = time(atMeters: end.m - paceWindowM, in: timeline) else { return nil }
+        let startT = min(end.t - paceWindowS, crossing)
+        guard end.t - startT <= paceMaxLookbackS else { return nil }
+        let dm = end.m - meters(atTime: startT, in: timeline)
         guard dm > 0 else { return nil }
-        return (now - startT) / (dm / unitMeters)
+        return (end.t - startT) / (dm / unitMeters)
     }
 
     /// Seconds per `unitMeters`. Nil under 5 % of a unit — the same guard as
