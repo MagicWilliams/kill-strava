@@ -77,6 +77,41 @@ ever changes): your data isn't gone, it still belongs to the old user. Run
 (newest row in Authentication → Users). Run it as-is for the dry-run counts, then uncomment
 step 2 and run again.
 
+## Why CI revokes its own development certificate (#103)
+
+The signed archive uses automatic signing, so it needs an **Apple Development** identity.
+Each run is a fresh macOS runner with an empty keychain, so Xcode mints a brand-new
+development certificate through the API key every time, and nothing used to revoke it.
+After a couple of days of merges the account hit Apple's certificate cap and runs #16 and
+#17 (11 Oct 2026) failed with *"Choose a certificate to revoke. Your account has reached the
+maximum number of certificates."* The distribution side is cloud-managed at export and was
+never the problem.
+
+The workflow now brackets the archive (`.github/scripts/asc_certs.py`):
+
+1. **Snapshot**, before the archive: list the account's development certificates via the
+   App Store Connect API. If this fails the run stops, because without it old and new can't
+   be told apart.
+2. **Cleanup**, at the end, even if something in between failed: revoke a certificate only
+   if it is **absent from the snapshot and** its fingerprint is **in this runner's
+   keychain**. Your Mac's `Apple Development: David Latimore II (JX4RKFC6W2)` fails both
+   tests, and so does anything that existed before the run. A certificate your Mac happens
+   to create mid-run is new but isn't on the runner, so it's reported and left alone.
+   The run summary shows the before/after counts and what was revoked.
+
+The other option, archiving without a development identity and letting export apply the
+distribution profile, was rejected: it can't be proven on a PR, and the failure it risks is
+a build that uploads fine but has no HealthKit.
+
+That failure is guarded anyway. Before upload, the run exports the IPA to disk and
+`.github/scripts/check_entitlements.py` reads the **signed** entitlements of the app and the
+widget extension back with `codesign`. If `com.apple.developer.healthkit` or the
+`group.studio.delight.tempo` app group is missing, the run fails and nothing is uploaded.
+Adding a capability in `ios/project.yml`? Add it to `REQUIRED` in that script too.
+
+Both scripts have tests (`python3 -m unittest discover -s .github/scripts -v`), which
+run at the start of every TestFlight job before the scripts touch the account.
+
 ## When it breaks
 
 - **Workflow warns "TestFlight not configured"**: a secret or the variable is missing (step 5).
@@ -88,6 +123,19 @@ step 2 and run again.
   Then `+` → App IDs → App → `studio.delight.tempo.widgets` with **App Groups** ticked and the
   group assigned, and add **App Groups** (same group) to `studio.delight.tempo` too. Re-run
   the workflow.
+- **"Choose a certificate to revoke. Your account has reached the maximum number of
+  certificates"**: development certificates leaked (#103), most likely from before the
+  cleanup existed. developer.apple.com → Certificates, IDs & Profiles → **Certificates**.
+  Revoke the *Development* ones that aren't yours: CI's are created through the API key, so
+  they are not named "David Latimore II". Keep yours. If two rows look alike, compare the
+  expiry date with
+  `security find-certificate -c "Apple Development: David Latimore II" -p | openssl x509 -noout -enddate`
+  on the Mac. Never touch *Distribution* certificates. Then re-run the workflow.
+- **"Entitlements check failed"**: the signed IPA lost a capability, so nothing was
+  uploaded. The App ID is usually missing HealthKit or App Groups (steps 2 and the widgets
+  bullet above).
+- **"Could not revoke …" in the last step**: the build may well have uploaded, but this
+  run's certificate is still on the account. Revoke it by the id shown in the run summary.
 - **Upload rejected for SDK version**: Apple raised the minimum Xcode. Bump `runs-on` to the
   newest macOS runner.
 - **Build is "Missing Compliance"**: `ITSAppUsesNonExemptEncryption` fell out of

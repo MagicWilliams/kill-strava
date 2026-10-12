@@ -18,6 +18,7 @@ on:
   pull_request:
     paths:
       - .github/workflows/testflight.yml
+      - .github/scripts/**
       - ios/project.yml
 
 concurrency:
@@ -56,6 +57,11 @@ jobs:
       - name: Show toolchain
         run: xcodebuild -version
 
+      # The scripts below hold a DELETE against the live developer account. They prove
+      # themselves on this exact runner image before they are trusted with it.
+      - name: Test CI scripts
+        run: python3 -m unittest discover -s .github/scripts -v
+
       - name: Install XcodeGen
         run: brew install xcodegen
 
@@ -86,6 +92,16 @@ jobs:
           printf '%s' "$ASC_KEY_P8" > "$KEY_PATH"
           echo "KEY_PATH=$KEY_PATH" >> "$GITHUB_ENV"
 
+      # A fresh runner has no development identity, so the signed archive below makes
+      # Xcode mint a new Apple Development certificate on every run. Nothing ever revoked
+      # them, and runs #16/#17 hit Apple's per-account cap (#103). Record what exists now
+      # so the cleanup at the end can revoke this run's certificate and nothing else.
+      # If this listing fails, stop: without it, old and new can't be told apart.
+      - name: Snapshot development certificates
+        id: certs_before
+        if: steps.mode.outputs.signed == 'true'
+        run: python3 .github/scripts/asc_certs.py snapshot --key "$KEY_PATH" --out "$RUNNER_TEMP/certs-before.json"
+
       - name: Archive (signed)
         if: steps.mode.outputs.signed == 'true'
         working-directory: ios
@@ -102,10 +118,9 @@ jobs:
             DEVELOPMENT_TEAM="$APPLE_TEAM_ID" \
             CURRENT_PROJECT_VERSION=${{ github.run_number }}
 
-      - name: Upload to TestFlight
+      - name: Write export options
         if: steps.mode.outputs.signed == 'true'
         run: |
-          set -o pipefail
           cat > "$RUNNER_TEMP/ExportOptions.plist" <<EOF
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -120,6 +135,36 @@ jobs:
           </dict>
           </plist>
           EOF
+          # Same options, but to disk instead of to Apple, so the signed IPA can be opened.
+          cp "$RUNNER_TEMP/ExportOptions.plist" "$RUNNER_TEMP/ExportOptions-ipa.plist"
+          plutil -replace destination -string export "$RUNNER_TEMP/ExportOptions-ipa.plist"
+
+      # Exports the archive exactly as the upload will (same archive, same cloud-managed
+      # distribution signing), but writes the IPA locally so its entitlements can be read
+      # back before anything reaches TestFlight.
+      - name: Export IPA (for the entitlements check)
+        if: steps.mode.outputs.signed == 'true'
+        run: |
+          set -o pipefail
+          xcodebuild -exportArchive \
+            -archivePath "$RUNNER_TEMP/Tempo.xcarchive" \
+            -exportOptionsPlist "$RUNNER_TEMP/ExportOptions-ipa.plist" \
+            -exportPath "$RUNNER_TEMP/ipa" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$KEY_PATH" \
+            -authenticationKeyID "$ASC_KEY_ID" \
+            -authenticationKeyIssuerID "$ASC_ISSUER_ID"
+
+      # A build without HealthKit is worse than no build: it installs, opens, and shows
+      # nothing. Fail here, before upload, if signing dropped a capability.
+      - name: Check entitlements
+        if: steps.mode.outputs.signed == 'true'
+        run: python3 .github/scripts/check_entitlements.py "$RUNNER_TEMP"/ipa/*.ipa
+
+      - name: Upload to TestFlight
+        if: steps.mode.outputs.signed == 'true'
+        run: |
+          set -o pipefail
           xcodebuild -exportArchive \
             -archivePath "$RUNNER_TEMP/Tempo.xcarchive" \
             -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" \
@@ -129,6 +174,14 @@ jobs:
             -authenticationKeyID "$ASC_KEY_ID" \
             -authenticationKeyIssuerID "$ASC_ISSUER_ID"
           echo "Uploaded build ${{ github.run_number }} ($(git rev-parse --short HEAD)) — it appears in TestFlight after Apple finishes processing (~5–15 min)." >> "$GITHUB_STEP_SUMMARY"
+
+      # Runs even when the archive, export or upload failed: a certificate minted by a run
+      # that then broke is still a leak. Revokes only certificates that are both absent
+      # from the snapshot AND in this runner's keychain, so David's Mac identity and any
+      # pre-existing certificate are untouchable. Posts before/after counts to the summary.
+      - name: Revoke this run's development certificate
+        if: always() && steps.certs_before.outcome == 'success'
+        run: python3 .github/scripts/asc_certs.py cleanup --key "$KEY_PATH" --before "$RUNNER_TEMP/certs-before.json"
 
       - name: Remove API key
         if: always()
