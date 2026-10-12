@@ -77,6 +77,12 @@ Onboarding interview (ONLY when <athlete_context>.onboarding is present):
 const TAKEAWAY_INSTRUCTIONS = `Write the coach's takeaway for the single run in <run_detail> — the athlete sees it as a card at the top of that run's detail page.
 2–4 sentences, calm expert voice. Ground it in this run's actual numbers and the athlete's context (goal, recent weeks). Say what the run *was* (its role/effect), one honest observation, and — only if it earns it — one pointed implication for what's next. No greeting, no sign-off, no questions, no markdown.`;
 
+// Block review: one shot, no tools, cached by the app in goals.review (#100). The block's
+// numbers arrive pre-computed in <block_review> (Engine/BlockReview.swift) so the model
+// quotes them rather than re-deriving them from 21 days of recent runs.
+const BLOCK_REVIEW_INSTRUCTIONS = `Write the coach's retrospective on the training block in <block_review> — the athlete reads it at the bottom of the Block Review screen, after the race is over.
+4–8 sentences, calm expert voice, plain prose. Be honest: say what worked, what didn't, and what to carry into the next block, each grounded in the block's actual numbers (weekly volume against plan, peak week, long runs, session adherence, taper, the projection against the result). If the outcome is did_not_start or did_not_finish, or the result missed the goal, say so plainly and without consolation — then what the block still built. If result_time is missing, do not invent one. No greeting, no sign-off, no questions, no markdown.`;
+
 const TOOLS = [
   {
     name: "amend_run",
@@ -224,11 +230,14 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { messages, context, mode, run } = await req.json();
+    const { messages, context, mode, run, block } = await req.json();
 
     // Takeaway mode: one-shot per-run read, cached by the app in runs.coach_takeaway.
+    // Block review mode: one-shot block retrospective, cached by the app in goals.review.
     const takeaway = mode === "takeaway";
-    if (!takeaway && (!Array.isArray(messages) || messages.length === 0)) {
+    const blockReview = mode === "block_review";
+    const oneShot = takeaway || blockReview;
+    if (!oneShot && (!Array.isArray(messages) || messages.length === 0)) {
       return Response.json({ error: "messages required" }, { status: 400 });
     }
 
@@ -237,6 +246,10 @@ Deno.serve(async (req) => {
     if (takeaway) {
       system += `\n\n<run_detail>\n${JSON.stringify(run ?? {}, null, 1)}\n</run_detail>`;
       wireMessages = [{ role: "user", content: TAKEAWAY_INSTRUCTIONS }];
+    }
+    if (blockReview) {
+      system += `\n\n<block_review>\n${JSON.stringify(block ?? {}, null, 1)}\n</block_review>`;
+      wireMessages = [{ role: "user", content: BLOCK_REVIEW_INSTRUCTIONS }];
     }
 
     const resp = await fetch(ANTHROPIC_URL, {
@@ -250,7 +263,7 @@ Deno.serve(async (req) => {
         model: MODEL,
         ...SAMPLING,
         system,
-        ...(takeaway ? {} : { tools: TOOLS }),
+        ...(oneShot ? {} : { tools: TOOLS }),
         messages: wireMessages.map((m) => ({
           role: m.role === "assistant" ? "assistant" : "user",
           content: String(m.content),
@@ -319,7 +332,7 @@ Deno.serve(async (req) => {
           model: MODEL,
           ...SAMPLING,
           system,
-          ...(takeaway ? {} : { tools: TOOLS }),
+          ...(oneShot ? {} : { tools: TOOLS }),
           messages: wireMessages.map((m) => ({
             role: m.role === "assistant" ? "assistant" : "user",
             content: String(m.content),
@@ -332,7 +345,10 @@ Deno.serve(async (req) => {
         reply = retryBlocks.filter((b) => b.type === "text").map((b) => b.text).join("\n").trim();
         toolBlocks = retryBlocks.filter((b) => b.type === "tool_use");
       }
-      if (!reply && toolBlocks.length === 0) {
+      // Not for a block review: the app caches whatever comes back in goals.review, and a
+      // cached "lost my train of thought" would stand in for the retrospective forever. An
+      // empty reply is what tells the app to show "try again" instead.
+      if (!reply && toolBlocks.length === 0 && !blockReview) {
         reply = "Lost my train of thought there — ask me that again.";
       }
     }
