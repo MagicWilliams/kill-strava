@@ -39,7 +39,21 @@ targets:
         UILaunchScreen: {}
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
         NSHealthShareUsageDescription: "Tempo reads your runs from Apple Health to build and adapt your training plan."
-        NSHealthUpdateUsageDescription: "Tempo can mark planned workouts complete in Apple Health."
+        NSHealthUpdateUsageDescription: "Tempo saves the runs you record, with their route, distance and calories, to Apple Health."
+        # Run recorder (#110). When In Use only, never Always: a run is always started from
+        # the foreground, and CLLocationManager.allowsBackgroundLocationUpdates then keeps
+        # updates flowing after the screen locks (blue pill). Smaller ask, easier review.
+        NSLocationWhenInUseUsageDescription: "Tempo uses your location during a run you start, to map your route and measure distance and pace. It stops when the run ends."
+        # location: allowsBackgroundLocationUpdates = true without this key is a fatal error,
+        #   not a silent no-op (CLLocationManager docs).
+        # audio: spoken split cues (#118) with the phone locked in a pocket. Without it,
+        #   activating a .playback session from the background fails with '!pla'.
+        # Deliberately absent: `workout-processing` is documented for watchOS only. A primary
+        #   HKWorkoutSession + HKLiveWorkoutBuilder on iPhone needs iOS 26 (we target 17), so
+        #   on 17–25 it is location updates that keep an outdoor run alive in the background.
+        UIBackgroundModes: [location, audio]
+        # Lock Screen + Dynamic Island while recording (#119).
+        NSSupportsLiveActivities: true
         # HTTPS only, nothing custom — declaring it here skips the export-compliance
         # question App Store Connect otherwise asks on every single TestFlight build.
         ITSAppUsesNonExemptEncryption: false
