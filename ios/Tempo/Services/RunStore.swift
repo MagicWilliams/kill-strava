@@ -1,4 +1,5 @@
 import Foundation
+import Supabase
 
 /// App-wide source of truth for real training data.
 ///
@@ -466,7 +467,22 @@ final class RunStore: ObservableObject {
         let corrected: Bool
         let source: String
         let external_id: String?
+        // Journal (#120, migration 0016). Absent from the fallback select, and Optional
+        // decodes an absent key as nil, so one row type reads both shapes.
+        let rpe: Int?
+        let feel_tags: [String]?
+        let notes: String?
+        let title: String?
+        let photo_path: String?
+        let shoe_id: UUID?
     }
+
+    private static let runColumns =
+        "id,start_time,distance_m,duration_s,elapsed_duration_s,avg_hr,corrected,source,external_id"
+
+    /// Set once this session has learned migration 0016 isn't applied, so every later
+    /// refresh skips straight to the select that works instead of failing first.
+    private var journalColumnsMissing = false
 
     /// Read every run, a page at a time.
     ///
@@ -480,6 +496,20 @@ final class RunStore: ObservableObject {
     /// Paged rather than solved by raising the server's `max-rows`: that moves the cliff
     /// instead of removing it, and the next athlete with a longer history falls off it.
     private func fetchFromSupabase() async throws -> [RunSummary] {
+        if !journalColumnsMissing {
+            do {
+                return try await fetchFromSupabase(columns: Self.runColumns + "," + RunJournalPayload.columns)
+            } catch let error as PostgrestError where RunJournalPayload.isMissingColumn(code: error.code) {
+                // Migration 0016 isn't applied yet. The journal is decoration; the archive
+                // is the app. Read the archive without it rather than lose every run.
+                journalColumnsMissing = true
+                Telemetry.info("sync.journal_columns_missing")
+            }
+        }
+        return try await fetchFromSupabase(columns: Self.runColumns)
+    }
+
+    private func fetchFromSupabase(columns: String) async throws -> [RunSummary] {
         // `superseded_by` marks a row as a duplicate of another run (migration 0008 —
         // Garmin re-exports that predate the ingest dedupe). Retired rows are kept for
         // reversibility but must never reach a total, a record, or the coach's context.
@@ -488,7 +518,7 @@ final class RunStore: ObservableObject {
         while true {
             let page: [RunRow] = try await Supa.client
                 .from("runs")
-                .select("id,start_time,distance_m,duration_s,elapsed_duration_s,avg_hr,corrected,source,external_id")
+                .select(columns)
                 .is("superseded_by", value: nil)
                 .order("start_time", ascending: false)
                 .range(from: offset, to: offset + RunFetch.pageSize - 1)
@@ -511,7 +541,15 @@ final class RunStore: ObservableObject {
                 avgHR: $0.avg_hr,
                 corrected: $0.corrected,
                 source: $0.source,
-                externalID: $0.external_id
+                externalID: $0.external_id,
+                journal: RunJournalEntry(
+                    rpe: $0.rpe,
+                    feelTags: $0.feel_tags ?? [],
+                    notes: $0.notes,
+                    title: $0.title,
+                    photoPath: $0.photo_path,
+                    shoeID: $0.shoe_id
+                )
             )
         }
     }
