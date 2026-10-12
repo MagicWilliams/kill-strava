@@ -1,0 +1,14 @@
+SHA-256 hash: ABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABAB
+SHA-1 hash: 2084FC9875A00B76C3054EE2E034D9CBCFEE7393
+keychain: "/Users/runner/Library/Keychains/login.keychain-db"
+version: 512
+class: 0x80001000
+attributes:
+    "labl"<blob>="Apple Development: Created via API (2P8QGJVNJ7)"
+SHA-256 hash: CDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCD
+SHA-1 hash: 0000000000000000000000000000000000000000
+keychain: "/Library/Keychains/System.keychain"
+version: 512
+class: 0x80001000
+attributes:
+    "labl"<blob>="com.apple.systemdefault"
