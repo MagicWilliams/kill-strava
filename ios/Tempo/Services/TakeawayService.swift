@@ -73,6 +73,29 @@ enum TakeawayService {
         struct Patch: Encodable { let coach_takeaway: String }
         _ = try? await Supa.client.from("runs").update(Patch(coach_takeaway: reply.reply))
             .eq("id", value: run.id.uuidString).execute()
+        // The just-running Today shows the newest read; one written from Run Detail should
+        // be there when the athlete navigates back, not after the next pull-to-refresh.
+        store.noteTakeaway(LatestRead.Read(runID: run.id, runStart: run.start, text: reply.reply))
         return reply.reply
+    }
+
+    /// The newest run with a cached coach read, for the just-running Today (#101).
+    ///
+    /// Throws rather than returning nil on failure: "the coach hasn't read anything" and
+    /// "the server didn't answer" are different, and only the first should clear the card.
+    static func latestRead() async throws -> LatestRead.Read? {
+        struct Row: Decodable { let id: UUID; let start_time: Date; let coach_takeaway: String? }
+        let rows: [Row] = try await Supa.client
+            .from("runs")
+            .select("id,start_time,coach_takeaway")
+            .is("superseded_by", value: nil)
+            .not("coach_takeaway", operator: .is, value: "null")
+            .order("start_time", ascending: false)
+            .limit(1)
+            .execute()
+            .value
+        return rows.first.flatMap { row in
+            row.coach_takeaway.map { LatestRead.Read(runID: row.id, runStart: row.start_time, text: $0) }
+        }
     }
 }
