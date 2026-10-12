@@ -50,9 +50,9 @@ enum Freshness {
     /// Below this CTL there is nothing meaningful to read form off. CTL is roughly average
     /// daily load in easy-mile units, so 0.5 is about three and a half easy miles a week.
     static let restedBelowCTL = 0.5
-    /// Form / fitness above this is fresh — readiness ≥ ~69, the edge of Primed.
-    static let freshAbove = 0.15
-    /// Form / fitness below this is carrying fatigue — readiness ≤ ~46.
+    /// Form / fitness above this is fresh — readiness ≥ 70, inside Primed.
+    static let freshAbove = 0.17
+    /// Form / fitness below this is carrying fatigue — readiness ≤ 46, Loaded or below.
     static let fatiguedBelow = -0.10
     /// Fitness up at least this fraction over four weeks counts as building.
     static let buildingGain = 0.05
@@ -61,7 +61,9 @@ enum Freshness {
     ///   - ctlFourWeeksAgo: fitness 28 days back, from `FitnessMetrics.ctlSeries`. Nil when
     ///     the series is too short to say; that never reads as building.
     static func state(ctl: Double, atl: Double, ctlFourWeeksAgo: Double?) -> State {
-        guard ctl >= restedBelowCTL else { return .rested }
+        // Low fitness with real recent load is someone (re)starting, not someone resting:
+        // the first fortnight back reads as building, not as "both low".
+        guard ctl >= restedBelowCTL else { return atl >= restedBelowCTL ? .building : .rested }
         let formPct = (ctl - atl) / ctl
         if formPct > freshAbove { return .fresh }
         if formPct < fatiguedBelow { return .carryingFatigue }
