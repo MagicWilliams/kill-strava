@@ -9,6 +9,7 @@ import SwiftUI
 /// swaps to the main app reactively — no callbacks needed here.
 struct OnboardingView: View {
     @EnvironmentObject private var store: RunStore
+    @Environment(\.units) private var units
 
     private enum Step { case welcome, connect, intake, interview }
     @State private var step: Step = .welcome
@@ -128,8 +129,7 @@ struct OnboardingView: View {
                     VStack(alignment: .leading, spacing: 3) {
                         Text("\(store.runs.count) runs found")
                             .font(Tokens.Font.ui(15, .semibold)).foregroundStyle(Tokens.Palette.textPrimary)
-                        Text(String(format: "%.0f miles of history — your coach starts from what you actually do.",
-                                    store.runs.reduce(0) { $0 + $1.miles }))
+                        Text("\(units.number(miles: store.runs.reduce(0) { $0 + $1.miles }, decimals: 0)) \(units.name(plural: true)) of history — your coach starts from what you actually do.")
                             .font(Tokens.Font.ui(12)).foregroundStyle(Tokens.Palette.textSecondary)
                     }
                 }

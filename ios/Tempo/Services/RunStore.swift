@@ -633,6 +633,9 @@ final class RunStore: ObservableObject {
                 .update(Patch(units: new.rawValue))
                 .eq("id", value: uid)
                 .execute()
+            // The widgets print the unit the snapshot carries (#109); without a rewrite
+            // they would stay in the old one until the next refresh.
+            publishWidgetSnapshot()
         } catch {
             Telemetry.error("profile.units_write_failed", error, context: ["units": new.rawValue])
             units = previous
@@ -820,6 +823,13 @@ struct CoachContext: Encodable {
     }
 
     let today: String
+    /// `"mi"` or `"km"`: the unit the athlete reads every screen in (#109). Every figure in
+    /// this payload stays in miles and seconds per mile, as its field names say; the coach
+    /// prompt tells the model to *say* distances and paces in this unit. Converting the
+    /// payload instead would also change what the tools are handed back (`distance_m`,
+    /// `target_pace_sec` are per mile), and a coach doing arithmetic in two systems is how
+    /// an amended run ends up a kilometre short.
+    let units: String
     /// `"training"`, `"just_running"` or `"race_passed"` — see `TodayMode.coachMode`. Explicit rather than
     /// left for the model to infer from a missing `plan`, because the coach's default with
     /// no plan was to go looking for a race (#101).
@@ -867,6 +877,7 @@ extension RunStore {
         let day = Date.FormatStyle(date: .abbreviated, time: .omitted)
         return CoachContext(
             today: Date.now.formatted(day),
+            units: units.rawValue,
             mode: TodayMode.coachMode(todayMode, goal: goal),
             goal: goalLine.coachLine,
             risk_tolerance: riskTolerance,

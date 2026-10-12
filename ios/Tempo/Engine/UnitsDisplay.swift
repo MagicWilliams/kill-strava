@@ -72,19 +72,52 @@ extension Units {
     ///
     /// The rule is restated rather than called because the widget extension compiles this
     /// file without `TimeAccounting`; `UnitsDisplayTests` pins the two to each other.
-    func runPace(movingSeconds: Int, meters: Int) -> Double? {
-        let miles = Double(meters) / Self.metersPerMile
+    func runPace(movingSeconds: Int, meters: Double) -> Double? {
+        let miles = meters / Self.metersPerMile
         guard miles > 0.05, movingSeconds > 0 else { return nil }
         switch self {
         case .mi: return Double(Int(Double(movingSeconds) / miles))
-        case .km: return pace(seconds: Double(movingSeconds), meters: Double(meters))
+        case .km: return pace(seconds: Double(movingSeconds), meters: meters)
         }
     }
 
-    /// "8:45 /mi" / "5:26 /km" for a run, or "—" with no pace.
-    func formatRunPace(movingSeconds: Int, meters: Int) -> String {
-        runPace(movingSeconds: movingSeconds, meters: meters).map { formatPace($0) } ?? Self.missing
+    func runPace(movingSeconds: Int, meters: Int) -> Double? {
+        runPace(movingSeconds: movingSeconds, meters: Double(meters))
     }
+
+    // MARK: - Elevation and speed
+
+    /// Elevation goes with the distance unit: feet beside miles, metres beside kilometres.
+    func elevation(meters m: Double) -> Double {
+        switch self {
+        case .mi: return m * Self.feetPerMeter
+        case .km: return m
+        }
+    }
+
+    /// "ft" / "m".
+    var elevationAbbreviation: String {
+        switch self {
+        case .mi: return "ft"
+        case .km: return "m"
+        }
+    }
+
+    /// "420 ft" / "128 m".
+    func formatElevation(meters m: Double) -> String {
+        Self.fixed(elevation(meters: m), decimals: 0) + " " + elevationAbbreviation
+    }
+
+    /// "7.4 mph" / "11.9 km/h", from a speed in miles per hour.
+    func formatSpeed(milesPerHour mph: Double) -> String {
+        switch self {
+        case .mi: return Self.fixed(mph, decimals: 1) + " mph"
+        case .km: return Self.fixed(distance(miles: mph), decimals: 1) + " km/h"
+        }
+    }
+
+    /// The factor the app has always used for feet (`RunDetailView`, `TakeawayService`).
+    static let feetPerMeter = 3.28084
 
     // MARK: - Words
 
@@ -108,18 +141,24 @@ extension Units {
 
     // MARK: - Thresholds
 
-    /// The long-run threshold as the athlete thinks of it: 20 in miles, 32 in kilometres.
+    /// A whole-mile long-run threshold as the athlete says it: "20+ mi" / "32+ km".
     ///
-    /// Not a conversion. 20 mi is 32.19 km, and nobody calls a long run "32.19+ km". 32 km
-    /// is the round figure km athletes use for the same run, and it is what the label says.
-    /// The count underneath is unchanged (`BlockReview.twentyMileMeters`): one number is
-    /// counted, only its name differs by unit.
-    var longRunThresholdLabel: String {
+    /// In km it is the whole kilometres *below* the mile figure, not the nearest: 20 mi is
+    /// 32.19 km and nobody calls a long run "32.19+ km", so the label is "32+ km", the round
+    /// figure km athletes already use for that run. 12 mi (the half's bar) is "19+ km".
+    /// Rounding down rather than to nearest means the km label never promises more than the
+    /// mile bar asks for.
+    func longRunThresholdLabel(miles: Int) -> String {
         switch self {
-        case .mi: return "20+ mi"
-        case .km: return "32+ km"
+        case .mi: return "\(miles)+ \(abbreviation)"
+        case .km: return "\(Int(distance(miles: Double(miles)).rounded(.down)))+ \(abbreviation)"
         }
     }
+
+    /// The Block Review tile's bar: "20+ mi" / "32+ km". In km the count under it is taken
+    /// at 32 km as well (`BlockReview.Review.longRunCount`), so the tile never shows a label
+    /// its number disagrees with.
+    var longRunThresholdLabel: String { longRunThresholdLabel(miles: 20) }
 
     // MARK: -
 

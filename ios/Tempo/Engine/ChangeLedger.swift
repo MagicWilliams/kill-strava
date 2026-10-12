@@ -104,7 +104,7 @@ enum ChangeLedger {
     ///
     /// - Parameter recorded: `runs.original` for amended runs, keyed by run id. A run with no
     ///   snapshot (never corrected, or deleted) is simply absent.
-    static func entries(from records: [Record], recorded: [UUID: RecordedRun] = [:]) -> [Entry] {
+    static func entries(from records: [Record], recorded: [UUID: RecordedRun] = [:], units: Units = .mi) -> [Entry] {
         var seen = Set<UUID>()
         let unique = records.filter { seen.insert($0.messageID).inserted }
 
@@ -116,7 +116,7 @@ enum ChangeLedger {
         var last: [String: String] = [:]   // "target|field" → the value it was last set to
         var built: [Entry] = []
         for record in chronological {
-            let entry = entry(for: record, last: &last, recorded: recorded)
+            let entry = entry(for: record, last: &last, recorded: recorded, units: units)
             built.append(entry)
         }
         return built.reversed()
@@ -125,7 +125,8 @@ enum ChangeLedger {
     private static func entry(
         for record: Record,
         last: inout [String: String],
-        recorded: [UUID: RecordedRun]
+        recorded: [UUID: RecordedRun],
+        units: Units
     ) -> Entry {
         let a = record.action
         var changes: [Delta] = []
@@ -156,8 +157,8 @@ enum ChangeLedger {
             target = runID.map(Target.run) ?? .unlinked
             let key = "run:\(a.run_id ?? "?")"
             let snapshot = runID.flatMap { recorded[$0] }
-            set(key, "Distance", a.distance_m.map(Format.miles),
-                recordedBefore: snapshot?.distance_m.map(Format.miles))
+            set(key, "Distance", a.distance_m.map { Format.distance($0, units) },
+                recordedBefore: snapshot?.distance_m.map { Format.distance($0, units) })
             set(key, "Time", a.duration_s.map(Format.clock),
                 recordedBefore: snapshot?.duration_s.map(Format.clock))
             set(key, "Avg HR", a.avg_hr.map(Format.bpm),
@@ -169,7 +170,7 @@ enum ChangeLedger {
             target = .loggedRun(externalID: ManualRunIdentity.externalID(forProposalIn: record.messageID))
             let key = "logged:\(record.messageID.uuidString)"
             set(key, "Date", a.start_time.flatMap(Format.isoDay))
-            set(key, "Distance", a.distance_m.map(Format.miles))
+            set(key, "Distance", a.distance_m.map { Format.distance($0, units) })
             set(key, "Time", a.duration_s.map(Format.clock))
             set(key, "Avg HR", a.avg_hr.map(Format.bpm))
 
@@ -211,8 +212,8 @@ enum ChangeLedger {
             set(key, "Day", a.date.flatMap(Format.day))
             set(key, "Type", a.session_type.map { $0.capitalized })
             set(key, "Title", a.title)
-            set(key, "Distance", a.target_distance_m.map(Format.miles))
-            set(key, "Pace", a.target_pace_sec.map(Format.pace))
+            set(key, "Distance", a.target_distance_m.map { Format.distance($0, units) })
+            set(key, "Pace", a.target_pace_sec.map { Format.pace($0, units) })
             set(key, "Detail", a.detail)
             set(key, "Status", a.session_status.map { $0.capitalized })
             if a.session_status == "skipped" {
@@ -348,8 +349,8 @@ enum ChangeLedger {
 
     /// Fixed-locale formatting, so a ledger line reads the same in a test as on the phone.
     enum Format {
-        static func miles(_ meters: Int) -> String {
-            Units.mi.formatDistance(meters: Double(meters))
+        static func distance(_ meters: Int, _ units: Units = .mi) -> String {
+            units.formatDistance(meters: Double(meters))
         }
 
         static func clock(_ seconds: Int) -> String {
@@ -358,8 +359,8 @@ enum ChangeLedger {
                 : String(format: "%d:%02d", seconds / 60, seconds % 60)
         }
 
-        static func pace(_ secPerMile: Int) -> String {
-            Units.mi.formatPace(Double(secPerMile))
+        static func pace(_ secPerMile: Int, _ units: Units = .mi) -> String {
+            units.formatPace(secondsPerMile: secPerMile)
         }
 
         static func bpm(_ value: Int) -> String { "\(value) bpm" }

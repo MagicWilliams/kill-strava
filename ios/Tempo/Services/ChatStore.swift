@@ -199,7 +199,7 @@ final class ChatStore: ObservableObject {
         guard let handoff = runStore.intakeHandoff, !handoff.sentToCoach, !isThinking else { return }
         runStore.markIntakeSent()
         errorText = nil
-        append(.user, handoff.answers.transcriptLine(calendar: RunStore.cal))
+        append(.user, handoff.answers.transcriptLine(calendar: RunStore.cal, units: runStore.units))
         isThinking = true
         defer { isThinking = false }
         let history = messages.suffix(24).map {
@@ -620,7 +620,7 @@ final class ChatStore: ObservableObject {
             projectedFinishSeconds: rep.projected_finish_s,
             startWeeklyMiles: rep.start_weekly_mi,
             peakWeeklyMiles: rep.peak_weekly_mi
-        ))
+        ), units: runStore.units)
     }
 
     private func applyAthleteUpdate(_ action: ProposedAction, runStore: RunStore) async throws {

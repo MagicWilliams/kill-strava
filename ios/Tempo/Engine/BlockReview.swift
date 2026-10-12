@@ -83,6 +83,8 @@ enum BlockReview {
         /// Runs of 20 mi or more. Counted for every block; shown only when
         /// `showsLongRunCount`.
         let twentyPlusCount: Int
+        /// Runs of 32 km or more: the same tile for an athlete who reads km (#109).
+        let thirtyTwoKmPlusCount: Int
         let all: Adherence
         let quality: Adherence
         let long: Adherence
@@ -95,6 +97,18 @@ enum BlockReview {
         /// The 20+ tile belongs to half and marathon blocks. A 5K block shows its longest run
         /// and its quality count instead.
         var showsLongRunCount: Bool { raceMeters >= halfMeters }
+
+        /// The long-run tile's number in the athlete's unit, under `Units.longRunThresholdLabel`.
+        ///
+        /// Counted against the label rather than converted from it. A km athlete runs a
+        /// 32.0 km long run; tested against 20 mi (32,186 m) it would miss a tile that reads
+        /// "32+ km". What the coach is told stays the 20-mile count (`runs_20_plus`).
+        func longRunCount(_ units: Units) -> Int {
+            switch units {
+            case .mi: return twentyPlusCount
+            case .km: return thirtyTwoKmPlusCount
+            }
+        }
         /// Projection drift across the block. Negative = the projection got faster.
         var projectionChangeS: Int? {
             guard let a = projectedAtStartS, let b = projectedRaceMorningS else { return nil }
@@ -124,6 +138,11 @@ enum BlockReview {
     static let twentyMilesM = Int(20 * RaceRecap.metersPerMile)
 
     static func isTwentyPlus(_ run: RunSummary) -> Bool { run.distanceM >= twentyMilesM }
+
+    /// 32 km in stored whole metres. No truncation question here: 32,000 is already whole.
+    static let thirtyTwoKmM = 32_000
+
+    static func isThirtyTwoKmPlus(_ run: RunSummary) -> Bool { run.distanceM >= thirtyTwoKmM }
 
     // MARK: - Shared with RaceRecap.block
 
@@ -216,6 +235,7 @@ enum BlockReview {
             peakWeek: weeks.max { $0.actualMiles < $1.actualMiles }.flatMap { $0.actualMiles > 0 ? $0 : nil },
             longest: inBlock.max { $0.distanceM < $1.distanceM },
             twentyPlusCount: inBlock.filter(isTwentyPlus).count,
+            thirtyTwoKmPlusCount: inBlock.filter(isThirtyTwoKmPlus).count,
             all: adherence(counted),
             quality: adherence(counted.filter(\.isQuality)),
             long: adherence(counted.filter(\.isLong)),

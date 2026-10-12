@@ -12,6 +12,7 @@ struct RunDetailView: View {
     @EnvironmentObject private var store: RunStore
     @EnvironmentObject private var router: TabRouter
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.units) private var units
     @StateObject private var model = RunDetailStore()
     @State private var showFullMap = false
     @State private var scrub: RunDetail.SeriesPoint?
@@ -37,7 +38,7 @@ struct RunDetailView: View {
                         if let detail = model.detail, detail.series.contains(where: { $0.elevationM != nil }) {
                             elevationCard(detail)
                         }
-                        if let detail = model.detail, detail.splits.count > 1 {
+                        if let detail = model.detail, detail.splits(units).count > 1 {
                             splitsCard(detail)
                         }
                         bestEffortsCard
@@ -254,7 +255,9 @@ struct RunDetailView: View {
                         }
                         Spacer()
                         Text(BestEfforts.formatTime(effort.durationS)).mono(13, Tokens.Palette.textPrimary)
-                        Text(BestEfforts.paceSecPerMile(effort).map { PaceModel.format($0) + " /mi" } ?? "—")
+                        Text(BestEfforts.distance(forKey: effort.distanceM)
+                            .flatMap { units.pace(seconds: Double(effort.durationS), meters: $0.meters) }
+                            .map { units.formatPace($0) } ?? "—")
                             .mono(11, Tokens.Palette.textTertiary)
                             .frame(width: 58, alignment: .trailing)
                     }
@@ -276,20 +279,20 @@ struct RunDetailView: View {
     private var heroStats: some View {
         let d = model.detail
         let corrected = run.corrected
-        let miles = corrected ? run.miles : (d?.miles ?? run.miles)
+        let meters = corrected ? Double(run.distanceM) : (d.map { $0.miles * Units.metersPerMile } ?? Double(run.distanceM))
         let time = run.durationS
         // Derived from the two numbers beside it rather than read off HealthKit, so the
         // three cannot disagree on screen — distance ÷ time must equal the pace printed
         // between them.
-        let pace = TimeAccounting.paceSecPerMile(seconds: time, miles: miles)
+        let pace = units.runPace(movingSeconds: time, meters: meters)
         return HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Text(String(format: "%.2f", miles))
+            Text(units.number(meters: meters, decimals: 2))
                 .font(Tokens.Font.display(52)).foregroundStyle(Tokens.Palette.textPrimary)
-            Text("MI").font(Tokens.Font.mono(14)).tracking(1.5).foregroundStyle(Tokens.Palette.textTertiary)
+            Text(units.abbreviation.uppercased()).font(Tokens.Font.mono(14)).tracking(1.5).foregroundStyle(Tokens.Palette.textTertiary)
             Spacer()
             VStack(alignment: .trailing, spacing: 5) {
                 if let pace {
-                    Text(PaceModel.format(pace) + " /mi").mono(16)
+                    Text(units.formatPace(pace)).mono(16)
                 }
                 Text(format(seconds: time)).mono(14, Tokens.Palette.textSecondary)
             }
@@ -341,8 +344,8 @@ struct RunDetailView: View {
         VStack(alignment: .leading, spacing: 3) {
             Text(format(seconds: seconds)).display(20)
             SectionLabel(label)
-            if showPace, let p = TimeAccounting.paceSecPerMile(seconds: seconds, miles: run.miles) {
-                Text(PaceModel.format(p) + " /mi")
+            if showPace, let p = units.runPace(movingSeconds: seconds, meters: run.distanceM) {
+                Text(units.formatPace(p))
                     .mono(11, Tokens.Palette.textTertiary)
             }
         }
@@ -359,11 +362,11 @@ struct RunDetailView: View {
         // moving/elapsed/elapsed-pace here from a second, sample-derived estimate; keeping
         // both meant the page could print two different answers for the same question.
         let stats: [(String, String)?] = [
-            d?.bestPaceSec.map { ("BEST PACE", PaceModel.format($0) + " /mi") },
-            corrected ? nil : d?.avgSpeedMph.map { ("AVG SPEED", String(format: "%.1f mph", $0)) },
+            d?.bestPaceSec.map { ("BEST PACE", units.formatPace(secondsPerMile: $0)) },
+            corrected ? nil : d?.avgSpeedMph.map { ("AVG SPEED", units.formatSpeed(milesPerHour: $0)) },
             (run.avgHR ?? d?.avgHR).map { ("AVG HR", "\($0) bpm") },
             d?.maxHR.map { ("MAX HR", "\($0) bpm") },
-            d?.elevGainM.map { ("ELEV GAIN", String(format: "%.0f ft", $0 * 3.28084)) },
+            d?.elevGainM.map { ("ELEV GAIN", units.formatElevation(meters: $0)) },
             d?.cadenceSPM.map { ("CADENCE", "\($0) spm") },
             d?.calories.map { ("CALORIES", "\($0)") },
         ]
@@ -394,7 +397,7 @@ struct RunDetailView: View {
                 ForEach(detail.series) { p in
                     if let pace = p.paceSecPerMile {
                         LineMark(
-                            x: .value("Miles", p.miles),
+                            x: .value("Distance", units.distance(miles: p.miles)),
                             y: .value("Pace", normalizedPace(pace, detail)),
                             series: .value("Series", "pace")
                         )
@@ -405,7 +408,7 @@ struct RunDetailView: View {
                 ForEach(detail.series) { p in
                     if let hr = p.hr {
                         LineMark(
-                            x: .value("Miles", p.miles),
+                            x: .value("Distance", units.distance(miles: p.miles)),
                             y: .value("HR", normalizedHR(hr, detail)),
                             series: .value("Series", "hr")
                         )
@@ -414,7 +417,7 @@ struct RunDetailView: View {
                     }
                 }
                 if let scrub {
-                    RuleMark(x: .value("Miles", scrub.miles))
+                    RuleMark(x: .value("Distance", units.distance(miles: scrub.miles)))
                         .foregroundStyle(Tokens.Palette.textTertiary)
                         .lineStyle(StrokeStyle(lineWidth: 1, dash: [3, 3]))
                 }
@@ -436,7 +439,9 @@ struct RunDetailView: View {
                                 .onChanged { value in
                                     guard let plot = proxy.plotFrame else { return }
                                     let x = value.location.x - geo[plot].origin.x
-                                    if let miles: Double = proxy.value(atX: x) {
+                                    // The axis is in the athlete's unit, so the finger is too.
+                                    if let at: Double = proxy.value(atX: x) {
+                                        let miles = at * units.meters / Units.metersPerMile
                                         scrub = detail.series.min(by: { abs($0.miles - miles) < abs($1.miles - miles) })
                                     }
                                 }
@@ -455,11 +460,11 @@ struct RunDetailView: View {
     }
 
     @ViewBuilder private func scrubReadout(_ detail: RunDetail) -> some View {
-        let mile = scrub.map { String(format: "MI %.2f", $0.miles) } ?? "FULL RUN"
-        let pace = scrub?.paceSecPerMile.map { PaceModel.format(Int($0)) + " /mi" }
-            ?? detail.avgPaceSec.map { PaceModel.format($0) + " /mi avg" }
+        let mile = scrub.map { units.abbreviation.uppercased() + " " + units.number(miles: $0.miles, decimals: 2) } ?? "FULL RUN"
+        let pace = scrub?.paceSecPerMile.map { units.formatPace(secondsPerMile: $0) }
+            ?? detail.avgPaceSec.map { units.formatPace(secondsPerMile: $0) + " avg" }
         let hr = scrub?.hr.map { "\(Int($0)) bpm" } ?? detail.avgHR.map { "\($0) bpm avg" }
-        let elev = scrub?.elevationM.map { String(format: "%.0f ft", $0 * 3.28084) }
+        let elev = scrub?.elevationM.map { units.formatElevation(meters: $0) }
         HStack(spacing: 12) {
             Text(mile).mono(11, Tokens.Palette.accentText)
             if let pace { Text(pace).mono(11, Tokens.Palette.textPrimary) }
@@ -528,7 +533,7 @@ struct RunDetailView: View {
                 SectionLabel("Elevation")
                 Spacer()
                 if let gain = detail.elevGainM, let loss = detail.elevLossM {
-                    Text(String(format: "↑ %.0f FT · ↓ %.0f FT", gain * 3.28084, loss * 3.28084))
+                    Text("↑ \(units.formatElevation(meters: gain)) · ↓ \(units.formatElevation(meters: loss))".uppercased())
                         .font(Tokens.Font.mono(10)).tracking(1)
                         .foregroundStyle(Tokens.Palette.textTertiary)
                 }
@@ -536,13 +541,13 @@ struct RunDetailView: View {
             Chart {
                 ForEach(detail.series) { p in
                     if let elev = p.elevationM {
-                        AreaMark(x: .value("Miles", p.miles), y: .value("Elev", elev * 3.28084))
+                        AreaMark(x: .value("Distance", units.distance(miles: p.miles)), y: .value("Elev", units.elevation(meters: elev)))
                             .foregroundStyle(
                                 LinearGradient(colors: [Tokens.Palette.voltMark.opacity(0.35), Tokens.Palette.voltMark.opacity(0.02)],
                                                startPoint: .top, endPoint: .bottom)
                             )
                             .interpolationMethod(.catmullRom)
-                        LineMark(x: .value("Miles", p.miles), y: .value("Elev", elev * 3.28084))
+                        LineMark(x: .value("Distance", units.distance(miles: p.miles)), y: .value("Elev", units.elevation(meters: elev)))
                             .foregroundStyle(Tokens.Palette.accentText.opacity(0.8))
                             .lineStyle(StrokeStyle(lineWidth: 1.5))
                             .interpolationMethod(.catmullRom)
@@ -568,19 +573,20 @@ struct RunDetailView: View {
     // MARK: - Splits
 
     private func splitsCard(_ detail: RunDetail) -> some View {
-        let fastest = detail.splits.map(\.paceSec).min() ?? 1
+        let splits = detail.splits(units)
+        let fastest = splits.map(\.paceSec).min() ?? 1
         return Card {
             SectionLabel("Splits")
             HStack {
-                Text("MI").mono(10, Tokens.Palette.textTertiary).frame(width: 26, alignment: .leading)
+                Text(units.abbreviation.uppercased()).mono(10, Tokens.Palette.textTertiary).frame(width: 26, alignment: .leading)
                 Text("PACE").mono(10, Tokens.Palette.textTertiary).frame(width: 48, alignment: .leading)
                 Spacer()
                 Text("HR").mono(10, Tokens.Palette.textTertiary).frame(width: 36, alignment: .trailing)
                 Text("ELEV").mono(10, Tokens.Palette.textTertiary).frame(width: 44, alignment: .trailing)
             }
-            ForEach(detail.splits) { split in
+            ForEach(splits) { split in
                 HStack {
-                    Text(split.miles < 0.99 ? String(format: "%.1f", split.miles) : "\(split.id)")
+                    Text(split.length < 0.99 ? String(format: "%.1f", split.length) : "\(split.id)")
                         .mono(12, Tokens.Palette.textSecondary).frame(width: 26, alignment: .leading)
                     Text(PaceModel.format(split.paceSec))
                         .mono(12, Tokens.Palette.textPrimary).frame(width: 48, alignment: .leading)
@@ -592,7 +598,7 @@ struct RunDetailView: View {
                     }
                     Text(split.avgHR.map { "\($0)" } ?? "–")
                         .mono(12, Tokens.Palette.textSecondary).frame(width: 36, alignment: .trailing)
-                    Text(split.elevDeltaM.map { String(format: "%+.0f", $0 * 3.28084) } ?? "–")
+                    Text(split.elevDeltaM.map { String(format: "%+.0f", units.elevation(meters: $0)) } ?? "–")
                         .mono(12, Tokens.Palette.textTertiary).frame(width: 44, alignment: .trailing)
                 }
                 .frame(height: 24)

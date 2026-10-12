@@ -14,13 +14,7 @@ struct RunDetail {
         let elevationM: Double?
     }
 
-    struct Split: Identifiable {
-        let id: Int              // mile number, 1-based; last may be partial
-        let miles: Double
-        let paceSec: Int
-        let avgHR: Int?
-        let elevDeltaM: Double?
-    }
+    typealias Split = SplitTable.Split
 
     struct RouteSegment: Identifiable {
         let id: Int
@@ -29,7 +23,16 @@ struct RunDetail {
     }
 
     var series: [SeriesPoint] = []
-    var splits: [Split] = []
+    /// Mile splits and km splits, both cut once at load (#109) so flipping the unit
+    /// doesn't recompute anything. Read through `splits(_:)`.
+    var mileSplits: [Split] = []
+    var kmSplits: [Split] = []
+    func splits(_ units: Units) -> [Split] {
+        switch units {
+        case .mi: return mileSplits
+        case .km: return kmSplits
+        }
+    }
     var routeSegments: [RouteSegment] = []
     var hasRoute: Bool { !routeSegments.isEmpty }
 
@@ -371,48 +374,13 @@ final class RunDetailLoader {
             d.series = pts
         }
 
-        // ── Mile splits ───────────────────────────────────────────────────────
+        // ── Splits, in both units (SplitTable) ────────────────────────────────
         if timeline.count > 4, d.miles > 0.2 {
             let hrTV = hrPoints.map { (t: $0.t, v: $0.bpm) }
             let altTV = smoothAlt.map { (t: $0.t, v: $0.alt) }
-            func time(atMeters target: Double) -> Double? {
-                guard target <= timeline.last!.m else { return nil }
-                var lo = 0, hi = timeline.count - 1
-                while hi - lo > 1 {
-                    let mid = (lo + hi) / 2
-                    if timeline[mid].m <= target { lo = mid } else { hi = mid }
-                }
-                let a = timeline[lo], b = timeline[hi]
-                let f = (target - a.m) / max(b.m - a.m, 0.01)
-                return a.t + f * (b.t - a.t)
-            }
-            var splits: [RunDetail.Split] = []
-            var prevT = 0.0
-            var mile = 1
-            while true {
-                let boundary = Double(mile) * 1609.34
-                let total = timeline.last!.m
-                let isPartial = boundary > total
-                let endT = isPartial ? timeline.last!.t : (time(atMeters: boundary) ?? timeline.last!.t)
-                let dist = (isPartial ? total - Double(mile - 1) * 1609.34 : 1609.34) / 1609.34
-                if dist < 0.05 { break }
-                let dt = endT - prevT
-                let hrs = hrTV.filter { $0.t >= prevT && $0.t <= endT }.map(\.v)
-                let elev0 = nearest(altTV, at: prevT)
-                let elev1 = nearest(altTV, at: endT)
-                splits.append(RunDetail.Split(
-                    id: mile,
-                    miles: dist,
-                    paceSec: Int(dt / dist),
-                    avgHR: hrs.isEmpty ? nil : Int((hrs.reduce(0, +) / Double(hrs.count)).rounded()),
-                    elevDeltaM: (elev0 != nil && elev1 != nil) ? elev1! - elev0! : nil
-                ))
-                if isPartial { break }
-                prevT = endT
-                mile += 1
-                if mile > 200 { break }
-            }
-            d.splits = splits
+            let times = timeline.map(\.t), meters = timeline.map(\.m)
+            d.mileSplits = SplitTable.splits(times: times, meters: meters, every: Units.mi.splitMeters, hr: hrTV, altitude: altTV)
+            d.kmSplits = SplitTable.splits(times: times, meters: meters, every: Units.km.splitMeters, hr: hrTV, altitude: altTV)
         }
 
         // ── Route segments colored by pace ────────────────────────────────────

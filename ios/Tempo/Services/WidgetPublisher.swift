@@ -25,6 +25,7 @@ extension RunStore {
             nextWeekTargetMiles: Self.cal.date(byAdding: .weekOfYear, value: 1, to: now).flatMap(planTargetMiles(at:)),
             coachLine: todayTakeawayLine,
             previous: WidgetSnapshotStore.load(),
+            units: units,
             calendar: Self.cal
         )
         WidgetSnapshotStore.save(snapshot)
