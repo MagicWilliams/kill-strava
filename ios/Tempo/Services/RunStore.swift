@@ -204,6 +204,46 @@ final class RunStore: ObservableObject {
         await refreshOverlapReview()
         await refreshPastBlocks()
         await refreshBestEfforts()
+        // Last, so a queued run lands against fully loaded state — and usually finds the row
+        // this refresh's sync just wrote for it, leaving only its journal to attach (#122).
+        await RecordedRunSaver.retryPending(store: self)
+    }
+
+    // MARK: - Runs recorded in Tempo (#122)
+
+    /// Runs the recorder just wrote to `runs`: put them on screen now, not at the next refresh.
+    ///
+    /// The slice of `refresh()` a new run changes — re-read, plan matching, load, the coach's
+    /// read, widgets — without the part that makes a refresh slow, re-reading all of HealthKit.
+    /// The matcher is what turns today's session card to Done; it takes the newest run on the
+    /// session's date, which is the one just recorded.
+    func absorbRecordedRuns(_ runIDs: [UUID]) async {
+        // A failed re-read changes nothing on screen: the row is written, and the next
+        // refresh shows it. No banner — nothing the athlete corrected is at stake here.
+        guard case .rows(let rows) = await readRuns() else { return }
+        runs = rows
+        phase = rows.isEmpty ? .empty : .ready
+        dataWarning = nil
+        recomputeOverlaps()
+
+        await matchRunsToSessions()
+        fitness = LoadModel.compute(runs: runs, checkInOK: todayCheckIn?.feelsOk)
+        // Today's session: shows the cached read, or generates it and republishes widgets.
+        await loadTodayTakeaway()
+        publishWidgetSnapshot()
+
+        // Any recorded run that isn't today's session — a just-running day, an unplanned
+        // second run, a queued run from earlier — still gets the coach's read, which
+        // `noteTakeaway` puts on the just-running Today.
+        let todayRunID = todaySession?.run_id
+        for run in runs where runIDs.contains(run.id) && run.id != todayRunID {
+            Task { [weak self] in
+                guard let self else { return }
+                if await TakeawayService.ensureTakeaway(for: run, store: self) != nil {
+                    self.publishWidgetSnapshot()
+                }
+            }
+        }
     }
 
     // MARK: - Training blocks (#100)

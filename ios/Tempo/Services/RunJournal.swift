@@ -200,8 +200,8 @@ enum RunJournal {
     ///
     /// A `PostgrestError` is the database answering — a check constraint, a missing column,
     /// RLS — so it is a definitive no (reported as 400) even though it carries a Postgres
-    /// code rather than an HTTP status.
-    private static func statusCode(of error: Error) -> Int? {
+    /// code rather than an HTTP status. Shared with the recorder's row write (#122).
+    static func statusCode(of error: Error) -> Int? {
         switch error {
         case let error as HTTPError:     return error.response.statusCode
         case let error as StorageError:  return error.statusCode.flatMap { Int($0) } ?? 400
