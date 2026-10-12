@@ -11,7 +11,12 @@
 
 import { assert, assertAlmostEquals, assertEquals } from "jsr:@std/assert@^1";
 import {
+  DEFAULT_BASIS_MARATHON_S,
   DEFAULT_PREFERENCES,
+  equivalentTime,
+  FITNESS_MARGIN,
+  fmtClock,
+  paceBasis,
   type DistanceKey,
   DISTANCES,
   generate,
@@ -488,4 +493,92 @@ Deno.test("#104: pace math for a non-marathon goal", () => {
   assert(fiveK.marathon > fiveK.threshold, "marathon pace is slower than threshold");
   const marathon = trainingPaces(11_700);
   assertEquals(marathon.race, marathon.marathon, "unchanged for the marathon");
+});
+
+// ── "Just finish": no target time ────────────────────────────────────────────
+//
+// #102's goal_type `finish` arrives with goal_time_s null, and every pace in a plan was
+// derived from a goal time. The fix must not invent one (the goal row keeps null): paces get
+// their own basis — current fitness, else a conservative default — and the rationale says so.
+
+/// Best recent effort: 6 mi in 54:00 (9:00/mi), as features.riegel_current_race_s would
+/// project it to `raceMi`.
+const fitnessAt = (raceMi: number) => Math.round(equivalentTime(6 * 540, 6, raceMi));
+
+/// A finish block for `d`, paced the way the handler paces it.
+function finishBlock(d: DistanceKey, currentRaceS: number | null) {
+  const raceMi = DISTANCES[d].meters / MI;
+  const basis = paceBasis(null, raceMi, currentRaceS);
+  const paces = trainingPaces(basis.seconds, raceMi);
+  const start = new Date(BLOCK_START + "T00:00:00Z");
+  const g = generate(modelShape(15), {
+    startMonday: start, daysPerWeek: 5, longRunDay: 0, paces, wantsStrength: false,
+    raceDate: RACE_16, raceName: null, distance: DISTANCES[d], prefs: DEFAULT_PREFERENCES,
+    rationaleNote: basis.note,
+  });
+  return { basis, paces, g };
+}
+
+/// Paces a human could run, in the order physiology puts them.
+function assertSanePaces(p: ReturnType<typeof trainingPaces>, label: string) {
+  for (const [k, v] of Object.entries(p)) {
+    assert(Number.isInteger(v) && v >= 240 && v <= 1080, `${label}: ${k} ${v}s/mi is not a human pace`);
+  }
+  assert(p.repetition < p.interval && p.interval < p.threshold && p.threshold < p.easy, `${label}: pace order`);
+  assert(p.easy - p.marathon >= 30, `${label}: easy must be clearly slower than marathon pace`);
+}
+
+Deno.test("#104 finish: a null-time 5K paces from current fitness, a touch conservative", () => {
+  const raceMi = DISTANCES["5k"].meters / MI;
+  const { basis, paces, g } = finishBlock("5k", fitnessAt(raceMi));
+  assertEquals(basis.source, "fitness");
+  assertEquals(basis.seconds, Math.round(fitnessAt(raceMi) * FITNESS_MARGIN));
+  assert(basis.seconds > fitnessAt(raceMi), "eased, never faster than the best effort says");
+  assertSanePaces(paces, "5K");
+  // 9:00/mi over 6 mi projects 26:53 for a 5K; 3% easier is 27:41 → 8:55/mi race pace.
+  assert(paces.race > 8.5 * 60 && paces.race < 9.5 * 60, `5K race pace ${paces.race}`);
+  const race = g.sessions.find((s) => s.type === "race")!;
+  assertEquals(race.target_pace_sec, paces.race);
+  assert(g.sessions.every((s) => s.target_pace_sec == null || Number.isFinite(s.target_pace_sec)), "no NaN paces");
+  assert(g.shape.rationale.includes("No target time"), "the rationale says why these paces");
+  assert(g.shape.rationale.includes(fmtClock(fitnessAt(raceMi))), "…and what fitness they came from");
+});
+
+Deno.test("#104 finish: a null-time marathon paces from current fitness", () => {
+  const raceMi = DISTANCES.marathon.meters / MI;
+  const { basis, paces, g } = finishBlock("marathon", fitnessAt(raceMi));
+  assertEquals(basis.source, "fitness");
+  assertSanePaces(paces, "marathon");
+  // 9:00/mi over 6 mi projects a 4:17:48 marathon; 3% easier is 4:25:32 → 10:08/mi.
+  assert(paces.race > 9.5 * 60 && paces.race < 10.75 * 60, `marathon race pace ${paces.race}`);
+  assertEquals(paces.race, paces.marathon);
+  assertEquals(g.sessions.find((s) => s.type === "race")!.target_pace_sec, paces.race);
+  assert(g.shape.rationale.startsWith("fixture "), "the model's rationale is kept, the note appended");
+});
+
+Deno.test("#104 finish: no target and no usable runs falls back to a conservative default, and says so", () => {
+  for (const d of ["5k", "marathon"] as DistanceKey[]) {
+    const raceMi = DISTANCES[d].meters / MI;
+    const { basis, paces, g } = finishBlock(d, null);
+    assertEquals(basis.source, "default", d);
+    assertEquals(basis.seconds, Math.round(equivalentTime(DEFAULT_BASIS_MARATHON_S, MARATHON_MI, raceMi)));
+    assertSanePaces(paces, `${d} default`);
+    assert(paces.easy >= 11 * 60, `${d}: default easy pace ${paces.easy}s/mi should be gentle`);
+    assert(g.shape.rationale.includes("conservative default"), `${d}: rationale names the fallback`);
+    assert(g.shape.rationale.includes("no recent runs"), `${d}: …and why`);
+  }
+});
+
+Deno.test("#104 finish: a target time is still the basis, and the rationale is untouched", () => {
+  const raceMi = DISTANCES.marathon.meters / MI;
+  const basis = paceBasis(11_700, raceMi, fitnessAt(raceMi));
+  assertEquals(basis, { seconds: 11_700, source: "goal", note: null }, "fitness never overrides a target");
+  const p = block();
+  assertEquals(p.shape.rationale, "fixture");
+});
+
+Deno.test("fmtClock reads like a finish time", () => {
+  assertEquals(fmtClock(11_700), "3:15:00");
+  assertEquals(fmtClock(1_565), "26:05");
+  assertEquals(fmtClock(3_600), "1:00:00");
 });

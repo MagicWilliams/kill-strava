@@ -91,6 +91,14 @@ export function resolveGoal(
   };
 }
 
+/// "Just finish" (#102 goal_type). The one goal type a plan may be built without a target
+/// time for: every other type is about a time, and a missing one there is a bad request,
+/// not a choice.
+export function isFinishGoal(goalType: string | null | undefined): boolean {
+  const t = (goalType ?? "").trim().toLowerCase().replace(/[^a-z]+/g, "_");
+  return t === "finish" || t === "just_finish";
+}
+
 /// The goals row to insert. `legacy` is the pre-0013 shape: the columns that existed before
 /// #102 and nothing else. A distance the old CHECK constraint rejects cannot be stored there,
 /// and this says so rather than quietly writing "marathon" over a mile goal.

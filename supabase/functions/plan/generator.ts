@@ -40,6 +40,53 @@ export type Paces = ReturnType<typeof trainingPaces>;
 export function fmtPace(sec: number): string {
   return `${Math.floor(sec / 60)}:${String(Math.round(sec) % 60).padStart(2, "0")}`;
 }
+/// A finish time: H:MM:SS from an hour up, M:SS below.
+export function fmtClock(sec: number): string {
+  const s = Math.round(sec);
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), r = String(s % 60).padStart(2, "0");
+  return h > 0 ? `${h}:${String(m).padStart(2, "0")}:${r}` : `${m}:${r}`;
+}
+
+// ── Pace basis: what the paces are derived from ───────────────────────────────
+// A "just finish" goal (#102 goal_type `finish`) has no target time, and every pace in the
+// plan used to be derived from one. The answer is NOT to invent a time and store it — the
+// goal row keeps goal_time_seconds null, because a made-up 4:30 on the goal would then be
+// read back as the athlete's ambition by the coach, the projection and the race recap.
+// Instead the paces get a basis of their own, and the rationale says what it was.
+
+/// Riegel from the best recent effort is a best-case read: the run that produced it was the
+/// athlete's fastest of eight weeks, not a typical one. 3% slower keeps a finish block honest.
+export const FITNESS_MARGIN = 1.03;
+/// With no runs to read at all, paces start from roughly a 5-hour-marathon effort (easy
+/// ≈ 12:00/mi) scaled to the race distance — slow enough to be safe for a new runner, and
+/// replaced the first time the plan is regenerated with real runs on file.
+export const DEFAULT_BASIS_MARATHON_S = 5 * 3600;
+
+export interface PaceBasis {
+  /// The finish time training paces are derived from — never written to the goal.
+  seconds: number;
+  source: "goal" | "fitness" | "default";
+  /// Athlete-facing sentence for the rationale; null when the athlete gave a target.
+  note: string | null;
+}
+
+/// `currentRaceS` is features.riegel_current_race_s: the best ≥ 2.5 mi effort of the last 8
+/// weeks, Riegel-projected to this race distance; null when there is no such run.
+export function paceBasis(goalTimeS: number | null, raceMi: number, currentRaceS: number | null): PaceBasis {
+  if (goalTimeS != null && goalTimeS > 0) return { seconds: goalTimeS, source: "goal", note: null };
+  if (currentRaceS != null && currentRaceS > 0) {
+    const seconds = Math.round(currentRaceS * FITNESS_MARGIN);
+    return {
+      seconds, source: "fitness",
+      note: `No target time: this block is about getting to the finish strong. Training paces come from your current fitness — your best recent run projects about ${fmtClock(currentRaceS)} for this distance — eased a few percent to stay conservative.`,
+    };
+  }
+  const seconds = Math.round(equivalentTime(DEFAULT_BASIS_MARATHON_S, MARATHON_MI, raceMi));
+  return {
+    seconds, source: "default",
+    note: `No target time, and no recent runs of 2.5 mi or more to read your fitness from, so training paces start from a conservative default (easy around ${fmtPace(trainingPaces(seconds, raceMi).easy)}/mi). Run by feel for now; once a few weeks of runs are logged, rebuilding the plan will base paces on them.`,
+  };
+}
 
 export function mondayOf(d: Date): Date {
   const x = new Date(d);
@@ -437,6 +484,9 @@ export function generate(shape: Shape, opts: {
   currentWeeklyMi?: number | null;
   /// Mid-block only: the first generated week runs at exactly this volume.
   anchorWeeklyMi?: number | null;
+  /// Appended to the shape's rationale — PaceBasis.note, when paces did not come from a
+  /// target time. The athlete reads the rationale; that is where "why these paces" belongs.
+  rationaleNote?: string | null;
 }) {
   const profile = opts.distance ?? DISTANCES.marathon;
   const prefs = opts.prefs ?? DEFAULT_PREFERENCES;
@@ -448,6 +498,7 @@ export function generate(shape: Shape, opts: {
     trainingWeeks, blockTrainingWeeks: race.weekIndex,
     currentWeeklyMi: opts.currentWeeklyMi, anchorWeeklyMi: opts.anchorWeeklyMi,
   });
+  if (opts.rationaleNote) norm.rationale = [norm.rationale, opts.rationaleNote].filter(Boolean).join(" ");
   const warnings: string[] = [];
   const notes: string[] = [];
 

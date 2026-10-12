@@ -18,10 +18,10 @@
 
 import { createClient } from "npm:@supabase/supabase-js@2";
 import {
-  equivalentTime, fmtPace, generate, type Generated, MI, mondayOf, planWrites, racePlacement,
-  readPreferences, sessionDate, type Shape, taperWeeksFor, trainingPaces,
+  equivalentTime, fmtClock, fmtPace, generate, type Generated, MI, mondayOf, paceBasis, planWrites,
+  racePlacement, readPreferences, sessionDate, type Shape, taperWeeksFor, trainingPaces,
 } from "./generator.ts";
-import { goalInsertRow, isMissingColumnError, resolveGoal } from "./goal.ts";
+import { goalInsertRow, isFinishGoal, isMissingColumnError, resolveGoal } from "./goal.ts";
 
 const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
 const MODEL = "claude-sonnet-5";
@@ -192,10 +192,11 @@ Deno.serve(async (req) => {
     const uid = userData.user.id;
 
     const body = (await req.json()) as Record<string, unknown>;
-    const goal_time_s = body.goal_time_s as number;
+    // Null for a "just finish" goal — checked against goal_type once the goal is resolved.
+    const goal_time_s = typeof body.goal_time_s === "number" && body.goal_time_s > 0 ? Math.round(body.goal_time_s) : null;
     const race_name = (body.race_name ?? null) as string | null;
     const race_date = body.race_date as string;
-    if (!goal_time_s || !race_date) return Response.json({ error: "goal_time_s and race_date required" }, { status: 400 });
+    if (!race_date) return Response.json({ error: "race_date required" }, { status: 400 });
 
     const { data: profile } = await supa.from("profiles")
       .select("days_per_week,long_run_day,risk_tolerance,wants_strength").eq("id", uid).single();
@@ -212,6 +213,9 @@ Deno.serve(async (req) => {
       .order("created_at", { ascending: false }).limit(1).maybeSingle();
     const now = new Date();
     const goal = resolveGoal(body, (activeGoal ?? null) as Record<string, unknown> | null, now);
+    if (goal_time_s == null && !isFinishGoal(goal.goal_type)) {
+      return Response.json({ error: "goal_time_s required unless goal_type is finish" }, { status: 400 });
+    }
     const prefs = readPreferences(goal.preferences, goal.course_type);
     const distance = goal.distance.profile;
     const raceMi = goal.distance.meters / MI;
@@ -239,9 +243,16 @@ Deno.serve(async (req) => {
     const planWeeks = weeksToRace;
     const taperWeeks = Math.min(taperWeeksFor(distance, raceWeekIndex), planWeeks - 1);
     const anchorWeeklyMi = firstWeekIndex > 0 ? features.vol_4wk_avg_mi : null;
-    const paces = trainingPaces(goal_time_s, raceMi);
+    // Paces come from the target time, or — for a finish goal — from current fitness, or a
+    // conservative default. The basis is never stored as the goal's time.
+    const basis = paceBasis(goal_time_s, raceMi, features.riegel_current_race_s);
+    const paces = trainingPaces(basis.seconds, raceMi);
     // Projection: Riegel current fitness at the race distance, else a modest miss of goal.
-    const projected = features.riegel_current_race_s ?? Math.round(goal_time_s * 1.06);
+    // No target and no runs → no projection; the app already omits the line when it's null.
+    const projected = features.riegel_current_race_s ?? (goal_time_s != null ? Math.round(goal_time_s * 1.06) : null);
+    const targetLine = goal_time_s != null
+      ? `target ${fmtClock(goal_time_s)}`
+      : `no target time — the goal is to finish. Training paces are derived from ${basis.source === "fitness" ? "current fitness" : "a conservative default (no usable recent runs)"}, not a goal; do not invent a target in the rationale`;
 
     const bigMark = distance.bigLongRunMi;
     const raceLines = [
@@ -272,7 +283,7 @@ ${raceLines}
 - risk_tolerance: ${risk}. Honest, not reckless: the rationale must say what the data supports.
 
 <athlete>
-goal: ${race_name ?? "race"} (${goal.distance.label}, ${raceMi.toFixed(1)} mi) on ${race_date}, target ${Math.floor(goal_time_s / 3600)}:${String(Math.floor((goal_time_s % 3600) / 60)).padStart(2, "0")}:${String(goal_time_s % 60).padStart(2, "0")}
+goal: ${race_name ?? "race"} (${goal.distance.label}, ${raceMi.toFixed(1)} mi) on ${race_date}, ${targetLine}
 weeks_until_race: ${weeksToRace}
 days_per_week: ${daysPerWeek}
 features: ${JSON.stringify(features, null, 1)}
@@ -288,7 +299,7 @@ features: ${JSON.stringify(features, null, 1)}
       generated = generate(proposed, {
         startMonday, firstWeekIndex, daysPerWeek, longRunDay, paces, wantsStrength,
         raceDate: race_date, raceName: race_name, distance, prefs,
-        currentWeeklyMi: features.vol_4wk_avg_mi, anchorWeeklyMi,
+        currentWeeklyMi: features.vol_4wk_avg_mi, anchorWeeklyMi, rationaleNote: basis.note,
       });
     }
     const writes = planWrites(prefs.planStyle, generated);
@@ -322,6 +333,7 @@ features: ${JSON.stringify(features, null, 1)}
       return Response.json({
         plan_id: null, weeks: null, plan_style: prefs.planStyle,
         distance: goal.distance.label, projected_finish_s: projected,
+        goal_time_s, pace_basis: basis.source, rationale: basis.note,
       });
     }
     const shape = generated.shape;
@@ -340,6 +352,7 @@ features: ${JSON.stringify(features, null, 1)}
         distance: { label: goal.distance.label, meters: goal.distance.meters },
         preferences: prefs, started_week: goal.started_week,
         warnings: generated.warnings, notes: generated.notes,
+        pace_basis: { source: basis.source, seconds: basis.seconds },
       },
       projected_finish_s: projected,
     }).select("id").single();
@@ -378,6 +391,8 @@ features: ${JSON.stringify(features, null, 1)}
       plan_style: prefs.planStyle,
       distance: goal.distance.label,
       warnings: generated.warnings,
+      goal_time_s,
+      pace_basis: basis.source,
     });
   } catch (err) {
     console.error("plan error", err);

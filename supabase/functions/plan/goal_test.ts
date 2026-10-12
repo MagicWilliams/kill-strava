@@ -10,7 +10,7 @@
 //    tweak would rebuild their block as a marathon and drop every intake answer.
 
 import { assert, assertEquals, assertThrows } from "jsr:@std/assert@^1";
-import { advanceStartedWeek, goalInsertRow, isMissingColumnError, resolveGoal } from "./goal.ts";
+import { advanceStartedWeek, goalInsertRow, isFinishGoal, isMissingColumnError, resolveGoal } from "./goal.ts";
 
 const NOW = new Date("2026-10-14T15:00:00Z"); // a Wednesday
 const BODY = { goal_time_s: 1200, race_name: "Turkey Trot", race_date: "2026-11-26" };
@@ -126,4 +126,22 @@ Deno.test("#104: only a missing-column error triggers the legacy retry", () => {
   assert(!isMissingColumnError({ code: "23514", message: "violates check constraint goals_distance_check" }));
   assert(!isMissingColumnError({ code: "42501", message: "new row violates row-level security policy" }));
   assert(!isMissingColumnError(null));
+});
+
+// ── "Just finish" ────────────────────────────────────────────────────────────
+
+Deno.test("#104 finish: only a finish goal may come without a target time", () => {
+  for (const t of ["finish", "Finish", "just_finish", "just finish"]) assert(isFinishGoal(t), t);
+  for (const t of ["time", "pr", "not_sure", "", null, undefined]) assert(!isFinishGoal(t), String(t));
+  // Carried over on a same-race regeneration like every other intake field.
+  const regen = resolveGoal({ ...BODY, goal_time_s: null }, { ...ACTIVE_5K, goal_type: "finish" }, NOW);
+  assert(isFinishGoal(regen.goal_type));
+});
+
+Deno.test("#104 finish: the goal row stores no invented time, before or after 0013", () => {
+  const goal = resolveGoal({ ...BODY, goal_time_s: null, goal_type: "finish", distance: "marathon" }, null, NOW);
+  const base = { ...BASE, goal_time_seconds: null };
+  assertEquals(goalInsertRow(base, goal, false).goal_time_seconds, null);
+  assertEquals(goalInsertRow(base, goal, false).goal_type, "finish");
+  assertEquals(goalInsertRow(base, goal, true).goal_time_seconds, null);
 });
