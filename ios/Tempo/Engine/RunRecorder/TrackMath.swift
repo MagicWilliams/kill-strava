@@ -341,6 +341,32 @@ enum TrackMath {
             }
         }
 
+        /// The athlete resumed after a pause. Whatever he did while paused does not count.
+        ///
+        /// The recorder stops feeding fixes while a run is paused (#114), but without this the
+        /// first fix after resuming would be measured from the last one before the pause: a
+        /// walk to a water fountain, or across the road to a different corner, credited as a
+        /// straight line of running, at a speed the teleport filter can't catch because the
+        /// pause makes the allowance enormous. Every recorder the athlete has used (Garmin,
+        /// Strava) counts no distance while paused, so neither does this one.
+        ///
+        /// So: the metres still trailing behind the smoothing are credited up to where he
+        /// stopped (`close()`, at the last fix before the pause), the pause is a flat stretch
+        /// of the curve ending at `date`, and the next fixes re-lock and re-anchor from
+        /// wherever he is now. Re-locking costs no distance (the lock candidates are credited
+        /// once locked) and a couple of seconds of display lag, which is the right price for
+        /// not trusting a position from before the stop.
+        mutating func resumeAfterPause(at date: Date) {
+            close()
+            let t = date.timeIntervalSince(start)
+            let prev = timeline[timeline.count - 1]
+            if t > prev.t { timeline.append(BestEfforts.Point(t: t, m: prev.m)) }
+            lastAccepted = nil
+            lockCandidates.removeAll()
+            recent.removeAll()
+            anchor = nil
+        }
+
         /// Credit the last few metres when the run ends.
         ///
         /// Live, distance trails the athlete by up to one `distanceStepM` plus the smoothing
