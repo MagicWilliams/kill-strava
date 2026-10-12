@@ -77,9 +77,9 @@ final class ShoeStore: ObservableObject {
 
     // MARK: - Write
 
-    /// Insert a new pair. Returns whether it landed; on success it is in `shoes`.
-    func add(_ draft: ShoeMileage.Draft) async -> Bool {
-        guard let uid = Supa.userID else { return false }
+    /// Insert a new pair. Returns it as the database stored it, or nil if it didn't land.
+    func add(_ draft: ShoeMileage.Draft) async -> Shoe? {
+        guard let uid = Supa.userID else { return nil }
         struct Insert: Encodable {
             let user_id: String
             let name: String
@@ -99,10 +99,10 @@ final class ShoeStore: ObservableObject {
                 .value
             shoes.append(row.shoe)
             phase = .ready
-            return true
+            return row.shoe
         } catch {
             Telemetry.error("shoes.add_failed", error)
-            return false
+            return nil
         }
     }
 

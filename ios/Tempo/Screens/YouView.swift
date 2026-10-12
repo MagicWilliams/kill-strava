@@ -12,6 +12,7 @@ struct YouView: View {
             pastBlocks
             yearStats
             bests
+            ShoesCard()
             settings
         }
         .refreshable { await store.refresh() }
