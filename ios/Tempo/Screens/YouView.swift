@@ -9,6 +9,7 @@ struct YouView: View {
     var body: some View {
         Screen(title: "You", subtitle: subtitle) {
             goal
+            pastBlocks
             yearStats
             bests
             settings
@@ -60,6 +61,47 @@ struct YouView: View {
                     .font(Tokens.Font.ui(13)).foregroundStyle(Tokens.Palette.textSecondary)
                 PrimaryButton(title: "Talk to Coach") { router.showCoach() }
             }
+        }
+    }
+
+    /// Closed training blocks, newest first (#100). Hidden until there is one — and until
+    /// migration 0013 is applied, which reads the same as none.
+    @ViewBuilder private var pastBlocks: some View {
+        if !store.pastBlocks.isEmpty {
+            Card {
+                SectionLabel("Past blocks")
+                ForEach(store.pastBlocks) { block in
+                    Button { router.openBlockReview(block) } label: {
+                        HStack {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(block.raceName ?? RaceCountdown.unnamedRace)
+                                    .font(Tokens.Font.ui(14, .semibold)).foregroundStyle(Tokens.Palette.textPrimary)
+                                Text(([BlockReview.distanceLabel(block.distance)]
+                                      + [block.raceDay?.formatted(.dateTime.month(.abbreviated).day().year())].compactMap { $0 })
+                                    .joined(separator: " · "))
+                                    .font(Tokens.Font.ui(12)).foregroundStyle(Tokens.Palette.textTertiary)
+                            }
+                            Spacer()
+                            Text(pastBlockResult(block)).font(Tokens.Font.mono(13)).foregroundStyle(Tokens.Palette.accentText)
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 10)).foregroundStyle(Tokens.Palette.textTertiary)
+                        }
+                        .frame(minHeight: 36)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(Pressable())
+                }
+            }
+        }
+    }
+
+    private func pastBlockResult(_ block: GoalInfo) -> String {
+        switch BlockCloseout.Outcome(rawValue: block.outcome ?? "") {
+        case .raced?:        return block.result_time_s.map(PaceModel.formatFinish) ?? "Raced"
+        case .didNotStart?:  return "DNS"
+        case .didNotFinish?: return "DNF"
+        case .abandoned?:    return "Ended early"
+        case nil:            return ""
         }
     }
 

@@ -7,6 +7,7 @@ struct TodayView: View {
 
     var body: some View {
         Screen(title: "Today", subtitle: Date.now.formatted(.dateTime.weekday(.wide).month(.wide).day())) {
+            BlockReviewPrompt()
             dataWarning
             readiness
             session
