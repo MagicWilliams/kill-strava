@@ -119,10 +119,14 @@ final class RaceCountdownTests: XCTestCase {
 
     /// Progress renders before a plan exists. It says so, rather than inventing a race:
     /// the deleted constant was exactly that invention, and it looked authoritative.
+    ///
+    /// And it says so neutrally (#101). "No goal yet — the coach proposes one" read as a
+    /// to-do list; between blocks, not training for anything is a choice, not a gap.
     func testNoGoalSaysSoRatherThanGuessingARace() {
         XCTAssertEqual(state(nil, nil), .noGoal)
-        XCTAssertEqual(state(nil, nil).subtitle, "No goal yet — the coach proposes one from your runs")
+        XCTAssertEqual(state(nil, nil).subtitle, "No race on the calendar — just running")
         XCTAssertFalse(state(nil, nil).subtitle.contains("Chicago"), "no fallback race survived the deletion")
+        XCTAssertFalse(state(nil, nil).subtitle.contains("propose"), "no nudge toward a goal")
     }
 
     /// A goal row can carry a name with a null `race_date`. There is nothing to count,

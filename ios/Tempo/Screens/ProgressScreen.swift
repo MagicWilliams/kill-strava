@@ -7,10 +7,18 @@ struct ProgressScreen: View {
 
     var body: some View {
         Screen(title: "Progress", subtitle: subtitle) {
-            projected
-            mileageTrend
-            recentRuns
-            block
+            if store.todayMode == .justRunning {
+                // No race, so nothing to project a finish for (#101). Where the athlete
+                // stands right now is the honest headline instead.
+                FreshnessCard(metrics: store.fitness, title: "Current fitness") { router.openReadiness() }
+                mileageTrend
+                recentRuns
+            } else {
+                projected
+                mileageTrend
+                recentRuns
+                block
+            }
         }
         .refreshable { await store.refresh() }
     }
@@ -75,7 +83,7 @@ struct ProgressScreen: View {
 
     private func projectionCaption(projection: Int?, goalTime: Int?) -> String {
         guard store.plan != nil else {
-            return "No plan yet — the coach assesses your history and proposes a goal to build from."
+            return "A finish projection needs a race to project toward."
         }
         guard let projection, let goalTime else {
             return "Projection sharpens as runs land — updated after every sync."

@@ -9,8 +9,10 @@ struct PlanView: View {
 
     var body: some View {
         Screen(title: title, subtitle: subtitle) {
-            if store.plan == nil {
-                noPlan
+            if store.todayMode == .justRunning {
+                betweenBlocks
+                pastBlocks
+                TrainForSomethingCard { router.trainForSomething() }
             } else {
                 countdown
                 phaseChips
@@ -28,20 +30,28 @@ struct PlanView: View {
     }
 
     private var subtitle: String? {
-        guard let goal = store.goal else { return "No plan yet" }
+        if store.todayMode == .justRunning { return "Nothing on the calendar" }
+        guard let goal = store.goal else { return nil }
         let time = goal.goalTimeSeconds.map { " · goal " + PaceModel.formatFinish($0) } ?? ""
         return (goal.raceName ?? "Race") + time
     }
 
-    private var noPlan: some View {
-        Card(glow: true) {
-            SectionLabel("Your plan", color: Tokens.Palette.accentText)
-            Text("Built from your data, not a template")
-                .font(Tokens.Font.display(22)).foregroundStyle(Tokens.Palette.textPrimary)
-            Text("The coach assesses your real running history, proposes a goal, and generates a schedule anchored on what you actually do — phases emerge from what's missing.")
+    /// No plan is a state, not a failure (#101). This used to be a pitch for building one;
+    /// between blocks — or before the first — the athlete is simply running, and the tab
+    /// says so without asking for anything.
+    private var betweenBlocks: some View {
+        Card(well: .calm) {
+            SectionLabel("Between blocks")
+            Text("Just running").display(24)
+            Text("No race, no schedule. Every run still counts: Today follows your fitness and freshness, and the coach reads any run you open.")
                 .font(Tokens.Font.ui(13)).foregroundStyle(Tokens.Palette.textSecondary)
-            PrimaryButton(title: "Start with the Coach") { router.showCoach() }
         }
+    }
+
+    /// Slot for the past-blocks list from block close-out (#100). Empty until that lands;
+    /// whichever of the two PRs merges second links its list here.
+    @ViewBuilder private var pastBlocks: some View {
+        EmptyView()
     }
 
     private var countdown: some View {

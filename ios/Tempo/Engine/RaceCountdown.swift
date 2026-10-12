@@ -38,7 +38,9 @@ enum RaceCountdown {
         var subtitle: String {
             switch self {
             case .noGoal:
-                return "No goal yet — the coach proposes one from your runs"
+                // Neutral on purpose (#101): not training for anything is a state the
+                // athlete chose, not a step they skipped.
+                return "No race on the calendar — just running"
             case .undated(let race):
                 return "\(race) — no race date yet"
             case .ahead(let race, let weeks):

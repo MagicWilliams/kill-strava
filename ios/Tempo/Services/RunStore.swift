@@ -38,6 +38,9 @@ final class RunStore: ObservableObject {
     // Load model output (recomputed each refresh) + today's cached coach read
     @Published private(set) var fitness: FitnessMetrics?
     @Published private(set) var todayTakeaway: String?
+    /// The newest coach read on any run — what the just-running Today shows in place of
+    /// `todayTakeaway`, which needs a planned session to exist (#101).
+    @Published private(set) var latestRead: LatestRead.Read?
 
     /// Non-nil when what's on screen is not the corrected record — see RunFetch. Rendered
     /// as a banner on Today, because numbers the athlete already fixed silently reverting
@@ -180,6 +183,7 @@ final class RunStore: ObservableObject {
         await recomputeProjection()
         fitness = LoadModel.compute(runs: runs, checkInOK: todayCheckIn?.feelsOk)
         await loadTodayTakeaway()
+        await loadLatestRead()
         publishWidgetSnapshot()   // #76 — the widgets show exactly what this refresh produced
         await refreshOverlapReview()
         await refreshBestEfforts()
@@ -342,6 +346,29 @@ final class RunStore: ObservableObject {
                 self.publishWidgetSnapshot()
             }
         }
+    }
+
+    /// Read the newest cached coach read. A failed read keeps what's on screen — an
+    /// unreachable table is not a coach who has never said anything.
+    private func loadLatestRead() async {
+        do {
+            latestRead = try await TakeawayService.latestRead()
+        } catch {
+            Telemetry.error("takeaway.latest_unreadable", error)
+        }
+    }
+
+    /// A read just landed (generated from Run Detail or for today's session). Takes the
+    /// card's slot only if it is about a run at least as recent as the one already shown.
+    func noteTakeaway(_ read: LatestRead.Read) {
+        if let held = latestRead, held.runStart > read.runStart { return }
+        latestRead = read
+    }
+
+    /// Which Today applies. The rule — and why the plan, not the goal, decides — is in
+    /// `Engine/TodayMode.swift`. No lifecycle phase yet; #100 supplies one.
+    var todayMode: TodayMode {
+        TodayMode.resolve(goal: goal, plan: plan)
     }
 
     /// After a confirmed coach edit: re-read Supabase only (no re-ingest needed).
@@ -669,6 +696,10 @@ struct CoachContext: Encodable {
     }
 
     let today: String
+    /// `"training"` or `"just_running"` — see `TodayMode.coachMode`. Explicit rather than
+    /// left for the model to infer from a missing `plan`, because the coach's default with
+    /// no plan was to go looking for a race (#101).
+    let mode: String
     let goal: String
     let risk_tolerance: String
     let max_hr: Int
@@ -708,6 +739,7 @@ extension RunStore {
         let day = Date.FormatStyle(date: .abbreviated, time: .omitted)
         return CoachContext(
             today: Date.now.formatted(day),
+            mode: todayMode.coachMode,
             goal: goalLine.coachLine,
             risk_tolerance: riskTolerance,
             max_hr: effectiveMaxHR,
