@@ -64,7 +64,12 @@ struct TrainingIntakeView: View {
         }
         .background(Tokens.Palette.canvas.ignoresSafeArea())
         .animation(Motion.reveal, value: step)
-        .animation(Motion.reveal, value: answers)
+        // The answers that add or remove fields. Not `answers` whole: that would animate
+        // every keystroke in the notes field.
+        .animation(Motion.reveal, value: answers.situation)
+        .animation(Motion.reveal, value: answers.distance)
+        .animation(Motion.reveal, value: answers.goalType)
+        .animation(Motion.reveal, value: answers.planStyle)
     }
 
     // MARK: - Chrome
@@ -166,6 +171,8 @@ struct TrainingIntakeView: View {
     private func option(_ value: IntakeAnswers.Situation, _ title: String, _ detail: String) -> some View {
         OptionRow(title: title, detail: detail, selected: answers.situation == value) {
             answers.situation = value
+            // A Stepper can't step down onto its own minimum, so "week 1" has to start there.
+            if value == .midBlock, answers.startedWeek == nil { answers.startedWeek = 1 }
         }
     }
 
@@ -195,7 +202,12 @@ struct TrainingIntakeView: View {
             }
 
             field("Race date") {
-                Button { pickingDate.toggle() } label: {
+                Button {
+                    pickingDate.toggle()
+                    // Opening the calendar shows a selected day; make the answer match what's
+                    // on screen rather than leave a highlighted date that isn't saved.
+                    if pickingDate, answers.raceDate == nil { answers.raceDate = Self.defaultPickerDate }
+                } label: {
                     HStack {
                         Text(answers.raceDate.map { $0.formatted(date: .abbreviated, time: .omitted) } ?? "Pick a date")
                             .font(Tokens.Font.ui(15, .medium))
@@ -228,7 +240,7 @@ struct TrainingIntakeView: View {
                         get: { answers.startedWeek ?? 1 },
                         set: { answers.startedWeek = $0 }
                     ), in: IntakeAnswers.startedWeekRange) {
-                        Text(answers.startedWeek.map { "Week \($0)" } ?? "Week —")
+                        Text("Week \(answers.startedWeek ?? 1)")
                             .font(Tokens.Font.ui(15, .medium))
                             .foregroundStyle(Tokens.Palette.textPrimary)
                     }
