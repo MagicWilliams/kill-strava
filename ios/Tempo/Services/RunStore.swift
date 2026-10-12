@@ -59,6 +59,11 @@ final class RunStore: ObservableObject {
     /// redo; once a card exists, the card itself carries the intake (`ProposedAction.intake`).
     @Published private(set) var intakeHandoff: IntakeHandoff?
 
+    /// Closed blocks, newest first (#100) — what You lists under "Past blocks". Empty, and the
+    /// list hidden, until migration 0013 is applied: `BlockReviewService.pastBlocks` reports
+    /// an unreadable column as nil rather than as "no blocks".
+    @Published var pastBlocks: [GoalInfo] = []
+
     /// Sub-distance PRs (#25) — the fastest 5K *inside* a run, not the fastest 5K+ run.
     /// Empty and `available == false` until migration 0011 is applied; see
     /// `BestEffortsService` for why an absent table is reported rather than shown as zero.
@@ -191,7 +196,29 @@ final class RunStore: ObservableObject {
         await loadLatestRead()
         publishWidgetSnapshot()   // #76 — the widgets show exactly what this refresh produced
         await refreshOverlapReview()
+        await refreshPastBlocks()
         await refreshBestEfforts()
+    }
+
+    // MARK: - Training blocks (#100)
+
+    /// Where the active block is — nil with no goal. Today's "review your block" card keys
+    /// off `.racePassed`; see `BlockLifecycle` for why nothing closes a block on its own.
+    var blockPhase: BlockLifecycle.Phase? {
+        goal.map { BlockLifecycle.phase(goal: $0, plan: plan, now: .now) }
+    }
+
+    func refreshPastBlocks() async {
+        // A failed read keeps what we hold: an unreachable table is not an empty history.
+        if let blocks = await BlockReviewService.pastBlocks() { pastBlocks = blocks }
+    }
+
+    /// The goal a run was the race for: a closed block that recorded it as its race run, or
+    /// else the active goal if `RaceRecap.isRace` picks it out. Without the first half, closing
+    /// a block would quietly take the "Race recap" door off its own race's page.
+    func raceGoal(for run: RunSummary) -> GoalInfo? {
+        if let closed = pastBlocks.first(where: { $0.race_run_id == run.id }) { return closed }
+        return RaceRecap.isRace(run: run, goal: goal) ? goal : nil
     }
 
     // MARK: - Overlapping runs (#30)
@@ -371,9 +398,9 @@ final class RunStore: ObservableObject {
     }
 
     /// Which Today applies. The rule — and why the plan, not the goal, decides — is in
-    /// `Engine/TodayMode.swift`. No lifecycle phase yet; #100 supplies one.
+    /// `Engine/TodayMode.swift`; the phase is `BlockLifecycle`'s (#100).
     var todayMode: TodayMode {
-        TodayMode.resolve(goal: goal, plan: plan)
+        TodayMode.resolve(goal: goal, plan: plan, phase: blockPhase)
     }
 
     /// After a confirmed coach edit: re-read Supabase only (no re-ingest needed).
@@ -715,7 +742,7 @@ struct CoachContext: Encodable {
     }
 
     let today: String
-    /// `"training"` or `"just_running"` — see `TodayMode.coachMode`. Explicit rather than
+    /// `"training"`, `"just_running"` or `"race_passed"` — see `TodayMode.coachMode`. Explicit rather than
     /// left for the model to infer from a missing `plan`, because the coach's default with
     /// no plan was to go looking for a race (#101).
     let mode: String

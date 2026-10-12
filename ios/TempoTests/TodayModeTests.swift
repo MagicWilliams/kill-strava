@@ -49,10 +49,10 @@ final class TodayModeTests: XCTestCase {
         XCTAssertEqual(TodayMode.resolve(goal: nil, plan: plan()), .training)
     }
 
-    // MARK: - Race passed (#100 supplies the phase)
+    // MARK: - Race passed (the phase is BlockLifecycle's, #100)
 
-    /// Nothing passes a phase yet; when block close-out does, a finished race with the plan
-    /// still open gets its own mode, so #100's review card has somewhere to sit.
+    /// A finished race with the plan still open gets its own mode, so the review card has
+    /// somewhere to sit and the sessions that ran out don't leave a rest card forever.
     func testARacePassedPhaseWithThePlanStillOpenIsRacePassed() {
         let g = goal()
         let mode = TodayMode.resolve(goal: g, plan: plan(goalID: g.id), phase: .racePassed)
@@ -70,13 +70,26 @@ final class TodayModeTests: XCTestCase {
         XCTAssertEqual(TodayMode.resolve(hasGoal: true, hasPlan: true, phase: .training), .training)
     }
 
+    /// Race week is still a training week: taper sessions, race-morning shakeout.
+    func testRaceWeekIsTraining() {
+        XCTAssertEqual(TodayMode.resolve(hasGoal: true, hasPlan: true, phase: .raceWeek), .training)
+    }
+
+    /// End to end with the real lifecycle: the morning after Chicago, plan still open.
+    func testTheMorningAfterChicagoIsRacePassed() {
+        let g = goal(), p = plan(goalID: g.id)
+        let morningAfter = Calendar.current.date(byAdding: .hour, value: 9, to: PlanDates.day.date(from: "2026-10-12")!)!
+        let phase = BlockLifecycle.phase(goal: g, plan: p, now: morningAfter)
+        XCTAssertEqual(TodayMode.resolve(goal: g, plan: p, phase: phase), .racePassed)
+    }
+
     // MARK: - What the coach is told
 
     func testCoachModeNamesJustRunningExplicitly() {
         XCTAssertEqual(TodayMode.justRunning.coachMode, "just_running")
         XCTAssertEqual(TodayMode.training.coachMode, "training")
-        // No prompt rule for a passed race yet; an unexplained value would be noise.
-        XCTAssertEqual(TodayMode.racePassed.coachMode, "training")
+        // Its own value, with its own prompt rule: the plan in the context is finished.
+        XCTAssertEqual(TodayMode.racePassed.coachMode, "race_passed")
     }
 
     /// End to end through the encoder: the field the prompt rule keys on is actually on the
@@ -86,10 +99,19 @@ final class TodayModeTests: XCTestCase {
         let store = RunStore()
         XCTAssertEqual(try wireMode(store.coachContext()), "just_running")
 
-        let g = goal()
-        store.goal = g
-        store.plan = plan(goalID: g.id)
+        // `RunStore` asks `BlockLifecycle` about *now*, so the training case needs a race that
+        // is still ahead whenever this runs — and Chicago, which is behind us for good, is
+        // the passed case.
+        let ahead = GoalInfo(id: UUID(), race_name: "Someday", race_date: "2099-10-11",
+                             goal_time_seconds: 11_700, distance: "marathon")
+        store.goal = ahead
+        store.plan = plan(goalID: ahead.id)
         XCTAssertEqual(try wireMode(store.coachContext()), "training")
+
+        let chicago = goal()
+        store.goal = chicago
+        store.plan = plan(goalID: chicago.id)
+        XCTAssertEqual(try wireMode(store.coachContext()), "race_passed")
     }
 
     private func wireMode(_ context: CoachContext) throws -> String? {

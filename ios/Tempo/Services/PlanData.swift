@@ -13,7 +13,7 @@ struct PlanInfo: Decodable, Identifiable {
     var startDate: Date { PlanDates.day.date(from: start_date) ?? .now }
 }
 
-struct GoalInfo: Decodable, Identifiable {
+struct GoalInfo: Decodable, Identifiable, Hashable {
     let id: UUID
     let race_name: String?
     let race_date: String?
@@ -29,6 +29,15 @@ struct GoalInfo: Decodable, Identifiable {
     var started_week: Int? = nil
     var preferences: GoalPreferences? = nil
 
+    // How the block ended (#100, migration 0013). All nil on an open block — and on every
+    // read that doesn't select them: `loadPlan` deliberately doesn't, so the active goal
+    // still loads on a database where 0013 hasn't been applied.
+    var completed_at: Date? = nil
+    var outcome: String? = nil
+    var result_time_s: Int? = nil
+    var race_run_id: UUID? = nil
+    var review: BlockRetrospective? = nil
+
     var raceName: String? { race_name }
     var raceDate: String { race_date ?? "" }
     var goalTimeSeconds: Int? { goal_time_seconds }
@@ -39,11 +48,13 @@ extension GoalInfo {
     private enum CodingKeys: String, CodingKey {
         case id, race_name, race_date, goal_time_seconds, distance
         case distance_m, course_type, goal_type, started_week, preferences
+        case completed_at, outcome, result_time_s, race_run_id, review
     }
 
-    /// Hand-written so the intake's columns can never cost the athlete their goal. Each is
-    /// decoded with `try?`: a malformed `preferences` blob loses the preferences, not the
-    /// row — and a goal that fails to decode reads, on every screen, as no goal at all.
+    /// Hand-written so the newer columns can never cost the athlete their goal. Each one
+    /// after the four originals is decoded with `try?`: a malformed `preferences` or `review`
+    /// blob loses that field, not the row — and a goal that fails to decode reads, on every
+    /// screen, as no goal at all.
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = try c.decode(UUID.self, forKey: .id)
@@ -51,12 +62,28 @@ extension GoalInfo {
         race_date = try c.decodeIfPresent(String.self, forKey: .race_date)
         goal_time_seconds = try c.decodeIfPresent(Int.self, forKey: .goal_time_seconds)
         distance = (try? c.decodeIfPresent(String.self, forKey: .distance)) ?? nil
+        // #102 (0014)
         distance_m = (try? c.decodeIfPresent(Int.self, forKey: .distance_m)) ?? nil
         course_type = (try? c.decodeIfPresent(String.self, forKey: .course_type)) ?? nil
         goal_type = (try? c.decodeIfPresent(String.self, forKey: .goal_type)) ?? nil
         started_week = (try? c.decodeIfPresent(Int.self, forKey: .started_week)) ?? nil
         preferences = (try? c.decodeIfPresent(GoalPreferences.self, forKey: .preferences)) ?? nil
+        // #100 (0013)
+        completed_at = (try? c.decodeIfPresent(Date.self, forKey: .completed_at)) ?? nil
+        outcome = (try? c.decodeIfPresent(String.self, forKey: .outcome)) ?? nil
+        result_time_s = (try? c.decodeIfPresent(Int.self, forKey: .result_time_s)) ?? nil
+        race_run_id = (try? c.decodeIfPresent(UUID.self, forKey: .race_run_id)) ?? nil
+        review = (try? c.decodeIfPresent(BlockRetrospective.self, forKey: .review)) ?? nil
     }
+}
+
+/// `goals.review` — the coach's retrospective on a closed block, cached so it costs one
+/// Claude call per block rather than one per visit. Versioned so the shape can grow.
+struct BlockRetrospective: Codable, Hashable {
+    var v: Int? = 1
+    let text: String
+    /// ISO 8601, kept as the string that was written — it is provenance, not arithmetic.
+    let generated_at: String?
 }
 
 struct PlanWeekInfo: Decodable, Identifiable {

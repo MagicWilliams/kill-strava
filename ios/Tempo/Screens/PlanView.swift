@@ -48,10 +48,10 @@ struct PlanView: View {
         }
     }
 
-    /// Slot for the past-blocks list from block close-out (#100). Empty until that lands;
-    /// whichever of the two PRs merges second links its list here.
-    @ViewBuilder private var pastBlocks: some View {
-        EmptyView()
+    /// Closed blocks (#100) — the same list as You, so between blocks the Plan tab shows
+    /// where you've been. Hidden when there are none.
+    private var pastBlocks: some View {
+        PastBlocksCard()
     }
 
     private var countdown: some View {

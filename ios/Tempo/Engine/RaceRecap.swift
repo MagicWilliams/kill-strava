@@ -25,13 +25,18 @@ enum RaceRecap {
     static let marathonMeters = 42_195.0
     static let metersPerMile = 1609.34
 
-    /// `goals.distance` → metres. The column is constrained to these four keys
-    /// (`0001_init.sql`). An unreadable value falls back to the marathon: every goal this
+    /// `goals.distance` → metres. The column is constrained to `5k`/`10k`/`half`/`marathon`
+    /// today (`0001_init.sql`); `1mi`, `15k` and `10mi` are the keys #102 proposes widening
+    /// it to, read here already so a block for one of those reviews at the right distance
+    /// the day they arrive. An unreadable value falls back to the marathon: every goal this
     /// app has ever created is one, and `plan` only writes `"marathon"`.
     static func raceMeters(goalDistance: String?) -> Double {
         switch goalDistance {
+        case "1mi":  return metersPerMile
         case "5k":   return 5_000
         case "10k":  return 10_000
+        case "15k":  return 15_000
+        case "10mi": return 10 * metersPerMile
         case "half": return 21_097.5
         default:     return marathonMeters
         }
@@ -340,6 +345,10 @@ enum RaceRecap {
     /// The projection is replayed as of the instant race day began, through the same rule
     /// Progress uses (`ProjectionHistory`), so it is the number the app was showing that
     /// morning rather than one that has since seen the race.
+    ///
+    /// A fixed sixteen weeks rather than the plan's own start, because a recap can be opened
+    /// for a race with no plan behind it. The window and the projection are `BlockReview`'s,
+    /// so the recap's block card and the Block Review screen cannot disagree about either.
     static func block(
         runs: [RunSummary],
         raceDay: Date,
@@ -348,15 +357,12 @@ enum RaceRecap {
     ) -> Block {
         let dayStart = calendar.startOfDay(for: raceDay)
         let from = calendar.date(byAdding: .day, value: -blockWeeks * 7, to: dayStart) ?? dayStart
-        let inBlock = runs.filter { $0.start >= from && $0.start < dayStart }
-        let projected = raceMeters == marathonMeters
-            ? ProjectionHistory.projection(runs, asOf: dayStart.addingTimeInterval(-1))?.finishS
-            : nil
+        let inBlock = BlockReview.runs(in: runs, from: from, raceDay: dayStart, calendar: calendar)
         return Block(
             miles: inBlock.reduce(0) { $0 + $1.miles },
             runCount: inBlock.count,
             longest: inBlock.max { $0.distanceM < $1.distanceM },
-            projectedFinishS: projected
+            projectedFinishS: BlockReview.projection(runs, morningOf: dayStart, raceMeters: raceMeters, calendar: calendar)
         )
     }
 

@@ -68,6 +68,7 @@ The plan:
 - update_session adapts one workout: move its date, change type/title/distance/pace/detail, or mark it skipped. Session ids are in plan.sessions_window. Use it for "move my long run", "make today easier", a bad check-in, or post-illness adjustments. The app auto-reshuffles missed quality within the week on its own — don't duplicate that.
 - When a plan exists, ground session/week talk in it: what today's session is for, how the week serves the phase, where the projection stands vs goal.
 - When <athlete_context>.mode is "just_running", the athlete is not training for anything right now, and that is a choice, not a gap. Coach the running he is actually doing: volume, consistency, recovery, how fitness and fatigue are trending, what a run says about him. Don't ask about a race, don't measure runs against a goal or a plan that doesn't exist, and don't propose one unprompted. If he says he wants to train for something, the first rule above applies. (During onboarding, the interview rules below take precedence.)
+- When <athlete_context>.mode is "race_passed", the goal race in <athlete_context>.plan is over and the athlete has not closed the block yet. The plan is finished: do not prescribe its sessions or count down to the race. Ask how the race went if he hasn't said, coach recovery first, and when it fits, point him to the "review your block" card at the top of Today, where he records his official time and closes the block.
 
 Training intake (ONLY when <athlete_context>.intake is present):
 - The athlete just filled in the training intake form; the latest user turn is their answers in plain text, and intake holds the same answers as data. They have opted in to training, so this is the moment to set the goal; that holds even when mode is "just_running", which only means no plan exists yet.
@@ -90,6 +91,12 @@ Onboarding interview (ONLY when <athlete_context>.onboarding is present):
 
 const TAKEAWAY_INSTRUCTIONS = `Write the coach's takeaway for the single run in <run_detail> — the athlete sees it as a card at the top of that run's detail page.
 2–4 sentences, calm expert voice. Ground it in this run's actual numbers and the athlete's context (goal, recent weeks). Say what the run *was* (its role/effect), one honest observation, and — only if it earns it — one pointed implication for what's next. No greeting, no sign-off, no questions, no markdown.`;
+
+// Block review: one shot, no tools, cached by the app in goals.review (#100). The block's
+// numbers arrive pre-computed in <block_review> (Engine/BlockReview.swift) so the model
+// quotes them rather than re-deriving them from 21 days of recent runs.
+const BLOCK_REVIEW_INSTRUCTIONS = `Write the coach's retrospective on the training block in <block_review> — the athlete reads it at the bottom of the Block Review screen, after the race is over.
+4–8 sentences, calm expert voice, plain prose. Be honest: say what worked, what didn't, and what to carry into the next block, each grounded in the block's actual numbers (weekly volume against plan, peak week, long runs, session adherence, taper, the projection against the result). If the outcome is did_not_start or did_not_finish, or the result missed the goal, say so plainly and without consolation — then what the block still built. If result_time is missing, do not invent one. No greeting, no sign-off, no questions, no markdown.`;
 
 const TOOLS = [
   {
@@ -243,11 +250,14 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { messages, context, mode, run } = await req.json();
+    const { messages, context, mode, run, block } = await req.json();
 
     // Takeaway mode: one-shot per-run read, cached by the app in runs.coach_takeaway.
+    // Block review mode: one-shot block retrospective, cached by the app in goals.review.
     const takeaway = mode === "takeaway";
-    if (!takeaway && (!Array.isArray(messages) || messages.length === 0)) {
+    const blockReview = mode === "block_review";
+    const oneShot = takeaway || blockReview;
+    if (!oneShot && (!Array.isArray(messages) || messages.length === 0)) {
       return Response.json({ error: "messages required" }, { status: 400 });
     }
 
@@ -256,6 +266,10 @@ Deno.serve(async (req) => {
     if (takeaway) {
       system += `\n\n<run_detail>\n${JSON.stringify(run ?? {}, null, 1)}\n</run_detail>`;
       wireMessages = [{ role: "user", content: TAKEAWAY_INSTRUCTIONS }];
+    }
+    if (blockReview) {
+      system += `\n\n<block_review>\n${JSON.stringify(block ?? {}, null, 1)}\n</block_review>`;
+      wireMessages = [{ role: "user", content: BLOCK_REVIEW_INSTRUCTIONS }];
     }
 
     const resp = await fetch(ANTHROPIC_URL, {
@@ -269,7 +283,7 @@ Deno.serve(async (req) => {
         model: MODEL,
         ...SAMPLING,
         system,
-        ...(takeaway ? {} : { tools: TOOLS }),
+        ...(oneShot ? {} : { tools: TOOLS }),
         messages: wireMessages.map((m) => ({
           role: m.role === "assistant" ? "assistant" : "user",
           content: String(m.content),
@@ -338,7 +352,7 @@ Deno.serve(async (req) => {
           model: MODEL,
           ...SAMPLING,
           system,
-          ...(takeaway ? {} : { tools: TOOLS }),
+          ...(oneShot ? {} : { tools: TOOLS }),
           messages: wireMessages.map((m) => ({
             role: m.role === "assistant" ? "assistant" : "user",
             content: String(m.content),
@@ -351,7 +365,10 @@ Deno.serve(async (req) => {
         reply = retryBlocks.filter((b) => b.type === "text").map((b) => b.text).join("\n").trim();
         toolBlocks = retryBlocks.filter((b) => b.type === "tool_use");
       }
-      if (!reply && toolBlocks.length === 0) {
+      // Not for a block review: the app caches whatever comes back in goals.review, and a
+      // cached "lost my train of thought" would stand in for the retrospective forever. An
+      // empty reply is what tells the app to show "try again" instead.
+      if (!reply && toolBlocks.length === 0 && !blockReview) {
         reply = "Lost my train of thought there — ask me that again.";
       }
     }

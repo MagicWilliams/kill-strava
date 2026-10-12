@@ -352,7 +352,7 @@ struct IntakeAnswers: Equatable {
 /// that other writers (the `plan` function, a future v2) also touch. An enum here would turn
 /// one unrecognised value into a goal that fails to decode — and a goal that fails to decode
 /// reads, everywhere in the app, as no goal at all.
-struct GoalPreferences: Codable, Equatable {
+struct GoalPreferences: Codable, Hashable {
     static let currentVersion = 1
 
     var v: Int? = GoalPreferences.currentVersion

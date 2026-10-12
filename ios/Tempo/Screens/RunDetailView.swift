@@ -177,7 +177,7 @@ struct RunDetailView: View {
     /// The door to the race recap. Only on the run that *is* the goal race — see
     /// `RaceRecap.isRace` — so every other run's page is exactly what it was.
     @ViewBuilder private var raceRecapCard: some View {
-        if RaceRecap.isRace(run: run, goal: store.goal) {
+        if let raceGoal = store.raceGoal(for: run) {
             Button { router.openRaceRecap(run) } label: {
                 Card(well: .accent) {
                     HStack(spacing: 14) {
@@ -189,7 +189,7 @@ struct RunDetailView: View {
                         VStack(alignment: .leading, spacing: 3) {
                             Text("Race recap")
                                 .font(Tokens.Font.ui(17, .bold)).foregroundStyle(Tokens.Palette.textPrimary)
-                            Text("\(store.goal?.raceName ?? RaceCountdown.unnamedRace) — every mat, both halves, where it turned")
+                            Text("\(raceGoal.raceName ?? RaceCountdown.unnamedRace) — every mat, both halves, where it turned")
                                 .font(Tokens.Font.ui(13)).foregroundStyle(Tokens.Palette.textSecondary)
                                 .multilineTextAlignment(.leading)
                         }
