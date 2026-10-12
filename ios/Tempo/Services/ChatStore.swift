@@ -46,6 +46,10 @@ struct ProposedAction: Codable, Equatable {
     let detail: String?
     let session_status: String?  // planned | skipped
 
+    /// create_plan only: what the athlete tapped in the intake (#102). Stamped by the app,
+    /// never sent by the model — see `IntakeHandoff.stamping`.
+    var intake: IntakeStamp? = nil
+
     /// Never-empty line for the confirm card and the confirmation message.
     var displaySummary: String { summary ?? note ?? "Proposed \(type)" }
 }
@@ -143,6 +147,12 @@ final class ChatStore: ObservableObject {
                 )
             }
         }
+        // A freshly sent intake is the turn to answer, onboarding or not — it replaces the
+        // generic opener rather than queueing behind it.
+        if let runStore, runStore.intakeHandoff?.sentToCoach == false {
+            await sendIntake(runStore: runStore)
+            return
+        }
         let opener: String
         if onboardingMode {
             opener = "Begin (or resume) my onboarding interview. Confirm what you already know from onboarding.known instead of re-asking, and pick up wherever we left off."
@@ -176,6 +186,27 @@ final class ChatStore: ObservableObject {
             handleReply(reply)
         } else {
             errorText = "Coach unreachable — check your connection and try again."
+        }
+    }
+
+    /// Hand the intake to the coach (#102): the athlete's answers go in as their own turn, and
+    /// the coach's reply is the reflect-back, proposing the goal through the usual create_plan
+    /// card. Marked sent before the round trip so a second Coach-tab appearance can't send it
+    /// twice; a failed round trip leaves the visible turn in place for the athlete to nudge.
+    func sendIntake(runStore: RunStore) async {
+        guard let handoff = runStore.intakeHandoff, !handoff.sentToCoach, !isThinking else { return }
+        runStore.markIntakeSent()
+        errorText = nil
+        append(.user, handoff.answers.transcriptLine(calendar: RunStore.cal))
+        isThinking = true
+        defer { isThinking = false }
+        let history = messages.suffix(24).map {
+            WireMessage(role: $0.role == .user ? "user" : "assistant", content: $0.text)
+        }
+        if let reply = await requestReply(history: Array(history), context: runStore.coachContext(onboarding: onboardingMode)) {
+            handleReply(reply)
+        } else {
+            errorText = "Coach unreachable — your answers are saved above. Send a message to pick it back up."
         }
     }
 
@@ -471,7 +502,39 @@ final class ChatStore: ObservableObject {
     /// Returns the line to narrate, for the caller to place — see `PlanNarration`.
     private func applyCreatePlan(_ action: ProposedAction, runStore: RunStore) async throws -> String? {
         guard let goalTime = action.goal_time_s, let raceDate = action.race_date else { throw ActionError.badParams }
-        return try await invokePlanEngine(goalTimeS: goalTime, raceName: action.race_name, raceDate: raceDate, runStore: runStore)
+        guard let intake = action.intake else {
+            return try await invokePlanEngine(
+                regenerating(goalTimeS: goalTime, raceName: action.race_name, raceDate: raceDate, runStore: runStore),
+                runStore: runStore
+            )
+        }
+        // The intake's profile half lands first: `plan` reads days, long-run day, strength
+        // and risk from the profile, not from the request. Only here, on Confirm — writing it
+        // at form submit would let a dismissed card reshape the plan the athlete is still on.
+        guard let uid = Supa.userID?.uuidString else { throw ActionError.badParams }
+        try await Supa.client.from("profiles").update(intake.profilePatch).eq("id", value: uid).execute()
+        runStore.setPlanSettings(daysPerWeek: intake.days_per_week, longRunDay: intake.long_run_day)
+        runStore.setRiskTolerance(intake.risk_tolerance)
+        let narration = try await invokePlanEngine(
+            .fromIntake(intake, goalTimeS: goalTime, raceName: action.race_name, raceDate: raceDate),
+            runStore: runStore
+        )
+        runStore.finishIntake()
+        return narration
+    }
+
+    /// The `plan` request for anything that isn't an intake card. See
+    /// `PlanRequest.carryingForward` for why it can't simply be the three fields it once was.
+    private func regenerating(goalTimeS: Int, raceName: String?, raceDate: String, runStore: RunStore) -> PlanRequest {
+        .carryingForward(
+            goal: runStore.goal,
+            planStartDate: runStore.plan?.start_date,
+            goalTimeS: goalTimeS,
+            raceName: raceName,
+            raceDate: raceDate,
+            today: .now,
+            calendar: RunStore.cal
+        )
     }
 
     /// Returns the line to narrate, for the caller to place — see `PlanNarration`.
@@ -486,7 +549,10 @@ final class ChatStore: ObservableObject {
         guard regenerate else { return nil }
         // Cascade: settings change regenerates the plan forward + recomputes projection.
         if let goal = runStore.goal, let t = goal.goalTimeSeconds, !goal.raceDate.isEmpty {
-            return try await invokePlanEngine(goalTimeS: t, raceName: goal.raceName, raceDate: goal.raceDate, runStore: runStore)
+            return try await invokePlanEngine(
+                regenerating(goalTimeS: t, raceName: goal.raceName, raceDate: goal.raceDate, runStore: runStore),
+                runStore: runStore
+            )
         } else if !onboardingMode {
             return PlanNarration.settingsSavedWithoutPlan
         }
@@ -529,8 +595,7 @@ final class ChatStore: ObservableObject {
     /// the confirmed-action switch, the result landed above the "Confirmed — …" turn that
     /// asked for it (#39). Handing the line back lets the caller — which knows whether a
     /// confirmation turn precedes it — decide where it goes.
-    private func invokePlanEngine(goalTimeS: Int, raceName: String?, raceDate: String, runStore: RunStore) async throws -> String? {
-        struct Req: Encodable { let goal_time_s: Int; let race_name: String?; let race_date: String }
+    private func invokePlanEngine(_ request: PlanRequest, runStore: RunStore) async throws -> String? {
         struct Rep: Decodable {
             let weeks: Int?
             let archetype: String?
@@ -541,7 +606,7 @@ final class ChatStore: ObservableObject {
         }
         let rep: Rep = try await Supa.client.functions.invoke(
             "plan",
-            options: FunctionInvokeOptions(body: Req(goal_time_s: goalTimeS, race_name: raceName, race_date: raceDate))
+            options: FunctionInvokeOptions(body: request)
         )
         await runStore.loadPlan()
         return PlanNarration.planIsLive(PlanNarration.PlanResult(
@@ -589,7 +654,8 @@ final class ChatStore: ObservableObject {
     // MARK: - Plumbing
 
     private func handleReply(_ reply: CoachReply) {
-        var actions = reply.proposed_actions ?? []
+        let handoff = runStore?.intakeHandoff
+        var actions = (reply.proposed_actions ?? []).map { IntakeHandoff.stamping($0, with: handoff) }
 
         // Onboarding: small facts apply silently — the athlete's answer was the consent.
         // SEQUENTIAL, and any plan rebuild is coalesced to a single run at the end
@@ -621,7 +687,8 @@ final class ChatStore: ObservableObject {
                         // No confirmation turn to sit under here — the interview applied these
                         // silently — so the narration goes in on its own.
                         if let line = try? await self.invokePlanEngine(
-                            goalTimeS: t, raceName: goal.raceName, raceDate: goal.raceDate, runStore: store
+                            self.regenerating(goalTimeS: t, raceName: goal.raceName, raceDate: goal.raceDate, runStore: store),
+                            runStore: store
                         ) {
                             self.append(.coach, line)
                         }

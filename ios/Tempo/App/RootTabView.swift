@@ -48,6 +48,8 @@ final class TabRouter: ObservableObject {
     /// something", consumed (cleared) by `CoachView`. Prefilled, never sent: the athlete
     /// gets to read it, change it, or back out.
     @Published var coachDraft: String?
+    /// The training intake (#102), presented over the whole app by `.trainingIntake(...)`.
+    @Published var trainingIntakeShown = false
 
     func openRun(_ run: RunSummary) { path.append(.run(run)) }
     func openReadiness() { path.append(.readiness) }
@@ -63,14 +65,11 @@ final class TabRouter: ObservableObject {
         showCoach()
     }
 
-    /// The "Train for something" CTA on the just-running Today and Plan (#101).
-    ///
-    /// One function on purpose: #102's intake replaces this body, and every button that
-    /// says "Train for something" follows it without being touched. Until then the way in
-    /// is the coach, which already knows how to assess history and propose a goal.
+    /// The "Train for something" CTA on the just-running Today and Plan (#101), and the one
+    /// way into the training intake (#102) from anywhere in the app. The form hands its
+    /// answers to the coach itself: see `View.trainingIntake(router:store:)`.
     func trainForSomething() {
-        coachDraft = "I want to start training for a race"
-        showCoach()
+        trainingIntakeShown = true
     }
 
     /// Pop everything and land on a tab (e.g. "Discuss with Coach").
@@ -142,6 +141,7 @@ struct RootTabView: View {
             }
         }
         .environment(\.zoomNamespace, zoom)
+        .trainingIntake(router: router, store: store)
     }
 
     @ViewBuilder private var content: some View {

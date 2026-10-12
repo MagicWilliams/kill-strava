@@ -21,11 +21,42 @@ struct GoalInfo: Decodable, Identifiable {
     /// `5k` / `10k` / `half` / `marathon`. Optional only so a row read without the column
     /// still decodes; the column itself is `not null`. Read by `RaceRecap.isRace`.
     var distance: String? = nil
+    // #102 (`0013_training_intake.sql`). All nil on a goal written before the migration, or
+    // by a `plan` function that predates #104: read as "not stated", never as a default.
+    var distance_m: Int? = nil
+    var course_type: String? = nil
+    var goal_type: String? = nil
+    var started_week: Int? = nil
+    var preferences: GoalPreferences? = nil
 
     var raceName: String? { race_name }
     var raceDate: String { race_date ?? "" }
     var goalTimeSeconds: Int? { goal_time_seconds }
     var raceDay: Date? { race_date.flatMap { PlanDates.day.date(from: $0) } }
+}
+
+extension GoalInfo {
+    private enum CodingKeys: String, CodingKey {
+        case id, race_name, race_date, goal_time_seconds, distance
+        case distance_m, course_type, goal_type, started_week, preferences
+    }
+
+    /// Hand-written so the intake's columns can never cost the athlete their goal. Each is
+    /// decoded with `try?`: a malformed `preferences` blob loses the preferences, not the
+    /// row — and a goal that fails to decode reads, on every screen, as no goal at all.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(UUID.self, forKey: .id)
+        race_name = try c.decodeIfPresent(String.self, forKey: .race_name)
+        race_date = try c.decodeIfPresent(String.self, forKey: .race_date)
+        goal_time_seconds = try c.decodeIfPresent(Int.self, forKey: .goal_time_seconds)
+        distance = (try? c.decodeIfPresent(String.self, forKey: .distance)) ?? nil
+        distance_m = (try? c.decodeIfPresent(Int.self, forKey: .distance_m)) ?? nil
+        course_type = (try? c.decodeIfPresent(String.self, forKey: .course_type)) ?? nil
+        goal_type = (try? c.decodeIfPresent(String.self, forKey: .goal_type)) ?? nil
+        started_week = (try? c.decodeIfPresent(Int.self, forKey: .started_week)) ?? nil
+        preferences = (try? c.decodeIfPresent(GoalPreferences.self, forKey: .preferences)) ?? nil
+    }
 }
 
 struct PlanWeekInfo: Decodable, Identifiable {
@@ -139,13 +170,24 @@ extension RunStore {
             if plan != nil {
                 Telemetry.warn("plan.cleared", "server returned zero active plans")
             }
-            plan = nil; goal = nil; planWeeks = []; sessions = []
+            // A goal can stand without a plan: "No plan, just coaching" (#102) saves the race
+            // and nothing else. Reading the goal only through its plan would hide that
+            // athlete's race from every screen and from the coach.
+            let standalone: [GoalInfo]? = try? await Supa.client
+                .from("goals")
+                .select("*")
+                .eq("is_active", value: true)
+                .order("created_at", ascending: false)
+                .limit(1)
+                .execute()
+                .value
+            plan = nil; goal = standalone?.first; planWeeks = []; sessions = []
             return
         }
 
         let newGoal: GoalInfo? = try? await Supa.client
             .from("goals")
-            .select("id,race_name,race_date,goal_time_seconds,distance")
+            .select("*")   // not a column list: the intake columns (0013) may not exist yet
             .eq("id", value: newPlan.goal_id.uuidString)
             .single()
             .execute()
