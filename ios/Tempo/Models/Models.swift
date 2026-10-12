@@ -32,7 +32,7 @@ struct Run: Codable, Identifiable, Hashable {
 
 /// What we write when ingesting a run from HealthKit. The DB fills id/created_at;
 /// `(user_id, source, external_id)` is unique so re-ingesting is an idempotent upsert.
-struct RunInsert: Encodable {
+struct RunInsert: Encodable, Equatable {
     let user_id: String
     let source: String
     let external_id: String

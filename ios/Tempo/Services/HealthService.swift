@@ -82,28 +82,11 @@ final class HealthService {
 
     /// Compact summaries for the UI. Avg HR comes from the workout's own statistics
     /// (present for Apple Watch and Garmin-written workouts alike, when HR was recorded).
+    /// The mapping itself is `WorkoutRow`, shared with the run recorder's save (#122).
     func fetchSummaries(since: Date? = nil) async throws -> [RunSummary] {
-        let bpm = HKUnit.count().unitDivided(by: .minute())
-        return try await fetchRuns(since: since)
-            .map { workout in
-                let meters = Int(workout.totalDistance?.doubleValue(for: .meter()) ?? 0)
-                let hr = workout.statistics(for: HKQuantityType(.heartRate))?
-                    .averageQuantity()?.doubleValue(for: bpm)
-                // Two clocks, both straight off the workout record: `duration` is the time
-                // the workout was actually running (HealthKit excludes paused stretches),
-                // and start→end is the wall clock. They differ only when the athlete
-                // stopped. See TimeAccounting.
-                return RunSummary(
-                    id: workout.uuid,
-                    start: workout.startDate,
-                    distanceM: meters,
-                    durationS: Int(workout.duration),
-                    elapsedS: Int(workout.endDate.timeIntervalSince(workout.startDate)),
-                    avgHR: hr.map { Int($0.rounded()) },
-                    externalID: workout.uuid.uuidString
-                )
-            }
-            .filter { $0.distanceM > 200 }   // drop GPS blips / accidental starts
+        try await fetchRuns(since: since)
+            .map { WorkoutRow.summary(WorkoutRow.Workout($0)) }
+            .filter(WorkoutRow.isRun)   // drop GPS blips / accidental starts
     }
 
     /// Ingest into Supabase — INSERT-ONLY (dedupe on user/source/HK-uuid, existing rows
@@ -150,19 +133,7 @@ final class HealthService {
         // afterwards by `backfillMissingHR`, which runs on every refresh and is capped.
         // A recent run gets its heart rate in this same refresh, one update later —
         // a second the write no longer waits on.
-        let inserts = kept.map { run in
-            RunInsert(
-                user_id: userID,
-                source: "healthkit",
-                external_id: run.id.uuidString,
-                start_time: run.start,
-                distance_m: run.distanceM,
-                duration_s: run.durationS,
-                elapsed_duration_s: run.elapsedS,
-                avg_pace_sec: run.paceSecPerMile,
-                avg_hr: run.avgHR
-            )
-        }
+        let inserts = kept.map { WorkoutRow.insert($0, userID: userID) }
         try await Supa.client
             .from("runs")
             .upsert(inserts, onConflict: "user_id,source,external_id", ignoreDuplicates: true)
@@ -292,5 +263,23 @@ final class HealthService {
             }
             store.execute(query)
         }
+    }
+}
+
+extension WorkoutRow.Workout {
+    /// Read the fields a row is built from off a HealthKit workout — the only place an
+    /// `HKWorkout` becomes a `Workout`, for ingest and (#114) the recorder's own save alike.
+    init(_ workout: HKWorkout) {
+        let bpm = HKUnit.count().unitDivided(by: .minute())
+        self.init(
+            uuid: workout.uuid,
+            start: workout.startDate,
+            end: workout.endDate,
+            distanceM: workout.totalDistance?.doubleValue(for: .meter()),
+            movingS: workout.duration,
+            avgHR: workout.statistics(for: HKQuantityType(.heartRate))?
+                .averageQuantity()?.doubleValue(for: bpm),
+            indoor: (workout.metadata?[HKMetadataKeyIndoorWorkout] as? Bool) ?? false
+        )
     }
 }
