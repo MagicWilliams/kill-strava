@@ -10,12 +10,18 @@
 //   5. Write goal/plan/weeks/sessions; return a summary.
 //
 // The LLM never writes sessions or paces — it tunes shape within bounds; math is code.
+//
+// Since #104 the request may also carry the intake's goal fields (#102): distance /
+// distance_m, course_type, goal_type, started_week, preferences — the same names as the
+// goals columns they land in. All optional: a request without them is a marathon plan,
+// exactly as before. goal.ts decides how they resolve and carry across regenerations.
 
 import { createClient } from "npm:@supabase/supabase-js@2";
 import {
-  equivalentTime, fmtPace, generate, MI, mondayOf, racePlacement,
-  sessionDate, type Shape, trainingPaces,
+  equivalentTime, fmtClock, fmtPace, generate, type Generated, MI, mondayOf, paceBasis, planWrites,
+  racePlacement, readPreferences, sessionDate, type Shape, taperWeeksFor, trainingPaces,
 } from "./generator.ts";
+import { goalInsertRow, isFinishGoal, isMissingColumnError, resolveGoal } from "./goal.ts";
 
 const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
 const MODEL = "claude-sonnet-5";
@@ -43,7 +49,7 @@ interface RunRow {
   avg_hr: number | null;
 }
 
-function extractFeatures(runs: RunRow[]) {
+function extractFeatures(runs: RunRow[], raceMi: number) {
   const now = new Date();
   const weeks: Record<string, { mi: number; runs: number }> = {};
   for (const r of runs) {
@@ -89,6 +95,10 @@ function extractFeatures(runs: RunRow[]) {
   const currentMarathonS = bestPace < Infinity
     ? Math.round(equivalentTime(bestPace * bestMiles, bestMiles, 26.2188))
     : null;
+  // Same Riegel, aimed at the race actually being run — a 5K goal projects a 5K time.
+  const currentRaceS = bestPace < Infinity
+    ? Math.round(equivalentTime(bestPace * bestMiles, bestMiles, raceMi))
+    : null;
 
   return {
     weekly_last_12: last12,
@@ -103,6 +113,7 @@ function extractFeatures(runs: RunRow[]) {
       ? `${Math.floor(currentMarathonS / 3600)}:${String(Math.floor((currentMarathonS % 3600) / 60)).padStart(2, "0")}:${String(currentMarathonS % 60).padStart(2, "0")}`
       : null,
     riegel_current_marathon_s: currentMarathonS,
+    riegel_current_race_s: currentRaceS,
   };
 }
 
@@ -138,6 +149,32 @@ const SHAPE_TOOL = {
   },
 };
 
+/// The forced tool call, or the error Response the handler should return as-is.
+async function proposeShape(apiKey: string, system: string): Promise<Shape | Response> {
+  const resp = await fetch(ANTHROPIC_URL, {
+    method: "POST",
+    headers: { "x-api-key": apiKey, "anthropic-version": "2023-06-01", "content-type": "application/json" },
+    body: JSON.stringify({
+      model: MODEL, ...SAMPLING, system,
+      tools: [SHAPE_TOOL], tool_choice: { type: "tool", name: "propose_plan_shape" },
+      messages: [{ role: "user", content: "Propose the plan shape." }],
+    }),
+  });
+  if (!resp.ok) {
+    console.error("anthropic error", resp.status, await resp.text());
+    return Response.json({ error: `anthropic ${resp.status}` }, { status: 502 });
+  }
+  const ai = await resp.json();
+  const shape = ai.content?.find((b: { type: string }) => b.type === "tool_use")?.input as Shape | undefined;
+  if (!shape) {
+    // The one line that turns "the plan button did nothing" into a diagnosis. Its twin in
+    // coach/index.ts is what identified the thinking-budget bug from a single log query.
+    console.error("no shape proposed", JSON.stringify({ stop_reason: ai.stop_reason, usage: ai.usage }));
+    return Response.json({ error: "no shape proposed" }, { status: 502 });
+  }
+  return shape;
+}
+
 // ── HTTP handler ──────────────────────────────────────────────────────────────
 Deno.serve(async (req) => {
   if (req.method !== "POST") return Response.json({ error: "POST only" }, { status: 405 });
@@ -154,8 +191,12 @@ Deno.serve(async (req) => {
     if (userErr || !userData?.user) return Response.json({ error: "unauthorized" }, { status: 401 });
     const uid = userData.user.id;
 
-    const { goal_time_s, race_name, race_date } = await req.json();
-    if (!goal_time_s || !race_date) return Response.json({ error: "goal_time_s and race_date required" }, { status: 400 });
+    const body = (await req.json()) as Record<string, unknown>;
+    // Null for a "just finish" goal — checked against goal_type once the goal is resolved.
+    const goal_time_s = typeof body.goal_time_s === "number" && body.goal_time_s > 0 ? Math.round(body.goal_time_s) : null;
+    const race_name = (body.race_name ?? null) as string | null;
+    const race_date = body.race_date as string;
+    if (!race_date) return Response.json({ error: "race_date required" }, { status: 400 });
 
     const { data: profile } = await supa.from("profiles")
       .select("days_per_week,long_run_day,risk_tolerance,wants_strength").eq("id", uid).single();
@@ -164,6 +205,21 @@ Deno.serve(async (req) => {
     const risk = profile?.risk_tolerance ?? "standard";
     const wantsStrength = profile?.wants_strength ?? false;
 
+    // The active goal, carried into a regeneration of the same race (goal.ts). `select("*")`
+    // rather than a column list: before migration 0013 a named distance_m would be an error,
+    // whereas `*` just returns fewer keys and everything downstream reads them as absent.
+    const { data: activeGoal } = await supa.from("goals").select("*")
+      .eq("user_id", uid).eq("is_active", true)
+      .order("created_at", { ascending: false }).limit(1).maybeSingle();
+    const now = new Date();
+    const goal = resolveGoal(body, (activeGoal ?? null) as Record<string, unknown> | null, now);
+    if (goal_time_s == null && !isFinishGoal(goal.goal_type)) {
+      return Response.json({ error: "goal_time_s required unless goal_type is finish" }, { status: 400 });
+    }
+    const prefs = readPreferences(goal.preferences, goal.course_type);
+    const distance = goal.distance.profile;
+    const raceMi = goal.distance.meters / MI;
+
     const since = new Date(Date.now() - 120 * 86400_000).toISOString();
     // `.is("superseded_by", null)` — duplicates retired by migration 0008 would otherwise
     // inflate every volume feature the plan shape is built from.
@@ -171,14 +227,50 @@ Deno.serve(async (req) => {
       .select("start_time,distance_m,duration_s,avg_hr")
       .is("superseded_by", null)
       .gte("start_time", since).order("start_time", { ascending: true });
-    const features = extractFeatures((runs ?? []) as RunRow[]);
+    const features = extractFeatures((runs ?? []) as RunRow[], raceMi);
 
-    const startMonday = mondayOf(new Date());
-    const weeksToRace = racePlacement(startMonday, race_date).weekIndex;
+    // Mid-block (#102): the athlete is in week `started_week` of a block already under way.
+    // Block week 0 is backdated so plan-week coordinates — and "Week 9 of 16" in the app,
+    // which counts from plans.start_date — stay true. The weeks before it are never created.
+    const firstWeekIndex = goal.started_week ? goal.started_week - 1 : 0;
+    const startMonday = mondayOf(now);
+    startMonday.setUTCDate(startMonday.getUTCDate() - 7 * firstWeekIndex);
+    const raceWeekIndex = racePlacement(startMonday, race_date).weekIndex;
+    const weeksToRace = raceWeekIndex - firstWeekIndex;
     if (weeksToRace < 2) return Response.json({ error: "race is too close for a plan" }, { status: 400 });
     // TRAINING weeks only — the shape excludes race week by contract, and generate()
     // appends it. Read this as "the plan is one week longer than the shape it came from".
     const planWeeks = weeksToRace;
+    const taperWeeks = Math.min(taperWeeksFor(distance, raceWeekIndex), planWeeks - 1);
+    const anchorWeeklyMi = firstWeekIndex > 0 ? features.vol_4wk_avg_mi : null;
+    // Paces come from the target time, or — for a finish goal — from current fitness, or a
+    // conservative default. The basis is never stored as the goal's time.
+    const basis = paceBasis(goal_time_s, raceMi, features.riegel_current_race_s);
+    const paces = trainingPaces(basis.seconds, raceMi);
+    // Projection: Riegel current fitness at the race distance, else a modest miss of goal.
+    // No target and no runs → no projection; the app already omits the line when it's null.
+    const projected = features.riegel_current_race_s ?? (goal_time_s != null ? Math.round(goal_time_s * 1.06) : null);
+    const targetLine = goal_time_s != null
+      ? `target ${fmtClock(goal_time_s)}`
+      : `no target time — the goal is to finish. Training paces are derived from ${basis.source === "fitness" ? "current fitness" : "a conservative default (no usable recent runs)"}, not a goal; do not invent a target in the rationale`;
+
+    const bigMark = distance.bigLongRunMi;
+    const raceLines = [
+      `- This is a ${goal.distance.label === "custom" ? `${raceMi.toFixed(1)}-mile` : goal.distance.label} race block. ${raceMi <= 6.3 ? "Short race: speed and VO₂ work matter more than long-run length." : "Endurance race: threshold work and long runs carry the block."}`,
+      taperWeeks === 0
+        ? `- No taper phase: race week itself is the taper for this distance. The last phase ends the week before race week.`
+        : `- End with a taper of EXACTLY ${taperWeeks} week${taperWeeks === 1 ? "" : "s"} (race week excluded).`,
+      `- peak_weekly_mi is typically ${distance.peakBandMi[0]}–${distance.peakBandMi[1]} for this distance; above ${distance.peakBandMi[1]} only if vol_4wk_avg_mi is already higher. long_run_peak_mi ≤ ${distance.longRunCapMi}.`,
+      firstWeekIndex > 0
+        ? `- The athlete is ALREADY in week ${firstWeekIndex + 1} of this block. Phases cover only the remaining ${planWeeks} weeks; start_weekly_mi = vol_4wk_avg_mi exactly (they are mid-block, not starting).`
+        : null,
+      bigMark != null && prefs.longRunsBig != null
+        ? `- The athlete wants exactly ${prefs.longRunsBig} long run${prefs.longRunsBig === 1 ? "" : "s"} of ${bigMark}+ mi; the generator places them in the peak phase, so size peak to hold them.`
+        : null,
+      prefs.courseType === "rolling" || prefs.courseType === "hilly"
+        ? `- Course is ${prefs.courseType}: the generator adds hill work to base/build.`
+        : null,
+    ].filter(Boolean).join("\n");
 
     // Claude proposes the shape (forced tool call).
     const system = `You design the SHAPE of a running plan for Tempo. The athlete's real data and constraints are below. Rules:
@@ -186,79 +278,87 @@ Deno.serve(async (req) => {
 - phases[].weeks must sum to EXACTLY ${planWeeks}.
 - Anchor start_weekly_mi on vol_4wk_avg_mi (at most ~15% above it; ambitious risk_tolerance may stretch to ~25%).
 - Ramp start→peak must stay plausible for ${planWeeks} weeks (~10%/wk standard, ~15%/wk ambitious); the generator adds step-back weeks automatically.
-- Always end with a taper (2 weeks if total ≥ 10, else 1).
+${raceLines}
 - long_run_peak_mi ≤ 35% of peak_weekly_mi and ≤ roughly double longest_run_8wk_mi.
 - risk_tolerance: ${risk}. Honest, not reckless: the rationale must say what the data supports.
 
 <athlete>
-goal: ${race_name ?? "race"} on ${race_date}, target ${Math.floor(goal_time_s / 3600)}:${String(Math.floor((goal_time_s % 3600) / 60)).padStart(2, "0")}:${String(goal_time_s % 60).padStart(2, "0")}
+goal: ${race_name ?? "race"} (${goal.distance.label}, ${raceMi.toFixed(1)} mi) on ${race_date}, ${targetLine}
 weeks_until_race: ${weeksToRace}
 days_per_week: ${daysPerWeek}
 features: ${JSON.stringify(features, null, 1)}
 </athlete>`;
 
-    const resp = await fetch(ANTHROPIC_URL, {
-      method: "POST",
-      headers: { "x-api-key": apiKey, "anthropic-version": "2023-06-01", "content-type": "application/json" },
-      body: JSON.stringify({
-        model: MODEL, ...SAMPLING, system,
-        tools: [SHAPE_TOOL], tool_choice: { type: "tool", name: "propose_plan_shape" },
-        messages: [{ role: "user", content: "Propose the plan shape." }],
-      }),
-    });
-    if (!resp.ok) {
-      console.error("anthropic error", resp.status, await resp.text());
-      return Response.json({ error: `anthropic ${resp.status}` }, { status: 502 });
+    // `none` is "no plan, just coaching": there is no shape to ask for, so no Claude call.
+    let generated: Generated | null = null;
+    if (prefs.planStyle !== "none") {
+      const proposed = await proposeShape(apiKey, system);
+      if (proposed instanceof Response) return proposed;
+      // Phase arithmetic, the taper, the volume band and the long-run cap are no longer
+      // trusted to the model: generate() fits the shape to the distance table (normalizeShape).
+      generated = generate(proposed, {
+        startMonday, firstWeekIndex, daysPerWeek, longRunDay, paces, wantsStrength,
+        raceDate: race_date, raceName: race_name, distance, prefs,
+        currentWeeklyMi: features.vol_4wk_avg_mi, anchorWeeklyMi, rationaleNote: basis.note,
+      });
     }
-    const ai = await resp.json();
-    const shape = ai.content?.find((b: { type: string }) => b.type === "tool_use")?.input as Shape | undefined;
-    if (!shape) {
-      // The one line that turns "the plan button did nothing" into a diagnosis. Its twin in
-      // coach/index.ts is what identified the thinking-budget bug from a single log query.
-      console.error("no shape proposed", JSON.stringify({ stop_reason: ai.stop_reason, usage: ai.usage }));
-      return Response.json({ error: "no shape proposed" }, { status: 502 });
-    }
-
-    // Normalize phase weeks to exactly planWeeks (guard against model arithmetic).
-    const sum = shape.phases.reduce((n, p) => n + p.weeks, 0);
-    if (sum !== planWeeks && shape.phases.length > 0) {
-      shape.phases[0].weeks += planWeeks - sum;
-      if (shape.phases[0].weeks < 1) return Response.json({ error: "invalid phase math" }, { status: 502 });
-    }
-
-    const paces = trainingPaces(goal_time_s);
-    const generated = generate(shape, {
-      startMonday, daysPerWeek, longRunDay, paces, wantsStrength,
-      raceDate: race_date, raceName: race_name ?? null,
-    });
-
-    // Projection: Riegel current fitness, nudged toward goal by volume adequacy.
-    const projected = features.riegel_current_marathon_s ?? Math.round(goal_time_s * 1.06);
+    const writes = planWrites(prefs.planStyle, generated);
 
     // ── Write everything: CREATE first, retire old only after full success ──
     // (Retire-first once destroyed a plan when a later step failed mid-flight.)
-    const { data: goal, error: gErr } = await supa.from("goals").insert({
-      user_id: uid, race_name: race_name ?? null, race_date,
-      distance: "marathon", goal_time_seconds: goal_time_s,
+    const goalBase = {
+      user_id: uid, race_name, race_date, goal_time_seconds: goal_time_s,
       days_per_week: daysPerWeek, start_mileage: features.vol_4wk_avg_mi, is_active: true,
-    }).select("id").single();
-    if (gErr) throw gErr;
+    };
+    let inserted = await supa.from("goals").insert(goalInsertRow(goalBase, goal, false)).select("id").single();
+    if (inserted.error && isMissingColumnError(inserted.error)) {
+      // Migration 0013 isn't applied: write the row the old schema knows. The plan below is
+      // still shaped by distance and preferences; only the goal row can't remember them yet.
+      inserted = await supa.from("goals").insert(goalInsertRow(goalBase, goal, true)).select("id").single();
+    }
+    if (inserted.error) throw inserted.error;
+    const goalId: string = inserted.data.id;
+
+    const retireOthers = async (keepPlanId: string | null) => {
+      const plans = supa.from("plans").update({ status: "done" }).eq("user_id", uid).eq("status", "active");
+      await (keepPlanId ? plans.neq("id", keepPlanId) : plans);
+      await supa.from("goals").update({ is_active: false })
+        .eq("user_id", uid).eq("is_active", true).neq("id", goalId);
+    };
+
+    if (!writes.plan || !generated) {
+      // No plan, just coaching: the goal is the commitment. Whatever plan was active belonged
+      // to the previous goal, so it stands down with it.
+      await retireOthers(null);
+      return Response.json({
+        plan_id: null, weeks: null, plan_style: prefs.planStyle,
+        distance: goal.distance.label, projected_finish_s: projected,
+        goal_time_s, pace_basis: basis.source, rationale: basis.note,
+      });
+    }
+    const shape = generated.shape;
 
     const cleanup = async (planId?: string) => {
       if (planId) await supa.from("plans").delete().eq("id", planId);   // cascades weeks+sessions
-      await supa.from("goals").delete().eq("id", goal.id);
+      await supa.from("goals").delete().eq("id", goalId);
     };
 
     const { data: plan, error: pErr } = await supa.from("plans").insert({
-      user_id: uid, goal_id: goal.id,
+      user_id: uid, goal_id: goalId,
       start_date: startMonday.toISOString().slice(0, 10),
       weeks: generated.totalWeeks, status: "active",
-      assessment: { features, shape },
+      assessment: {
+        features, shape,
+        distance: { label: goal.distance.label, meters: goal.distance.meters },
+        preferences: prefs, started_week: goal.started_week,
+        warnings: generated.warnings, notes: generated.notes,
+        pace_basis: { source: basis.source, seconds: basis.seconds },
+      },
       projected_finish_s: projected,
     }).select("id").single();
     if (pErr) { await cleanup(); throw pErr; }
 
-    const weekRows = generated.weeks.map((w) => ({
+    const weekRows = writes.weeks.map((w) => ({
       plan_id: plan.id, week_index: w.index, phase: w.phase,
       target_mileage: w.target, focus: w.focus,
     }));
@@ -266,7 +366,7 @@ features: ${JSON.stringify(features, null, 1)}
     if (wErr) { await cleanup(plan.id); throw wErr; }
     const weekIdByIndex = new Map((weekIds ?? []).map((w: { id: string; week_index: number }) => [w.week_index, w.id]));
 
-    const sessionRows = generated.sessions.map((s) => {
+    const sessionRows = writes.sessions.map((s) => {
       return {
         plan_id: plan.id, week_id: weekIdByIndex.get(s.week_index) ?? null, user_id: uid,
         date: sessionDate(startMonday, s.week_index, s.day_offset), type: s.type, title: s.title,
@@ -278,10 +378,7 @@ features: ${JSON.stringify(features, null, 1)}
     if (sErr) { await cleanup(plan.id); throw sErr; }
 
     // New plan fully exists — NOW retire everything that isn't it.
-    await supa.from("plans").update({ status: "done" })
-      .eq("user_id", uid).eq("status", "active").neq("id", plan.id);
-    await supa.from("goals").update({ is_active: false })
-      .eq("user_id", uid).eq("is_active", true).neq("id", goal.id);
+    await retireOthers(plan.id);
 
     return Response.json({
       plan_id: plan.id,
@@ -291,6 +388,11 @@ features: ${JSON.stringify(features, null, 1)}
       projected_finish_s: projected,
       start_weekly_mi: shape.start_weekly_mi,
       peak_weekly_mi: shape.peak_weekly_mi,
+      plan_style: prefs.planStyle,
+      distance: goal.distance.label,
+      warnings: generated.warnings,
+      goal_time_s,
+      pace_basis: basis.source,
     });
   } catch (err) {
     console.error("plan error", err);
