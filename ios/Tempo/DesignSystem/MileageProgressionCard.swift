@@ -8,9 +8,11 @@ import Charts
 /// the readout is the only legible thing under a thumb, so each week crossed ticks a haptic.
 ///
 /// All numbers come from `MileageProgression`; this view decides nothing about which runs
-/// count or which week they land in.
+/// count or which week they land in. Those numbers are miles; everything drawn, the axis
+/// included, is converted to the athlete's unit here (#109).
 struct MileageProgressionCard: View {
     let progression: MileageProgression.Progression
+    @Environment(\.units) private var units
 
     /// Raw x under the finger, written by `chartXSelection`; nil when nothing is held.
     @State private var scrubDate: Date?
@@ -29,7 +31,7 @@ struct MileageProgressionCard: View {
                 if progression.average > 0 {
                     HStack(spacing: 5) {
                         averageGlyph
-                        Text("AVG \(progression.average, specifier: "%.1f") MI")
+                        Text("AVG \(units.number(miles: progression.average)) \(units.abbreviation.uppercased())")
                             .font(Tokens.Font.mono(10)).tracking(1.2)
                             .foregroundStyle(Tokens.Palette.textTertiary)
                     }
@@ -57,8 +59,8 @@ struct MileageProgressionCard: View {
                     .font(Tokens.Font.mono(11)).tracking(1.2)
                     .foregroundStyle(week.isCurrent ? Tokens.Palette.accentText : Tokens.Palette.textSecondary)
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    Text("\(week.miles, specifier: "%.1f")").display(30)
-                    Text("mi").font(Tokens.Font.mono(14)).foregroundStyle(Tokens.Palette.textSecondary)
+                    Text(units.number(miles: week.miles)).display(30)
+                    Text(units.abbreviation).font(Tokens.Font.mono(14)).foregroundStyle(Tokens.Palette.textSecondary)
                     Spacer()
                     versusAverage(week)
                 }
@@ -75,7 +77,7 @@ struct MileageProgressionCard: View {
     /// that depends on whether it was a build or a cutback, which this card can't know. And
     /// early in the current week the gap is mostly the calendar.
     @ViewBuilder private func versusAverage(_ week: MileageProgression.WeekPoint) -> some View {
-        let delta = week.miles - progression.average
+        let delta = units.distance(miles: week.miles - progression.average)
         if progression.average > 0, abs(delta) >= 0.1 {
             Tag(
                 text: String(format: "%+.1f vs avg", delta),
@@ -88,7 +90,7 @@ struct MileageProgressionCard: View {
     private func detailLine(_ week: MileageProgression.WeekPoint) -> String {
         guard week.runCount > 0 else { return week.isCurrent ? "No runs yet" : "No runs" }
         let runs = week.runCount == 1 ? "1 run" : "\(week.runCount) runs"
-        return runs + String(format: " · longest %.1f mi", week.longestRunMiles)
+        return runs + " · longest " + units.formatDistance(miles: week.longestRunMiles)
     }
 
     /// "THIS WEEK", or "JUL 13 – 19" / "JUN 29 – JUL 5" for a scrubbed week.
@@ -115,7 +117,7 @@ struct MileageProgressionCard: View {
             ForEach(weeks) { week in
                 AreaMark(
                     x: .value("Week", week.weekStart),
-                    y: .value("Miles", week.miles)
+                    y: .value("Distance", units.distance(miles: week.miles))
                 )
                 .foregroundStyle(
                     LinearGradient(
@@ -126,7 +128,7 @@ struct MileageProgressionCard: View {
             }
 
             if progression.average > 0 {
-                RuleMark(y: .value("Average", progression.average))
+                RuleMark(y: .value("Average", units.distance(miles: progression.average)))
                     .foregroundStyle(Tokens.Palette.textTertiary.opacity(0.8))
                     .lineStyle(StrokeStyle(lineWidth: 1, dash: [3, 4]))
             }
@@ -134,7 +136,7 @@ struct MileageProgressionCard: View {
             ForEach(completed) { week in
                 LineMark(
                     x: .value("Week", week.weekStart),
-                    y: .value("Miles", week.miles),
+                    y: .value("Distance", units.distance(miles: week.miles)),
                     series: .value("Stretch", "banked")
                 )
                 .foregroundStyle(Tokens.Palette.textSecondary)
@@ -144,7 +146,7 @@ struct MileageProgressionCard: View {
                 ForEach(tail) { week in
                     LineMark(
                         x: .value("Week", week.weekStart),
-                        y: .value("Miles", week.miles),
+                        y: .value("Distance", units.distance(miles: week.miles)),
                         series: .value("Stretch", "current")
                     )
                     .foregroundStyle(Tokens.Palette.voltMark)
@@ -161,7 +163,7 @@ struct MileageProgressionCard: View {
             ForEach(weeks) { week in
                 PointMark(
                     x: .value("Week", week.weekStart),
-                    y: .value("Miles", week.miles)
+                    y: .value("Distance", units.distance(miles: week.miles))
                 )
                 .foregroundStyle(pointColor(week))
                 .symbolSize(pointSize(week))
@@ -182,8 +184,8 @@ struct MileageProgressionCard: View {
             AxisMarks(position: .trailing, values: .automatic(desiredCount: 3)) { value in
                 AxisGridLine().foregroundStyle(Tokens.Palette.divider.opacity(0.6))
                 AxisValueLabel {
-                    if let miles = value.as(Double.self) {
-                        Text("\(Int(miles))").font(Tokens.Font.mono(9)).foregroundStyle(Tokens.Palette.textTertiary)
+                    if let distance = value.as(Double.self) {
+                        Text("\(Int(distance))").font(Tokens.Font.mono(9)).foregroundStyle(Tokens.Palette.textTertiary)
                     }
                 }
             }
@@ -237,14 +239,16 @@ struct MileageProgressionCard: View {
 
     /// Headroom over the peak (and the average, which can't exceed it but can equal it),
     /// with a floor so an empty or tiny window draws a flat line at the bottom of a sensible
-    /// axis instead of a 0–1 scale that makes half a mile look like a mountain.
+    /// axis instead of a 0–1 scale that makes half a mile look like a mountain. The floor
+    /// is 10 mi in either unit, so the empty chart is the same shape in km.
     private var yTop: Double {
-        max(progression.peak, progression.average, 10) * 1.15
+        units.distance(miles: max(progression.peak, progression.average, 10)) * 1.15
     }
 
     private var accessibilitySummary: String {
         let this = progression.current?.miles ?? 0
-        return String(format: "This week %.1f miles. Average of completed weeks %.1f miles.", this, progression.average)
+        let name = units.name(plural: true)
+        return "This week \(units.number(miles: this)) \(name). Average of completed weeks \(units.number(miles: progression.average)) \(name)."
     }
 
     /// A short dashed stroke matching the average rule, so "AVG" is legible as the legend

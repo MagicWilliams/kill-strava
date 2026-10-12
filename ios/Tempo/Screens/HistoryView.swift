@@ -13,6 +13,7 @@ struct HistoryView: View {
     @EnvironmentObject private var store: RunStore
     @EnvironmentObject private var router: TabRouter
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.units) private var units
 
     @State private var filter: Filter = .all
     @State private var months: [RunHistory.Month] = []
@@ -111,9 +112,14 @@ struct HistoryView: View {
     private var subtitle: String {
         guard records.totalRuns > 0 else { return "No runs on file yet." }
         let runs = records.totalRuns.formatted()
-        let miles = Int(records.totalMiles.rounded()).formatted()
-        guard let first = records.firstRun else { return "\(runs) runs · \(miles) mi" }
-        return "\(runs) runs · \(miles) mi since \(first.formatted(.dateTime.month(.abbreviated).year()))"
+        let total = "\(totalDistance) \(units.abbreviation)"
+        guard let first = records.firstRun else { return "\(runs) runs · \(total)" }
+        return "\(runs) runs · \(total) since \(first.formatted(.dateTime.month(.abbreviated).year()))"
+    }
+
+    /// The whole archive's distance, whole units, grouped: "16,204".
+    private var totalDistance: String {
+        Int(units.distance(miles: records.totalMiles).rounded()).formatted()
     }
 
     @ViewBuilder private var wallCard: some View {
@@ -126,7 +132,7 @@ struct HistoryView: View {
 
     private var totals: some View {
         HStack(spacing: 10) {
-            StatTile(value: Int(records.totalMiles.rounded()).formatted(), label: "Total miles")
+            StatTile(value: totalDistance, label: "Total " + units.tileName)
             StatTile(value: hours, label: "Hours run")
             StatTile(
                 value: records.currentStreakDays > 0 ? "\(records.currentStreakDays)d" : "—",
@@ -206,9 +212,8 @@ struct HistoryView: View {
         _ best: BestEffortsService.Best
     ) -> some View {
         let run = store.runs.first { $0.id == best.runID }
-        let pace = BestEfforts.paceSecPerMile(
-            BestEfforts.Effort(distanceM: best.distanceM, durationS: best.durationS)
-        )
+        let pace = BestEfforts.distance(forKey: best.distanceM)
+            .flatMap { units.pace(seconds: Double(best.durationS), meters: $0.meters) }
         Button {
             if let run { router.openRun(run) }
         } label: {
@@ -216,7 +221,7 @@ struct HistoryView: View {
                 Text(distance.label).font(Tokens.Font.ui(13)).foregroundStyle(Tokens.Palette.textSecondary)
                 Spacer()
                 Text(BestEfforts.formatTime(best.durationS)).mono(13, Tokens.Palette.textPrimary)
-                Text(pace.map { PaceModel.format($0) + " /mi" } ?? "—")
+                Text(pace.map { units.formatPace($0) } ?? "—")
                     .mono(11, Tokens.Palette.textTertiary)
                     .frame(width: 58, alignment: .trailing)
                 if let run {
@@ -243,15 +248,16 @@ struct HistoryView: View {
                 if let longest = records.longestRun {
                     recordRow(
                         "Longest run",
-                        value: String(format: "%.1f mi", longest.miles),
+                        value: units.formatDistance(meters: Double(longest.distanceM), decimals: 1),
                         run: longest
                     )
                 }
                 ForEach(RunHistory.Band.allCases) { band in
-                    if let best = records.fastestRun[band], let pace = best.paceSecPerMile {
+                    if let best = records.fastestRun[band],
+                       let pace = units.runPace(movingSeconds: best.durationS, meters: best.distanceM) {
                         recordRow(
-                            "Fastest \(band.label) run",
-                            value: PaceModel.format(pace) + " /mi",
+                            "Fastest \(band.label(units)) run",
+                            value: units.formatPace(pace),
                             run: best
                         )
                     }
@@ -259,14 +265,14 @@ struct HistoryView: View {
                 if let week = records.biggestWeek {
                     staticRecordRow(
                         "Biggest week",
-                        value: String(format: "%.1f mi", week.miles),
+                        value: units.formatDistance(miles: week.miles),
                         caption: "week of " + week.weekStart.formatted(.dateTime.month(.abbreviated).day())
                     )
                 }
                 if let month = records.biggestMonth {
                     staticRecordRow(
                         "Biggest month",
-                        value: String(format: "%.0f mi", month.miles),
+                        value: units.formatDistance(miles: month.miles, decimals: 0),
                         caption: month.start.formatted(.dateTime.month(.wide).year())
                     )
                 }
@@ -430,7 +436,7 @@ struct HistoryView: View {
                 .font(Tokens.Font.mono(11)).tracking(1.2)
                 .foregroundStyle(Tokens.Palette.textPrimary)
             Spacer()
-            Text("\(month.runCount) · \(month.miles, specifier: "%.1f") MI")
+            Text("\(month.runCount) · \(units.number(miles: month.miles)) \(units.abbreviation.uppercased())")
                 .font(Tokens.Font.mono(11)).tracking(1.2)
                 .foregroundStyle(Tokens.Palette.textTertiary)
         }
@@ -466,12 +472,12 @@ struct HistoryView: View {
                     Tag(text: "edited", fg: Tokens.Palette.info, bg: Tokens.Palette.inset)
                 }
 
-                Text(String(format: "%.1f", run.miles))
+                Text(units.number(meters: Double(run.distanceM)))
                     .font(Tokens.Font.display(15))
                     .foregroundStyle(Tokens.Palette.textPrimary)
                     .frame(width: 38, alignment: .trailing)
 
-                Text(run.paceSecPerMile.map(PaceModel.format) ?? "—")
+                Text(units.runPace(movingSeconds: run.durationS, meters: run.distanceM).map { Units.clock($0) } ?? "—")
                     .mono(12, Tokens.Palette.textSecondary)
                     .frame(width: 42, alignment: .trailing)
 

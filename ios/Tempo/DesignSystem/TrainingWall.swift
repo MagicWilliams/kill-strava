@@ -12,6 +12,7 @@ struct TrainingWall: View {
     let onOpen: (UUID) -> Void
 
     @State private var selected: RunHistory.Day?
+    @Environment(\.units) private var units
 
     private let cell: CGFloat = 4.5
     private let gap: CGFloat = 1
@@ -31,7 +32,7 @@ struct TrainingWall: View {
                     HStack {
                         Text(String(block.year)).mono(11, Tokens.Palette.textPrimary)
                         Spacer()
-                        Text("\(block.runCount) runs · \(block.miles, specifier: "%.0f") mi")
+                        Text("\(block.runCount) runs · \(units.formatDistance(miles: block.miles, decimals: 0))")
                             .mono(10, Tokens.Palette.textTertiary)
                     }
                     grid(block)
@@ -120,7 +121,7 @@ struct TrainingWall: View {
                         .foregroundStyle(Tokens.Palette.textPrimary)
                     Spacer()
                     if day.didRun {
-                        Text(String(format: "%.1f mi", day.miles)).mono(13, Tokens.Palette.accentText)
+                        Text(units.formatDistance(miles: day.miles)).mono(13, Tokens.Palette.accentText)
                         if day.runCount > 1 {
                             Text("×\(day.runCount)").mono(11, Tokens.Palette.textTertiary)
                         }

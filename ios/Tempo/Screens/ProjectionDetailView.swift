@@ -16,6 +16,12 @@ struct ProjectionDetailView: View {
     @EnvironmentObject private var store: RunStore
     @EnvironmentObject private var router: TabRouter
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.units) private var units
+
+    /// "2.5 mi" / "4.0 km": the shortest run the projection extrapolates from.
+    private var minQualifying: String {
+        units.formatDistance(miles: ProjectionHistory.minQualifyingMiles)
+    }
 
     @State private var range: Range = .all
     @State private var points: [ProjectionHistory.Point] = []
@@ -133,7 +139,7 @@ struct ProjectionDetailView: View {
 
     private var heroCaption: String {
         guard let projection = displayedFinish else {
-            return "No qualifying effort in the last six weeks — the projection needs a run of at least 2.5 miles to extrapolate from."
+            return "No qualifying effort in the last six weeks — the projection needs a run of at least \(minQualifying) to extrapolate from."
         }
         guard let goal = goalTime else {
             return "Set a goal time and the gap to it shows up here."
@@ -329,7 +335,7 @@ struct ProjectionDetailView: View {
                         VStack(alignment: .leading, spacing: 3) {
                             Text(current.run.start.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day().year()))
                                 .font(Tokens.Font.ui(14, .semibold)).foregroundStyle(Tokens.Palette.textPrimary)
-                            Text(current.run.metricsLine)
+                            Text(current.run.metricsLine(units))
                                 .mono(12, Tokens.Palette.textSecondary)
                         }
                         Spacer()
@@ -352,7 +358,7 @@ struct ProjectionDetailView: View {
     private var howItWorks: some View {
         Card {
             SectionLabel("How this works")
-            Text("Every week on the chart is the same rule re-run against the runs on file that day: the fastest run of 2.5 miles or more in the previous six weeks, extrapolated to marathon distance by Riegel (t₂ = t₁ × (d₂/d₁)^1.06). Nothing was stored month by month — it is all recomputed from your archive, so it stays correct if the formula ever changes.\n\nThat also makes it deliberately jumpy. One fast parkrun drops it by minutes; six weeks later the same run leaves the window and it climbs back, with no change in fitness either way. Read the trend, not the step. Where the line breaks, no run in that six-week window went far enough to extrapolate from — nothing is drawn rather than a number nobody earned.")
+            Text("Every week on the chart is the same rule re-run against the runs on file that day: the fastest run of \(minQualifying) or more in the previous six weeks, extrapolated to marathon distance by Riegel (t₂ = t₁ × (d₂/d₁)^1.06). Nothing was stored month by month — it is all recomputed from your archive, so it stays correct if the formula ever changes.\n\nThat also makes it deliberately jumpy. One fast parkrun drops it by minutes; six weeks later the same run leaves the window and it climbs back, with no change in fitness either way. Read the trend, not the step. Where the line breaks, no run in that six-week window went far enough to extrapolate from — nothing is drawn rather than a number nobody earned.")
                 .font(Tokens.Font.ui(12)).foregroundStyle(Tokens.Palette.textSecondary)
                 .lineSpacing(3)
         }

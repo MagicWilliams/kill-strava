@@ -431,7 +431,7 @@ struct BlockReviewView: View {
                 HStack {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Race recap").font(Tokens.Font.ui(15, .semibold)).foregroundStyle(Tokens.Palette.textPrimary)
-                        Text(run.metricsLine).font(Tokens.Font.mono(12)).foregroundStyle(Tokens.Palette.textSecondary)
+                        Text(run.metricsLine(units)).font(Tokens.Font.mono(12)).foregroundStyle(Tokens.Palette.textSecondary)
                     }
                     Spacer()
                     Image(systemName: "chevron.right").foregroundStyle(Tokens.Palette.textTertiary)
@@ -574,7 +574,7 @@ struct CloseBlockSheet: View {
                     .font(Tokens.Font.ui(12)).foregroundStyle(Tokens.Palette.warning)
             }
             if let raceRun {
-                Text("Pre-filled from your race-day run (\(raceRun.metricsLine)) — that's the watch clock. Swap in the chip time if it differs.")
+                Text("Pre-filled from your race-day run (\(raceRun.metricsLine(units))) — that's the watch clock. Swap in the chip time if it differs.")
                     .font(Tokens.Font.ui(12)).foregroundStyle(Tokens.Palette.textTertiary)
             } else {
                 Text("No race run in your history — enter the time from the results page.")

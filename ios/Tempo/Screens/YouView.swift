@@ -5,6 +5,7 @@ import SwiftUI
 struct YouView: View {
     @EnvironmentObject private var store: RunStore
     @EnvironmentObject private var router: TabRouter
+    @Environment(\.units) private var units
 
     var body: some View {
         Screen(title: "You", subtitle: subtitle) {
@@ -43,7 +44,7 @@ struct YouView: View {
                         Text("\(PaceModel.formatFinish(t)) · \(g.raceName ?? "Race")")
                             .font(Tokens.Font.display(23)).foregroundStyle(Tokens.Palette.textPrimary)
                         HStack(spacing: 18) {
-                            metric("TARGET", PaceModel.format(PaceModel.paces(for: .marathon, goalSeconds: Double(t)).marathon) + " /mi")
+                            metric("TARGET", units.formatPace(secondsPerMile: PaceModel.paces(for: .marathon, goalSeconds: Double(t)).marathon))
                             if let day = g.raceDay {
                                 metric("RACE", day.formatted(.dateTime.month(.abbreviated).day()))
                             }
@@ -78,7 +79,7 @@ struct YouView: View {
             SectionLabel("\(String(year)) so far")
             Button { router.show(.progress) } label: {
                 HStack(spacing: 10) {
-                    StatTile(value: String(format: "%.0f", miles), label: "Miles")
+                    StatTile(value: units.number(miles: miles, decimals: 0), label: units.tileName.capitalized)
                     StatTile(value: "\(thisYear.count)", label: "Runs")
                     StatTile(value: "\(hours)h", label: "Time")
                 }
@@ -98,13 +99,14 @@ struct YouView: View {
         Card {
             SectionLabel("Bests")
             if let longest {
-                bestRow("Longest run", String(format: "%.1f mi", longest.miles), longest.start, run: longest)
+                bestRow("Longest run", units.formatDistance(meters: Double(longest.distanceM), decimals: 1), longest.start, run: longest)
             }
-            if let (run, pace) = fastest {
-                bestRow("Fastest pace (3 mi+)", PaceModel.format(pace) + " /mi", run.start, run: run)
+            if let (run, _) = fastest,
+               let pace = units.runPace(movingSeconds: run.durationS, meters: run.distanceM) {
+                bestRow("Fastest pace (\(RunHistory.Band.threeMile.label(units)))", units.formatPace(pace), run.start, run: run)
             }
             if let biggestWeek, biggestWeek.miles > 0 {
-                bestRow("Biggest week", String(format: "%.1f mi", biggestWeek.miles), biggestWeek.weekStart, run: nil)
+                bestRow("Biggest week", units.formatDistance(miles: biggestWeek.miles), biggestWeek.weekStart, run: nil)
             }
             if longest == nil {
                 Text("Bests appear once runs sync in.")

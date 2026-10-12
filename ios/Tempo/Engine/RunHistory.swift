@@ -146,6 +146,14 @@ enum RunHistory {
             case .marathon:  return "Marathon"
             }
         }
+
+        /// `label` in the athlete's unit (#109). Only the 3-mile band is named by a length;
+        /// the rest are race names and read the same in either unit. The band itself stays
+        /// 3 mi, so in km it says so ("4.8 km+") rather than rounding to a 5K it isn't.
+        func label(_ units: Units) -> String {
+            guard self == .threeMile else { return label }
+            return units.formatDistance(miles: minMiles, decimals: units == .mi ? 0 : 1) + "+"
+        }
     }
 
     struct Records {

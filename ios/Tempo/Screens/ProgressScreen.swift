@@ -4,6 +4,7 @@ import SwiftUI
 struct ProgressScreen: View {
     @EnvironmentObject private var store: RunStore
     @EnvironmentObject private var router: TabRouter
+    @Environment(\.units) private var units
 
     var body: some View {
         Screen(title: "Progress", subtitle: subtitle) {
@@ -98,14 +99,14 @@ struct ProgressScreen: View {
     /// Real weekly mileage, trailing 8 weeks. Current (in-progress) week is outlined.
     private var mileageTrend: some View {
         let weeks = store.weeklySummaries(8)
-        let past = weeks.dropLast().map(\.miles)
-        let current = weeks.last.map { [$0.miles] } ?? []
+        let past = weeks.dropLast().map { units.distance(miles: $0.miles) }
+        let current = weeks.last.map { [units.distance(miles: $0.miles)] } ?? []
         return Card {
             HStack {
-                SectionLabel("Weekly mileage")
+                SectionLabel(units.weeklyVolumeTitle)
                 Spacer()
                 if let top = weeks.map(\.miles).max(), top > 0 {
-                    Text("PEAK \(top, specifier: "%.1f") MI")
+                    Text("PEAK \(units.number(miles: top)) \(units.abbreviation.uppercased())")
                         .font(Tokens.Font.mono(10)).tracking(1.2)
                         .foregroundStyle(Tokens.Palette.textTertiary)
                 }
@@ -115,7 +116,7 @@ struct ProgressScreen: View {
             HStack {
                 Text("8 WKS AGO").mono(10, Tokens.Palette.textTertiary)
                 Spacer()
-                Text("THIS WK · \(store.thisWeekMiles, specifier: "%.1f") MI").mono(10, Tokens.Palette.accentText)
+                Text("THIS WK · \(units.number(miles: store.thisWeekMiles)) \(units.abbreviation.uppercased())").mono(10, Tokens.Palette.accentText)
             }
         }
     }
@@ -158,7 +159,7 @@ struct ProgressScreen: View {
                             Tag(text: "edited", fg: Tokens.Palette.info, bg: Tokens.Palette.inset)
                         }
                         Spacer()
-                        Text(run.metricsLine)
+                        Text(run.metricsLine(units))
                             .font(Tokens.Font.mono(12)).foregroundStyle(Tokens.Palette.textSecondary)
                         Image(systemName: "chevron.right")
                             .font(.system(size: 11))
