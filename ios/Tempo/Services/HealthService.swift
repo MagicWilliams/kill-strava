@@ -11,19 +11,50 @@ final class HealthService {
 
     private let store = HKHealthStore()
 
-    /// Ask for read access to workouts + the quantities we derive metrics from.
+    /// Read access to workouts + the quantities we derive metrics from.
+    private static let readTypes: Set<HKObjectType> = [
+        HKObjectType.workoutType(),
+        HKQuantityType(.heartRate),
+        HKQuantityType(.distanceWalkingRunning),
+        // Run Detail page:
+        HKSeriesType.workoutRoute(),          // GPS route → map + elevation
+        HKQuantityType(.stepCount),           // cadence
+        HKQuantityType(.activeEnergyBurned),  // calories
+    ]
+
+    /// What the run recorder writes (#110). Workout + route is Apple's stated minimum for
+    /// saving a route ("read and share both HKWorkout and HKWorkoutRoute"); distance and
+    /// active energy are the samples a run's totals are built from. Heart rate is read-only
+    /// on purpose: an iPhone has no sensor, so Tempo never authors HR — a paired Watch or
+    /// strap does.
+    private static let recorderShareTypes: Set<HKSampleType> = [
+        HKObjectType.workoutType(),
+        HKSeriesType.workoutRoute(),
+        HKQuantityType(.distanceWalkingRunning),
+        HKQuantityType(.activeEnergyBurned),
+    ]
+
+    /// Read-only, at launch. Must never carry share types: write access is asked for the
+    /// first time the athlete starts a run, when the reason is obvious (#110).
     func requestAuthorization() async throws {
         guard Self.isAvailable else { return }
-        let read: Set<HKObjectType> = [
-            HKObjectType.workoutType(),
-            HKQuantityType(.heartRate),
-            HKQuantityType(.distanceWalkingRunning),
-            // Run Detail page:
-            HKSeriesType.workoutRoute(),          // GPS route → map + elevation
-            HKQuantityType(.stepCount),           // cadence
-            HKQuantityType(.activeEnergyBurned),  // calories
-        ]
-        try await store.requestAuthorization(toShare: [], read: read)
+        try await store.requestAuthorization(toShare: [], read: Self.readTypes)
+    }
+
+    /// The recorder's one Health prompt, from the pre-run sheet (#126) — not at launch.
+    /// HealthKit only shows a sheet for types not yet decided, so after the first run this
+    /// returns without UI. Returning normally does not mean the athlete said yes — check
+    /// `canSaveWorkouts` afterwards.
+    func requestRecorderAuthorization() async throws {
+        guard Self.isAvailable else { return }
+        try await store.requestAuthorization(toShare: Self.recorderShareTypes, read: Self.readTypes)
+    }
+
+    /// Whether a recorded run can be saved to Health. Unlike read access, which HealthKit
+    /// hides, share status is reported truthfully — so the pre-run sheet can say "this run
+    /// won't reach Apple Health" before the run, not after it.
+    var canSaveWorkouts: Bool {
+        Self.isAvailable && store.authorizationStatus(for: HKObjectType.workoutType()) == .sharingAuthorized
     }
 
     /// Fetch running workouts, newest first. `since: nil` = full history.
