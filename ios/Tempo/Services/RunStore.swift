@@ -393,9 +393,9 @@ final class RunStore: ObservableObject {
     }
 
     /// Which Today applies. The rule — and why the plan, not the goal, decides — is in
-    /// `Engine/TodayMode.swift`. No lifecycle phase yet; #100 supplies one.
+    /// `Engine/TodayMode.swift`; the phase is `BlockLifecycle`'s (#100).
     var todayMode: TodayMode {
-        TodayMode.resolve(goal: goal, plan: plan)
+        TodayMode.resolve(goal: goal, plan: plan, phase: blockPhase)
     }
 
     /// After a confirmed coach edit: re-read Supabase only (no re-ingest needed).
@@ -723,7 +723,7 @@ struct CoachContext: Encodable {
     }
 
     let today: String
-    /// `"training"` or `"just_running"` — see `TodayMode.coachMode`. Explicit rather than
+    /// `"training"`, `"just_running"` or `"race_passed"` — see `TodayMode.coachMode`. Explicit rather than
     /// left for the model to infer from a missing `plan`, because the coach's default with
     /// no plan was to go looking for a race (#101).
     let mode: String

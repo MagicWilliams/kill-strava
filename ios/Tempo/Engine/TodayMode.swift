@@ -19,38 +19,31 @@ enum TodayMode: Equatable {
     /// Nothing to train against. Today becomes a feed of your own running — last run, the
     /// coach's latest read, freshness, the 12-week line — with a way to opt back in.
     case justRunning
-    /// The race is over but the block hasn't been closed. #100 owns what this looks like
-    /// (a review card on top); the sessions have run out, so underneath it the athlete
-    /// gets the just-running feed rather than a rest card that never changes.
+    /// The race is over but the block hasn't been closed. The "review your block" card
+    /// (`BlockReviewPrompt`, #100) sits on top; the sessions have run out, so underneath it
+    /// the athlete gets the just-running feed rather than a rest card that never changes.
     case racePassed
-
-    /// Where the block is in its life. A stand-in for #100's `BlockLifecycle.Phase` so this
-    /// resolver can already take one: when that lands, swap this parameter's type for it
-    /// and map `.raceWeek` to `.training` and `.closed` to `nil` (a closed block has no
-    /// active plan, so the plan check below already answers).
-    enum BlockPhase: Equatable {
-        case training
-        case racePassed
-    }
 
     /// - Parameters:
     ///   - hasGoal: `RunStore.goal != nil`.
     ///   - hasPlan: `RunStore.plan != nil` — an *active* plan; `loadPlan` only reads those.
-    ///   - phase: the block's lifecycle phase, when something has computed one. Nil today.
+    ///   - phase: the block's lifecycle phase (`BlockLifecycle`), nil with no goal. Only
+    ///     `.racePassed` changes the answer: race week is still training, and a closed block
+    ///     has no active plan, so the plan check has already answered for it.
     ///
     /// The plan decides, not the goal. A goal without a plan has no sessions to show, so
     /// it is just running until the plan exists. A plan without a goal is a *transient*
     /// state, not a real one: `loadPlan` reads the goal with `try?` after the plan, so one
     /// failed request leaves the plan in hand and the goal nil. Flipping the athlete's whole
     /// Today to "you're not training" over a dropped packet would be a lie told loudly.
-    static func resolve(hasGoal: Bool, hasPlan: Bool, phase: BlockPhase? = nil) -> TodayMode {
+    static func resolve(hasGoal: Bool, hasPlan: Bool, phase: BlockLifecycle.Phase? = nil) -> TodayMode {
         guard hasPlan else { return .justRunning }
         if phase == .racePassed { return .racePassed }
         return .training
     }
 
     /// Convenience over the app's models; the rule is the `Bool` overload above.
-    static func resolve(goal: GoalInfo?, plan: PlanInfo?, phase: BlockPhase? = nil) -> TodayMode {
+    static func resolve(goal: GoalInfo?, plan: PlanInfo?, phase: BlockLifecycle.Phase? = nil) -> TodayMode {
         resolve(hasGoal: goal != nil, hasPlan: plan != nil, phase: phase)
     }
 
@@ -60,13 +53,14 @@ enum TodayMode: Equatable {
     /// The `mode` field of `CoachContext`. The coach prompt carries one ground rule keyed on
     /// `"just_running"`: general guidance, and no asking about a race that doesn't exist.
     ///
-    /// `.racePassed` reports `"training"` for now: the plan and goal are still in the context,
-    /// and the race date in the past says the rest. #100 can give it its own value alongside
-    /// a prompt rule for it — an unknown value with no rule would be noise to the model.
+    /// `.racePassed` has its own value and its own rule (#100): the plan and goal are still
+    /// in the context, and without being told, the coach reads a finished plan as the current
+    /// one and prescribes from it the morning after the marathon.
     var coachMode: String {
         switch self {
-        case .training, .racePassed: return "training"
-        case .justRunning:           return "just_running"
+        case .training:    return "training"
+        case .justRunning: return "just_running"
+        case .racePassed:  return "race_passed"
         }
     }
 }

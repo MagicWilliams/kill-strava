@@ -44,6 +44,55 @@ struct BlockReviewPrompt: View {
     }
 }
 
+// MARK: - Past blocks
+
+/// Closed blocks, newest first — on You, and on Plan between blocks. Each opens its review.
+/// Renders nothing when there are none, which is also what it shows before migration 0013
+/// is applied (`BlockReviewService.pastBlocks` can't read the columns yet).
+struct PastBlocksCard: View {
+    @EnvironmentObject private var store: RunStore
+    @EnvironmentObject private var router: TabRouter
+
+    var body: some View {
+        if !store.pastBlocks.isEmpty {
+            Card {
+                SectionLabel("Past blocks")
+                ForEach(store.pastBlocks) { block in
+                    Button { router.openBlockReview(block) } label: {
+                        HStack {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(block.raceName ?? RaceCountdown.unnamedRace)
+                                    .font(Tokens.Font.ui(14, .semibold)).foregroundStyle(Tokens.Palette.textPrimary)
+                                Text(([BlockReview.distanceLabel(block.distance)]
+                                      + [block.raceDay?.formatted(.dateTime.month(.abbreviated).day().year())].compactMap { $0 })
+                                    .joined(separator: " · "))
+                                    .font(Tokens.Font.ui(12)).foregroundStyle(Tokens.Palette.textTertiary)
+                            }
+                            Spacer()
+                            Text(result(block)).font(Tokens.Font.mono(13)).foregroundStyle(Tokens.Palette.accentText)
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 10)).foregroundStyle(Tokens.Palette.textTertiary)
+                        }
+                        .frame(minHeight: 36)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(Pressable())
+                }
+            }
+        }
+    }
+
+    private func result(_ block: GoalInfo) -> String {
+        switch BlockCloseout.Outcome(rawValue: block.outcome ?? "") {
+        case .raced?:        return block.result_time_s.map(PaceModel.formatFinish) ?? "Raced"
+        case .didNotStart?:  return "DNS"
+        case .didNotFinish?: return "DNF"
+        case .abandoned?:    return "Ended early"
+        case nil:            return ""
+        }
+    }
+}
+
 // MARK: - The review
 
 /// A whole block, read back: the weeks, the numbers, the projection against the result, and

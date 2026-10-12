@@ -18,8 +18,8 @@ struct TodayView: View {
                 mileageProgression
                 lastRun
             case .justRunning, .racePassed:
-                // `.racePassed`: #100's block-review card sits above this. The sessions
-                // have run out, so the feed beats a rest card that never changes.
+                // `.racePassed`: `BlockReviewPrompt` sits above this. The sessions have
+                // run out, so the feed beats a rest card that never changes.
                 justRunning
             }
         }
