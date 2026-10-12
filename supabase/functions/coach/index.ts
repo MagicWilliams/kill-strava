@@ -69,9 +69,9 @@ The plan:
 - When <athlete_context>.mode is "just_running", the athlete is not training for anything right now, and that is a choice, not a gap. Coach the running he is actually doing: volume, consistency, recovery, how fitness and fatigue are trending, what a run says about him. Don't ask about a race, don't measure runs against a goal or a plan that doesn't exist, and don't propose one unprompted. If he says he wants to train for something, the first rule above applies. (During onboarding, the interview rules below take precedence.)
 
 Training intake (ONLY when <athlete_context>.intake is present):
-- The athlete just filled in the training intake form; the latest user turn is their answers in plain text, and intake holds the same answers as data. They have opted in to training, so this is the moment to set the goal.
+- The athlete just filled in the training intake form; the latest user turn is their answers in plain text, and intake holds the same answers as data. They have opted in to training, so this is the moment to set the goal; that holds even when mode is "just_running", which only means no plan exists yet.
 - Your first reply after the form is the reflect-back. In 3–6 sentences: say back the few answers that will shape the block most (the race and date, where they are now, plan style, what they want coached), then assess them against the data: current volume, recent long runs, best_efforts. Be honest about fit.
-- Then propose the goal and call create_plan in the same message. race_name and race_date come from intake. goal_time_s: if goal_type is "time", start from stated_goal_time and say plainly if the data says it is a reach or too soft (their risk dial applies). For "pr", "finish" or "unsure", propose a target from the data and say what it is grounded in. Even for "finish" a target time is needed: it sets the training paces. Pass the intake's facts nowhere else; the app attaches them to the card.
+- Then propose the goal and call create_plan in the same message. race_name and race_date come from intake. goal_time_s: if goal_type is "time", start from stated_goal_time and say plainly if the data says it is a reach or too soft (their risk dial applies). For "pr" or "unsure", propose a target from the data and say what it is grounded in. For "finish", omit goal_time_s: there is no target, and the plan engine sets paces from current fitness; you may still say what finish time the data points to, as information rather than a goal. Pass the intake's facts nowhere else; the app attaches them to the card.
 - If plan_style is "none", there is no schedule to build: the card saves the goal only, so its summary should read like "Save my goal: 5K at Turkey Trot, Nov 27, 19:30", not "Build my plan". "weekly" builds weekly targets with only the long run and key workouts.
 - situation "mid_block": they are already in week started_week of a block. The plan picks up from that week, anchored on their real runs. Acknowledge where they are; never send them back to week 1. stated_weekly_mi is their word for current volume; if the runs disagree, say so.
 - If risk_tolerance is "ambitious", name the specific risk once in the reflect-back, plainly.
@@ -161,13 +161,13 @@ const TOOLS = [
     input_schema: {
       type: "object",
       properties: {
-        goal_time_s: { type: "integer", description: "Target finish time in seconds (e.g. 11700 for 3:15:00)." },
+        goal_time_s: { type: "integer", description: "Target finish time in seconds (e.g. 11700 for 3:15:00). Required, except for an intake whose goal_type is finish: omit it there." },
         race_name: { type: "string" },
         race_date: { type: "string", description: "ISO date (yyyy-mm-dd)." },
         rationale: { type: "string", description: "Why this goal fits the data — shown to the athlete." },
         summary: { type: "string", description: "One line for the confirm card, e.g. 'Build my plan: 3:15:00 at Chicago, Oct 11'." },
       },
-      required: ["goal_time_s", "race_date", "summary"],
+      required: ["race_date", "summary"],
     },
   },
   {

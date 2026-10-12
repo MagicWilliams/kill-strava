@@ -113,7 +113,7 @@ comment on column goals.goal_type is
 comment on column goals.started_week is
   'Mid-block import: the block week (1-based) the athlete was in when this plan was built. NULL = started at week 1.';
 comment on column goals.preferences is
-  'Versioned intake answers: {v:1, plan_style: full|weekly|none, long_runs_20plus, course_type, focus: [fueling|pacing|race_day|recovery|strength|mental], quality: [intervals|tempo|hills|race_pace_long], notes}.';
+  'Versioned intake answers: {v:1, plan_style: full|weekly|none, long_runs_20plus, course_type, focus: [fueling|pacing|race_day|recovery|strength|mental], quality: [intervals|tempo|hills|race_pace], notes}.';
 
 -- ── Verify ───────────────────────────────────────────────────────────────────────────
 --   select distance, distance_m, count(*) from goals group by 1, 2 order by 1;

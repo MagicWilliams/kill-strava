@@ -103,13 +103,13 @@ struct IntakeAnswers: Equatable {
     }
 
     enum Quality: String, CaseIterable {
-        case intervals, tempo, hills, racePaceLong = "race_pace_long"
+        case intervals, tempo, hills, racePace = "race_pace"
         var label: String {
             switch self {
             case .intervals: return "Intervals"
             case .tempo: return "Tempo"
             case .hills: return "Hills"
-            case .racePaceLong: return "Race-pace long runs"
+            case .racePace: return "Race-pace work"
             }
         }
     }
@@ -398,6 +398,12 @@ struct IntakeStamp: Codable, Equatable {
         let risk_tolerance: String
     }
 
+    /// Whether a create_plan card's goal time is enough to build on. Every goal type needs
+    /// one except "just finish", which `plan` builds from current fitness instead.
+    func accepts(goalTimeS: Int?) -> Bool {
+        goal_type == IntakeAnswers.GoalType.finish.rawValue || goalTimeS != nil
+    }
+
     var profilePatch: ProfilePatch {
         ProfilePatch(
             days_per_week: days_per_week,
@@ -414,7 +420,9 @@ struct IntakeStamp: Codable, Equatable {
 /// are omitted from the JSON rather than sent as null, so a plan function that predates
 /// #104 sees exactly the body it always did.
 struct PlanRequest: Encodable, Equatable {
-    var goal_time_s: Int
+    /// Null only for a "just finish" goal: there is no target, and `plan` (#104) derives the
+    /// paces from current fitness instead of from a time nobody chose.
+    var goal_time_s: Int?
     var race_name: String?
     var race_date: String
     var distance: String?
@@ -425,15 +433,40 @@ struct PlanRequest: Encodable, Equatable {
     var start_mileage: Double?
     var preferences: GoalPreferences?
 
-    init(goal_time_s: Int, race_name: String?, race_date: String) {
+    init(goal_time_s: Int?, race_name: String?, race_date: String) {
         self.goal_time_s = goal_time_s
         self.race_name = race_name
         self.race_date = race_date
     }
 
+    private enum CodingKeys: String, CodingKey {
+        case goal_time_s, race_name, race_date, distance, distance_m, course_type, goal_type
+        case started_week, start_mileage, preferences
+    }
+
+    /// `goal_time_s` always goes out, as an explicit null when there is no target: absent
+    /// would read as a malformed request rather than as "just finish". Everything else is
+    /// omitted when nil.
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(goal_time_s, forKey: .goal_time_s)
+        try c.encodeIfPresent(race_name, forKey: .race_name)
+        try c.encode(race_date, forKey: .race_date)
+        try c.encodeIfPresent(distance, forKey: .distance)
+        try c.encodeIfPresent(distance_m, forKey: .distance_m)
+        try c.encodeIfPresent(course_type, forKey: .course_type)
+        try c.encodeIfPresent(goal_type, forKey: .goal_type)
+        try c.encodeIfPresent(started_week, forKey: .started_week)
+        try c.encodeIfPresent(start_mileage, forKey: .start_mileage)
+        try c.encodeIfPresent(preferences, forKey: .preferences)
+    }
+
     /// A create_plan confirmed off the intake: the coach's goal, the athlete's everything else.
-    static func fromIntake(_ stamp: IntakeStamp, goalTimeS: Int, raceName: String?, raceDate: String) -> PlanRequest {
-        var r = PlanRequest(goal_time_s: goalTimeS, race_name: raceName ?? stamp.race_name, race_date: raceDate)
+    /// "Just finish" sends no time even if the card carried one — the athlete didn't pick a
+    /// target, and the plan shouldn't be built around one.
+    static func fromIntake(_ stamp: IntakeStamp, goalTimeS: Int?, raceName: String?, raceDate: String) -> PlanRequest {
+        let time = stamp.goal_type == IntakeAnswers.GoalType.finish.rawValue ? nil : goalTimeS
+        var r = PlanRequest(goal_time_s: time, race_name: raceName ?? stamp.race_name, race_date: raceDate)
         r.distance = stamp.distance
         r.distance_m = stamp.distance_m
         r.course_type = stamp.course_type
@@ -459,7 +492,7 @@ struct PlanRequest: Encodable, Equatable {
     static func carryingForward(
         goal: GoalInfo?,
         planStartDate: String?,
-        goalTimeS: Int,
+        goalTimeS: Int?,
         raceName: String?,
         raceDate: String,
         today: Date,
@@ -476,6 +509,15 @@ struct PlanRequest: Encodable, Equatable {
             r.started_week = week + weeksElapsed(sincePlanStart: planStartDate, today: today, calendar: calendar)
         }
         return r
+    }
+
+    /// Whether the active goal can be rebuilt after a settings change: it needs a race date,
+    /// and a target time unless it is a "just finish" goal, which has none by design. Before
+    /// this, a time-less goal was simply never regenerated — right when no goal could lack
+    /// one, wrong once "just finish" exists.
+    static func canRegenerate(_ goal: GoalInfo) -> Bool {
+        !goal.raceDate.isEmpty
+            && (goal.goalTimeSeconds != nil || goal.goal_type == IntakeAnswers.GoalType.finish.rawValue)
     }
 
     /// Whole weeks from the plan's first Monday to this week's. Zero when unknown or ahead.
@@ -646,6 +688,21 @@ struct GoalDetailCoachContext: Encodable, Equatable {
         goal_type = goal.goal_type
         started_week = goal.started_week
         preferences = goal.preferences
+    }
+}
+
+extension TodayMode {
+    /// `CoachContext.mode`, given the goal as well as the plan.
+    ///
+    /// "No plan, just coaching" (#102) saves a race and no plan. Today has no sessions to show,
+    /// so it rightly takes the feed — but `coachMode` alone would then tell the coach
+    /// "just_running", whose prompt rule is *don't ask about a race*, about an athlete who
+    /// is training for one. A goal that chose no plan is training.
+    static func coachMode(_ mode: TodayMode, goal: GoalInfo?) -> String {
+        if mode == .justRunning, goal?.preferences?.plan_style == IntakeAnswers.PlanStyle.none.rawValue {
+            return TodayMode.training.coachMode
+        }
+        return mode.coachMode
     }
 }
 

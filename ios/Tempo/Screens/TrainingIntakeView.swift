@@ -267,9 +267,9 @@ struct TrainingIntakeView: View {
                 if answers.goalType == .time {
                     FinishTimePicker(seconds: $answers.goalTimeSeconds)
                 } else {
-                    hint(answers.goalType == .unsure
-                         ? "Your coach will suggest a goal from your data."
-                         : "Your coach will still set a pace target from your data, so the workouts have one.")
+                    hint(answers.goalType == .finish
+                         ? "No target time. Your paces come from your current fitness."
+                         : "Your coach will suggest a target from your data.")
                 }
             }
         }

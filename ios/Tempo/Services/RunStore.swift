@@ -762,7 +762,7 @@ extension RunStore {
         let day = Date.FormatStyle(date: .abbreviated, time: .omitted)
         return CoachContext(
             today: Date.now.formatted(day),
-            mode: todayMode.coachMode,
+            mode: TodayMode.coachMode(todayMode, goal: goal),
             goal: goalLine.coachLine,
             risk_tolerance: riskTolerance,
             max_hr: effectiveMaxHR,

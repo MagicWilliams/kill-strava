@@ -501,8 +501,9 @@ final class ChatStore: ObservableObject {
 
     /// Returns the line to narrate, for the caller to place — see `PlanNarration`.
     private func applyCreatePlan(_ action: ProposedAction, runStore: RunStore) async throws -> String? {
-        guard let goalTime = action.goal_time_s, let raceDate = action.race_date else { throw ActionError.badParams }
+        guard let raceDate = action.race_date else { throw ActionError.badParams }
         guard let intake = action.intake else {
+            guard let goalTime = action.goal_time_s else { throw ActionError.badParams }
             return try await invokePlanEngine(
                 regenerating(goalTimeS: goalTime, raceName: action.race_name, raceDate: raceDate, runStore: runStore),
                 runStore: runStore
@@ -511,12 +512,13 @@ final class ChatStore: ObservableObject {
         // The intake's profile half lands first: `plan` reads days, long-run day, strength
         // and risk from the profile, not from the request. Only here, on Confirm — writing it
         // at form submit would let a dismissed card reshape the plan the athlete is still on.
-        guard let uid = Supa.userID?.uuidString else { throw ActionError.badParams }
+        guard let uid = Supa.userID?.uuidString,
+              intake.accepts(goalTimeS: action.goal_time_s) else { throw ActionError.badParams }
         try await Supa.client.from("profiles").update(intake.profilePatch).eq("id", value: uid).execute()
         runStore.setPlanSettings(daysPerWeek: intake.days_per_week, longRunDay: intake.long_run_day)
         runStore.setRiskTolerance(intake.risk_tolerance)
         let narration = try await invokePlanEngine(
-            .fromIntake(intake, goalTimeS: goalTime, raceName: action.race_name, raceDate: raceDate),
+            .fromIntake(intake, goalTimeS: action.goal_time_s, raceName: action.race_name, raceDate: raceDate),
             runStore: runStore
         )
         runStore.finishIntake()
@@ -525,7 +527,7 @@ final class ChatStore: ObservableObject {
 
     /// The `plan` request for anything that isn't an intake card. See
     /// `PlanRequest.carryingForward` for why it can't simply be the three fields it once was.
-    private func regenerating(goalTimeS: Int, raceName: String?, raceDate: String, runStore: RunStore) -> PlanRequest {
+    private func regenerating(goalTimeS: Int?, raceName: String?, raceDate: String, runStore: RunStore) -> PlanRequest {
         .carryingForward(
             goal: runStore.goal,
             planStartDate: runStore.plan?.start_date,
@@ -548,9 +550,9 @@ final class ChatStore: ObservableObject {
         runStore.setPlanSettings(daysPerWeek: action.days_per_week, longRunDay: action.long_run_day)
         guard regenerate else { return nil }
         // Cascade: settings change regenerates the plan forward + recomputes projection.
-        if let goal = runStore.goal, let t = goal.goalTimeSeconds, !goal.raceDate.isEmpty {
+        if let goal = runStore.goal, PlanRequest.canRegenerate(goal) {
             return try await invokePlanEngine(
-                regenerating(goalTimeS: t, raceName: goal.raceName, raceDate: goal.raceDate, runStore: runStore),
+                regenerating(goalTimeS: goal.goalTimeSeconds, raceName: goal.raceName, raceDate: goal.raceDate, runStore: runStore),
                 runStore: runStore
             )
         } else if !onboardingMode {
@@ -683,11 +685,11 @@ final class ChatStore: ObservableObject {
                             self.errorText = "Couldn't save that — tell the coach again."
                         }
                     }
-                    if settingsTouched, let goal = store.goal, let t = goal.goalTimeSeconds, !goal.raceDate.isEmpty {
+                    if settingsTouched, let goal = store.goal, PlanRequest.canRegenerate(goal) {
                         // No confirmation turn to sit under here — the interview applied these
                         // silently — so the narration goes in on its own.
                         if let line = try? await self.invokePlanEngine(
-                            self.regenerating(goalTimeS: t, raceName: goal.raceName, raceDate: goal.raceDate, runStore: store),
+                            self.regenerating(goalTimeS: goal.goalTimeSeconds, raceName: goal.raceName, raceDate: goal.raceDate, runStore: store),
                             runStore: store
                         ) {
                             self.append(.coach, line)

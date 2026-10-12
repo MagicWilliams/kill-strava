@@ -316,6 +316,80 @@ final class TrainingIntakeTests: XCTestCase {
         XCTAssertEqual(Set(json.keys), ["goal_time_s", "race_name", "race_date"])
     }
 
+    // MARK: - The contract with `plan` (#104, PR #138)
+
+    /// Every string `plan` parses, pinned exactly. #104's generator matches on these; one
+    /// that drifts (this file once said `race_pace_long`) silently becomes "the default mix".
+    func testEveryEnumIsSpelledTheWayPlanParsesIt() {
+        XCTAssertEqual(IntakeAnswers.Distance.allCases.map(\.rawValue),
+                       ["1mi", "5k", "10k", "15k", "10mi", "half", "marathon", "custom"])
+        XCTAssertEqual(IntakeAnswers.Course.allCases.map(\.rawValue), ["flat", "rolling", "hilly", "trail"])
+        XCTAssertEqual(IntakeAnswers.PlanStyle.allCases.map(\.rawValue), ["full", "weekly", "none"])
+        XCTAssertEqual(IntakeAnswers.Quality.allCases.map(\.rawValue), ["intervals", "tempo", "hills", "race_pace"])
+        XCTAssertEqual(IntakeAnswers.GoalType.allCases.map(\.rawValue), ["time", "finish", "pr", "unsure"],
+                       "the values goals_goal_type check in 0013 allows")
+    }
+
+    /// The request body carries the intake under the goals column names, with
+    /// `long_runs_20plus` as an integer and `started_week` as the 1-based block week.
+    func testTheRequestBodyUsesTheGoalsColumnNames() throws {
+        var a = fiveK()
+        a.distance = .marathon
+        a.situation = .midBlock
+        a.startedWeek = 9
+        a.quality = [.racePace]
+        let s = try XCTUnwrap(stamp(a))
+        let body = PlanRequest.fromIntake(s, goalTimeS: 11_700, raceName: nil, raceDate: s.race_date)
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(body)) as? [String: Any])
+        for key in ["goal_time_s", "race_name", "race_date", "distance", "distance_m", "course_type",
+                    "goal_type", "started_week", "preferences"] {
+            XCTAssertNotNil(json[key], key)
+        }
+        XCTAssertEqual(json["started_week"] as? Int, 9)
+        let prefs = try XCTUnwrap(json["preferences"] as? [String: Any])
+        XCTAssertEqual(prefs["long_runs_20plus"] as? Int, 3)
+        XCTAssertEqual(prefs["quality"] as? [String], ["race_pace"])
+    }
+
+    /// "Just finish" has no target, and `plan` no longer needs one. A time on the card —
+    /// the coach suggesting what the data points to — must not become the goal anyway.
+    func testJustFinishSendsAnExplicitNullTime() throws {
+        var a = fiveK()
+        a.goalType = .finish
+        let s = try XCTUnwrap(stamp(a))
+        XCTAssertTrue(s.accepts(goalTimeS: nil))
+        let body = PlanRequest.fromIntake(s, goalTimeS: 1_500, raceName: nil, raceDate: s.race_date)
+        XCTAssertNil(body.goal_time_s)
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(body)) as? [String: Any])
+        XCTAssertTrue(json["goal_time_s"] is NSNull, "sent as null, not left out")
+    }
+
+    func testEveryOtherGoalTypeStillNeedsATime() throws {
+        for type in [IntakeAnswers.GoalType.time, .pr, .unsure] {
+            var a = fiveK()
+            a.goalType = type
+            a.goalTimeSeconds = 1_170
+            XCTAssertFalse(try XCTUnwrap(stamp(a)).accepts(goalTimeS: nil), "\(type)")
+        }
+    }
+
+    /// A just-finish goal has no time; a settings change must still rebuild its plan.
+    func testAJustFinishGoalCanStillBeRegenerated() {
+        let g = GoalInfo(id: UUID(), race_name: "Turkey Trot", race_date: "2026-11-26", goal_time_seconds: nil,
+                         distance: "5k", goal_type: "finish")
+        XCTAssertTrue(PlanRequest.canRegenerate(g))
+        let timeless = GoalInfo(id: UUID(), race_name: nil, race_date: "2026-11-26", goal_time_seconds: nil, goal_type: "pr")
+        XCTAssertFalse(PlanRequest.canRegenerate(timeless))
+        let dateless = GoalInfo(id: UUID(), race_name: nil, race_date: nil, goal_time_seconds: 1_170)
+        XCTAssertFalse(PlanRequest.canRegenerate(dateless))
+    }
+
+    /// `plan_style: none` comes back `plan_id: null, weeks: null`: a goal saved, no plan
+    /// built. Nothing to announce, so no "Plan is live" line.
+    func testACoachingOnlyResponseNarratesNoPlan() {
+        XCTAssertNil(PlanNarration.planIsLive(PlanNarration.PlanResult(weeks: nil)))
+    }
+
     // MARK: - Regeneration keeps the block
 
     private func goal(raceDate: String = "2026-11-26", startedWeek: Int? = 9) -> GoalInfo {
@@ -416,6 +490,22 @@ final class TrainingIntakeTests: XCTestCase {
         let detail = try XCTUnwrap(GoalDetailCoachContext(g))
         XCTAssertEqual(detail.preferences?.focus, ["fueling", "mental"])
         XCTAssertEqual(detail.preferences?.plan_style, "none")
+    }
+
+    /// "No plan, just coaching" leaves a goal and no plan, which Today reads as just running.
+    /// The coach must not: its just-running rule is "don't ask about a race", and this
+    /// athlete has one.
+    func testACoachingOnlyGoalIsStillTrainingToTheCoach() {
+        var coachingOnly = goal(startedWeek: nil)
+        coachingOnly.preferences = GoalPreferences(plan_style: "none")
+        XCTAssertEqual(TodayMode.coachMode(.justRunning, goal: coachingOnly), "training")
+
+        XCTAssertEqual(TodayMode.coachMode(.justRunning, goal: nil), "just_running", "no goal is just running")
+        var pending = goal(startedWeek: nil)
+        pending.preferences = GoalPreferences(plan_style: "full")
+        XCTAssertEqual(TodayMode.coachMode(.justRunning, goal: pending), "just_running",
+                       "a goal still waiting on its plan doesn't change what #101 decided")
+        XCTAssertEqual(TodayMode.coachMode(.training, goal: coachingOnly), "training")
     }
 
     // MARK: - The card
