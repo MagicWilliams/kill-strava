@@ -9,12 +9,19 @@ struct TodayView: View {
         Screen(title: "Today", subtitle: Date.now.formatted(.dateTime.weekday(.wide).month(.wide).day())) {
             BlockReviewPrompt()
             dataWarning
-            readiness
-            session
-            tomorrow
-            week
-            mileageProgression
-            lastRun
+            switch store.todayMode {
+            case .training:
+                readiness
+                session
+                tomorrow
+                week
+                mileageProgression
+                lastRun
+            case .justRunning, .racePassed:
+                // `.racePassed`: #100's block-review card sits above this. The sessions
+                // have run out, so the feed beats a rest card that never changes.
+                justRunning
+            }
         }
         .refreshable { await store.refresh() }
     }
@@ -81,9 +88,7 @@ struct TodayView: View {
     }
 
     @ViewBuilder private var session: some View {
-        if store.plan == nil {
-            noPlanCard
-        } else if let s = store.todaySession {
+        if let s = store.todaySession {
             sessionCard(s)
         } else {
             restCard
@@ -97,16 +102,6 @@ struct TodayView: View {
         if s.isQuality { return .warm }
         if s.type == "long" { return .cool }
         return .neutral
-    }
-
-    private var noPlanCard: some View {
-        Card(well: .accent) {
-            SectionLabel("Today's session", color: Tokens.Palette.accentText)
-            Text("No plan yet").display(24)
-            Text("Your coach reads your real history first, proposes a goal, and the plan builds from what the data supports.")
-                .font(Tokens.Font.ui(13)).foregroundStyle(Tokens.Palette.textSecondary)
-            PrimaryButton(title: "Talk to Coach") { router.showCoach() }
-        }
     }
 
     private var restCard: some View {
@@ -377,6 +372,78 @@ struct TodayView: View {
             }
         }
         .motion(Motion.reveal, value: store.phase)
+    }
+
+    // MARK: - Just running (#101)
+
+    /// Today with nothing to train against: a feed of your own running rather than a
+    /// "No plan yet" card. Newest first, the way a feed reads — the run you just did, what
+    /// the coach made of it, where that leaves you, then the longer view.
+    @ViewBuilder private var justRunning: some View {
+        lastRun
+        coachRead
+        FreshnessCard(metrics: store.fitness) { router.openReadiness() }
+        week
+        mileageProgression
+        TrainForSomethingCard { router.trainForSomething() }
+    }
+
+    /// The newest coach read on any run. Which read, and whether it's about the last run,
+    /// is decided in `Engine/LatestRead.swift`.
+    @ViewBuilder private var coachRead: some View {
+        switch LatestRead.state(lastRunID: store.lastRun?.id, latest: store.latestRead) {
+        case .none:
+            EmptyView()
+        case .invite(let last):
+            Card {
+                SectionLabel("Coach's read", color: Tokens.Palette.accentText)
+                Text("The coach reads a run when you open it.")
+                    .font(Tokens.Font.ui(13)).foregroundStyle(Tokens.Palette.textSecondary)
+                readLink("Get the coach's read on your last run", runID: last)
+            }
+        case .current(let read):
+            readCard(read, unread: nil)
+        case .behind(let read, let last):
+            readCard(read, unread: last)
+        }
+    }
+
+    private func readCard(_ read: LatestRead.Read, unread lastRun: UUID?) -> some View {
+        Card {
+            HStack {
+                SectionLabel("Coach's read", color: Tokens.Palette.accentText)
+                Spacer()
+                Text(relativeDay(read.runStart).uppercased())
+                    .font(Tokens.Font.mono(10)).tracking(1.2)
+                    .foregroundStyle(Tokens.Palette.textTertiary)
+            }
+            Text(read.text)
+                .font(Tokens.Font.ui(14)).foregroundStyle(Tokens.Palette.textPrimary)
+                .lineLimit(5)
+                .lineSpacing(2)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            HStack(spacing: 16) {
+                readLink("Full analysis", runID: read.runID)
+                if let lastRun { readLink("Read your last run", runID: lastRun) }
+            }
+        }
+        .transition(.opacity)
+        .motion(Motion.reveal, value: read)
+    }
+
+    /// A link to a run, or nothing if the run isn't in the list on screen (the HealthKit
+    /// fallback carries different ids) — a link that goes nowhere is worse than none.
+    @ViewBuilder private func readLink(_ title: String, runID: UUID) -> some View {
+        if let run = store.runs.first(where: { $0.id == runID }) {
+            Button { openRun(run) } label: {
+                HStack(spacing: 5) {
+                    Text(title).font(Tokens.Font.ui(12, .semibold))
+                    Image(systemName: "arrow.right").font(.system(size: 10, weight: .semibold))
+                }
+                .foregroundStyle(Tokens.Palette.accentText)
+            }
+            .buttonStyle(Pressable())
+        }
     }
 
     /// "Today", "Yesterday", or "Saturday · Jul 5".

@@ -45,6 +45,10 @@ final class TabRouter: ObservableObject {
     /// A coach message to scroll to when the Coach tab next shows — set by "See in chat"
     /// on a What changed entry, consumed (cleared) by `CoachView`.
     @Published var coachFocus: UUID?
+    /// Text to drop into the Coach input when the tab next shows — set by "Train for
+    /// something", consumed (cleared) by `CoachView`. Prefilled, never sent: the athlete
+    /// gets to read it, change it, or back out.
+    @Published var coachDraft: String?
 
     func openRun(_ run: RunSummary) { path.append(.run(run)) }
     func openReadiness() { path.append(.readiness) }
@@ -58,6 +62,16 @@ final class TabRouter: ObservableObject {
     /// Land on the Coach tab scrolled to one message.
     func showCoachMessage(_ id: UUID) {
         coachFocus = id
+        showCoach()
+    }
+
+    /// The "Train for something" CTA on the just-running Today and Plan (#101).
+    ///
+    /// One function on purpose: #102's intake replaces this body, and every button that
+    /// says "Train for something" follows it without being touched. Until then the way in
+    /// is the coach, which already knows how to assess history and propose a goal.
+    func trainForSomething() {
+        coachDraft = "I want to start training for a race"
         showCoach()
     }
 
