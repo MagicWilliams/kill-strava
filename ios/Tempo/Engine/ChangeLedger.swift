@@ -349,7 +349,7 @@ enum ChangeLedger {
     /// Fixed-locale formatting, so a ledger line reads the same in a test as on the phone.
     enum Format {
         static func miles(_ meters: Int) -> String {
-            String(format: "%.2f mi", Double(meters) / 1609.34)
+            Units.mi.formatDistance(meters: Double(meters))
         }
 
         static func clock(_ seconds: Int) -> String {
@@ -359,7 +359,7 @@ enum ChangeLedger {
         }
 
         static func pace(_ secPerMile: Int) -> String {
-            String(format: "%d:%02d /mi", secPerMile / 60, secPerMile % 60)
+            Units.mi.formatPace(Double(secPerMile))
         }
 
         static func bpm(_ value: Int) -> String { "\(value) bpm" }
