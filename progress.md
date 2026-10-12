@@ -2,7 +2,7 @@
 
 > Read me first each session. Architecture + build sequence: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
-_Last updated: 2026-10-09 (TestFlight pipeline — #59 answered B)_
+_Last updated: 2026-10-12 (post-race lifecycle, intake, every distance, recorder planned)_
 
 ## Where we are
 
@@ -185,6 +185,21 @@ Later wishlist (explicitly deferred): watch laps, weather, PR detection, share c
 - Run-detail wishlist: watch laps, weather, PR detection, share card, HR drift.
 
 ## Session log
+
+- **2026-10-12 — Post-Chicago: blocks end, Just running, intake for any distance; recorder planned.**
+  - Chicago (11 Oct) was run with no watch and Strava paused mid-race, so there's **no race run**. Closing a block takes a typed chip time as the main path (#100, PR #136).
+  - Shipped and deployed today:
+    - **Block close-out + review** (#136): migration `0013_block_outcome`.
+    - **Just running** home (#107).
+    - **Training intake** (#139): form → coach reflect-back → create_plan; "Where are you right now?" is now onboarding step 1; migration `0014_training_intake` widens goals to 1mi…marathon + custom, adds preferences.
+    - **Plan generator for every distance** (#138): taper, long-run cap, volume band and quality mix by distance; plan_style full/weekly/none; N×20-milers; hills for rolling/hilly; mid-block start; just-finish goals pace off fitness.
+    - **TestFlight certificate fix** (#105): each run revokes only the dev cert it created; an entitlements assertion runs before upload. Verified: three signed runs, cert count flat at 1.
+  - Deployed: coach **v16**, plan **v5** (smoke-tested on staging first: 5K + just-finish hilly marathon with 3×20; the test user was deleted after).
+  - **Staging schema** brought up to date (0009, 0011–0014; 0010 is prod-only data).
+  - **EM now applies migrations and deploys functions** (David, 2026-10-12): dry run first; migration before the app merge.
+  - **Run recorder v1:** milestone with 28 issues (#108–#135). Figma draft: https://www.figma.com/design/BsLP1TsAPHVj3gIIrIjlmP. Decisions are on #125. UI waits for David's sign-off on the frames.
+  - **Missing runs since Sept:** David records with the Strava phone app, and Strava → Health writing was off. It's now on (future runs only). A backfill of the Sept–Oct gap is undecided. Strava upload is parked as #106.
+  - Open: #140 (intake follow-ups), #137 (takeaway caches the fallback), #81 (unmeasured header-row overflow).
 
 - **2026-10-09 — #59 answered B: TestFlight pipeline built, waiting on David's Apple-side setup.**
   - `.github/workflows/testflight.yml`: runs after CI succeeds on `main`, checks out that exact
