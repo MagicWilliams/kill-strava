@@ -150,7 +150,28 @@ struct YouView: View {
             settingRow("Risk tolerance", store.riskTolerance.capitalized)
             settingRow("Max HR", "\(store.effectiveMaxHR) bpm" + (store.maxHRIsMeasured ? "" : " (est.)"))
             settingRow("Data source", "Apple Health")
+            unitsRow
         }
+    }
+
+    /// The one setting here that doesn't go through the Coach: a display preference, not a
+    /// training decision (#108). Written straight to the profile.
+    private var unitsRow: some View {
+        HStack {
+            Text("Units").font(Tokens.Font.ui(13)).foregroundStyle(Tokens.Palette.textSecondary)
+            Spacer()
+            Picker("Units", selection: Binding(
+                get: { store.units },
+                set: { new in Task { await store.setUnits(new) } }
+            )) {
+                Text("mi").tag(Units.mi)
+                Text("km").tag(Units.km)
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .frame(width: 96)
+        }
+        .frame(minHeight: 24)
     }
 
     private func settingRow(_ label: String, _ value: String) -> some View {

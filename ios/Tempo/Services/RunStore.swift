@@ -24,6 +24,10 @@ final class RunStore: ObservableObject {
     @Published private(set) var daysPerWeek = 6
     @Published private(set) var longRunDay = 0            // 0 = Sunday … 6 = Saturday
 
+    /// The athlete's mi/km preference (#108), from `profiles.units`. Miles until it is read,
+    /// and miles if it can't be. Screens move onto it in #109.
+    @Published private(set) var units: Units = .fallback
+
     // Launch gate: what RootTabView shows before the app proper. See LaunchGate.swift —
     // .unreachable exists so a dead backend can never masquerade as "still loading".
     @Published private(set) var launch: LaunchGate = .loading
@@ -117,6 +121,7 @@ final class RunStore: ObservableObject {
             return
         }
 
+        await loadUnits()
         await loadPlan()
         // During onboarding, the Connect step owns the HealthKit moment — don't
         // fire the permission sheet from under the Welcome screen.
@@ -597,6 +602,41 @@ final class RunStore: ObservableObject {
         longRunDay = row.long_run_day ?? 0
         birthdate = row.birthdate
         return row.onboarded_at == nil ? .new : .onboarded
+    }
+
+    /// Read `profiles.units` in a query of its own, not in `loadProfile`'s select. That
+    /// select decides whether the app launches at all, and a display preference must never
+    /// be able to turn into "Couldn't load your profile". A failed read keeps what we hold.
+    private func loadUnits() async {
+        struct Row: Decodable, Sendable { let units: String? }
+        guard let uid = Supa.userID?.uuidString else { return }
+        do {
+            let rows: [Row] = try await Supa.client
+                .from("profiles").select("units").eq("id", value: uid).limit(1)
+                .execute().value
+            if let row = rows.first { units = Units(stored: row.units) }
+        } catch {
+            Telemetry.error("profile.units_unreadable", error)
+        }
+    }
+
+    /// The You tab's mi/km switch. Flips on screen first, then writes. If the write fails
+    /// it flips back, so the switch never shows a unit the profile doesn't hold (otherwise
+    /// the next launch would quietly undo it).
+    func setUnits(_ new: Units) async {
+        guard new != units, let uid = Supa.userID?.uuidString else { return }
+        let previous = units
+        units = new
+        struct Patch: Encodable { let units: String }
+        do {
+            try await Supa.client.from("profiles")
+                .update(Patch(units: new.rawValue))
+                .eq("id", value: uid)
+                .execute()
+        } catch {
+            Telemetry.error("profile.units_write_failed", error, context: ["units": new.rawValue])
+            units = previous
+        }
     }
 
     func setBirthdate(_ iso: String?) {

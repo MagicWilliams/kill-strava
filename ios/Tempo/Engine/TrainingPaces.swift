@@ -61,9 +61,9 @@ enum PaceModel {
         )
     }
 
-    /// Format sec/mile as `m:ss`.
+    /// Format sec/mile as `m:ss`. Unitless; the caller adds the label. See `Units.clock`.
     static func format(_ secPerMile: Int) -> String {
-        String(format: "%d:%02d", secPerMile / 60, secPerMile % 60)
+        Units.clock(Double(secPerMile))
     }
 }
 
