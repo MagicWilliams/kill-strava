@@ -1,8 +1,12 @@
 name: Tempo
 options:
   bundleIdPrefix: studio.delight
+  # iOS 26: the first release where an iPhone app can run its own HKWorkoutSession +
+  # HKLiveWorkoutBuilder (before 26 they exist on iPhone only mirrored from a Watch). The run
+  # recorder (milestone "Run recorder v1") is built on them; David chose one native recording
+  # path over a second hand-built one for iOS 17–25 (2026-10-12).
   deploymentTarget:
-    iOS: "17.0"
+    iOS: "26.0"
   createIntermediateGroups: true
 settings:
   base:
@@ -18,7 +22,7 @@ targets:
   Tempo:
     type: application
     platform: iOS
-    deploymentTarget: "17.0"
+    deploymentTarget: "26.0"
     dependencies:
       - package: Supabase
         product: Supabase
@@ -48,9 +52,9 @@ targets:
         #   not a silent no-op (CLLocationManager docs).
         # audio: spoken split cues (#118) with the phone locked in a pocket. Without it,
         #   activating a .playback session from the background fails with '!pla'.
-        # Deliberately absent: `workout-processing` is documented for watchOS only. A primary
-        #   HKWorkoutSession + HKLiveWorkoutBuilder on iPhone needs iOS 26 (we target 17), so
-        #   on 17–25 it is location updates that keep an outdoor run alive in the background.
+        # Deliberately absent: `workout-processing` is documented for watchOS only. On iPhone
+        #   (iOS 26+, our minimum) the running HKWorkoutSession is what keeps a run alive in the
+        #   background — including treadmill runs, which have no location updates.
         UIBackgroundModes: [location, audio]
         # Lock Screen + Dynamic Island while recording (#119).
         NSSupportsLiveActivities: true
@@ -88,7 +92,7 @@ targets:
   TempoWidgets:
     type: app-extension
     platform: iOS
-    deploymentTarget: "17.0"
+    deploymentTarget: "26.0"
     sources:
       - path: TempoWidgets
       - path: Shared
@@ -128,7 +132,7 @@ targets:
   TempoUITests:
     type: bundle.ui-testing
     platform: iOS
-    deploymentTarget: "17.0"
+    deploymentTarget: "26.0"
     sources:
       - path: TempoUITests
     dependencies:
@@ -140,7 +144,7 @@ targets:
   TempoTests:
     type: bundle.unit-test
     platform: iOS
-    deploymentTarget: "17.0"
+    deploymentTarget: "26.0"
     sources:
       - path: TempoTests
     dependencies:

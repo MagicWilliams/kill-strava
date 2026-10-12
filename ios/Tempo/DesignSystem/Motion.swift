@@ -117,11 +117,10 @@ extension EnvironmentValues {
 
 extension View {
     /// Marks this view as the visual origin of a zoom push — the card that grows into the
-    /// screen. Silently a no-op before iOS 18, where the push just cross-fades as it always
-    /// did; the deployment target is 17.0 and this isn't worth raising it over.
+    /// screen. A no-op without a namespace, where the push just cross-fades.
     @ViewBuilder
     func zoomSource(_ id: some Hashable, in namespace: Namespace.ID?) -> some View {
-        if #available(iOS 18.0, *), let namespace {
+        if let namespace {
             matchedTransitionSource(id: id, in: namespace)
         } else {
             self
@@ -132,7 +131,7 @@ extension View {
     /// navigation transitions, so there's no gate here.
     @ViewBuilder
     func zoomDestination(_ id: some Hashable, in namespace: Namespace.ID?) -> some View {
-        if #available(iOS 18.0, *), let namespace {
+        if let namespace {
             navigationTransition(.zoom(sourceID: id, in: namespace))
         } else {
             self
