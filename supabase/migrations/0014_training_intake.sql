@@ -21,7 +21,7 @@
 -- of this migration.
 --
 -- ── Does not touch ───────────────────────────────────────────────────────────────────
--- #100's 0012 block-outcome columns (completed_at, outcome, result_time_s, race_run_id,
+-- #100's 0013 block-outcome columns (completed_at, outcome, result_time_s, race_run_id,
 -- review). No column here shares a name with them, and the two apply in either order.
 --
 -- Reversible with:

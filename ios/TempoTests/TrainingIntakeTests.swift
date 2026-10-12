@@ -60,7 +60,7 @@ final class TrainingIntakeTests: XCTestCase {
     }
 
     /// The app's table and the migration's backfill are two copies of one fact. If they
-    /// drift, a goal written today and a goal backfilled by 0013 disagree about how long
+    /// drift, a goal written today and a goal backfilled by 0014 disagree about how long
     /// the same race is.
     func testEveryDistanceMatchesTheMigrationBackfill() {
         let backfill: [String: Int] = [
@@ -68,7 +68,7 @@ final class TrainingIntakeTests: XCTestCase {
             "10mi": 16093, "half": 21098, "marathon": 42195,
         ]
         for d in IntakeAnswers.Distance.allCases where d != .custom {
-            XCTAssertEqual(d.meters, backfill[d.rawValue], "\(d.rawValue) drifted from 0013_training_intake.sql")
+            XCTAssertEqual(d.meters, backfill[d.rawValue], "\(d.rawValue) drifted from 0014_training_intake.sql")
         }
         XCTAssertEqual(Set(IntakeAnswers.Distance.allCases.map(\.rawValue)),
                        ["1mi", "5k", "10k", "15k", "10mi", "half", "marathon", "custom"],
@@ -327,7 +327,7 @@ final class TrainingIntakeTests: XCTestCase {
         XCTAssertEqual(IntakeAnswers.PlanStyle.allCases.map(\.rawValue), ["full", "weekly", "none"])
         XCTAssertEqual(IntakeAnswers.Quality.allCases.map(\.rawValue), ["intervals", "tempo", "hills", "race_pace"])
         XCTAssertEqual(IntakeAnswers.GoalType.allCases.map(\.rawValue), ["time", "finish", "pr", "unsure"],
-                       "the values goals_goal_type check in 0013 allows")
+                       "the values goals_goal_type check in 0014 allows")
     }
 
     /// The request body carries the intake under the goals column names, with
@@ -371,6 +371,55 @@ final class TrainingIntakeTests: XCTestCase {
             a.goalTimeSeconds = 1_170
             XCTAssertFalse(try XCTUnwrap(stamp(a)).accepts(goalTimeS: nil), "\(type)")
         }
+    }
+
+    /// "Just finish" agreed in chat, not through the intake: the card has `goal_type` and no
+    /// time. It used to be refused for the missing time before `plan` was ever called.
+    func testAChatFinishGoalReachesPlanWithANullTime() throws {
+        let bare = PlanRequest(goal_time_s: nil, race_name: "Turkey Trot", race_date: "2026-11-26")
+        let body = try XCTUnwrap(PlanRequest.fromChatProposal(bare, goalType: "finish"))
+        XCTAssertNil(body.goal_time_s)
+        XCTAssertEqual(body.goal_type, "finish")
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(body)) as? [String: Any])
+        XCTAssertTrue(json["goal_time_s"] is NSNull)
+        XCTAssertEqual(json["goal_type"] as? String, "finish")
+    }
+
+    /// A finish card that also carries a time is still a finish goal: the time is dropped.
+    func testAFinishCardNeverSendsATime() throws {
+        let timed = PlanRequest(goal_time_s: 1_500, race_name: nil, race_date: "2026-11-26")
+        XCTAssertNil(try XCTUnwrap(PlanRequest.fromChatProposal(timed, goalType: "finish")).goal_time_s)
+    }
+
+    /// Re-proposing the same race whose goal is already "just finish" carries the type, so
+    /// a card with no time and no type still builds.
+    func testTheSameFinishRaceCarriesItsTypeIntoAChatCard() throws {
+        let finish = GoalInfo(id: UUID(), race_name: "Turkey Trot", race_date: "2026-11-26",
+                              goal_time_seconds: nil, distance: "5k", goal_type: "finish")
+        let carried = PlanRequest.carryingForward(
+            goal: finish, planStartDate: "2026-10-12", goalTimeS: nil, raceName: nil,
+            raceDate: "2026-11-26", today: today, calendar: cal
+        )
+        let body = try XCTUnwrap(PlanRequest.fromChatProposal(carried, goalType: nil))
+        XCTAssertEqual(body.goal_type, "finish")
+        XCTAssertNil(body.goal_time_s)
+    }
+
+    /// Anything other than "finish" with no time is refused before the call, as before.
+    func testATimelessCardThatIsntFinishIsRefused() {
+        let bare = PlanRequest(goal_time_s: nil, race_name: nil, race_date: "2026-11-26")
+        XCTAssertNil(PlanRequest.fromChatProposal(bare, goalType: nil))
+        XCTAssertNil(PlanRequest.fromChatProposal(bare, goalType: "pr"))
+        XCTAssertNotNil(PlanRequest.fromChatProposal(
+            PlanRequest(goal_time_s: 11_700, race_name: nil, race_date: "2026-11-26"), goalType: nil))
+    }
+
+    /// The coach's card JSON carries goal_type and no time; it must decode, and survive jsonb.
+    func testAFinishCardDecodesWithoutATime() throws {
+        let card = try action(#"{"type":"create_plan","goal_type":"finish","race_date":"2026-11-26","summary":"Save my goal"}"#)
+        XCTAssertNil(card.goal_time_s)
+        XCTAssertEqual(card.goal_type, "finish")
+        XCTAssertEqual(try JSONDecoder().decode(ProposedAction.self, from: JSONEncoder().encode(card)), card)
     }
 
     /// A just-finish goal has no time; a settings change must still rebuild its plan.
@@ -453,7 +502,7 @@ final class TrainingIntakeTests: XCTestCase {
 
     // MARK: - Reading the goal back
 
-    /// The app ships before 0013 is applied, and the goal query is `select *`. A row with
+    /// The app ships before 0014 is applied, and the goal query is `select *`. A row with
     /// none of the new columns must decode exactly as it did — a goal that fails to decode is,
     /// on every screen, no goal at all.
     func testAGoalFromBeforeTheMigrationStillDecodes() throws {

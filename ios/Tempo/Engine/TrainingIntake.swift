@@ -14,7 +14,7 @@ struct IntakeAnswers: Equatable {
 
     // MARK: - Vocabulary
     //
-    // Raw values are the wire/database keys (`0013_training_intake.sql` constrains the goal
+    // Raw values are the wire/database keys (`0014_training_intake.sql` constrains the goal
     // columns to exactly these). Labels are what the form shows.
 
     enum Situation: String, CaseIterable {
@@ -509,6 +509,23 @@ struct PlanRequest: Encodable, Equatable {
             r.started_week = week + weeksElapsed(sincePlanStart: planStartDate, today: today, calendar: calendar)
         }
         return r
+    }
+
+    /// A create_plan card proposed in chat rather than off the intake, or nil when there is
+    /// nothing to build on.
+    ///
+    /// `carried` is the request `carryingForward` produced. A `goal_type` on the card wins
+    /// over the carried one; "finish" drops any time, because a finish goal with a time is a
+    /// time goal wearing the wrong label. Nil when there's still no time and the goal isn't
+    /// "just finish" — `plan` would only refuse it.
+    static func fromChatProposal(_ carried: PlanRequest, goalType: String?) -> PlanRequest? {
+        var r = carried
+        if let goalType { r.goal_type = goalType }
+        if r.goal_type == IntakeAnswers.GoalType.finish.rawValue {
+            r.goal_time_s = nil
+            return r
+        }
+        return r.goal_time_s == nil ? nil : r
     }
 
     /// Whether the active goal can be rebuilt after a settings change: it needs a race date,

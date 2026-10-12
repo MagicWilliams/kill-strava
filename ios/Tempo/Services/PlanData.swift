@@ -21,7 +21,7 @@ struct GoalInfo: Decodable, Identifiable {
     /// `5k` / `10k` / `half` / `marathon`. Optional only so a row read without the column
     /// still decodes; the column itself is `not null`. Read by `RaceRecap.isRace`.
     var distance: String? = nil
-    // #102 (`0013_training_intake.sql`). All nil on a goal written before the migration, or
+    // #102 (`0014_training_intake.sql`). All nil on a goal written before the migration, or
     // by a `plan` function that predates #104: read as "not stated", never as a default.
     var distance_m: Int? = nil
     var course_type: String? = nil
@@ -187,7 +187,7 @@ extension RunStore {
 
         let newGoal: GoalInfo? = try? await Supa.client
             .from("goals")
-            .select("*")   // not a column list: the intake columns (0013) may not exist yet
+            .select("*")   // not a column list: the intake columns (0014) may not exist yet
             .eq("id", value: newPlan.goal_id.uuidString)
             .single()
             .execute()

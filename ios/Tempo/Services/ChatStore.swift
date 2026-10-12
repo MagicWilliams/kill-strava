@@ -31,6 +31,8 @@ struct ProposedAction: Codable, Equatable {
     let race_name: String?
     let race_date: String?
     let rationale: String?
+    /// "finish" means no target time, and `goal_time_s` is absent on purpose (#102/#104).
+    var goal_type: String? = nil
 
     // update_plan_settings
     let days_per_week: Int?
@@ -503,11 +505,11 @@ final class ChatStore: ObservableObject {
     private func applyCreatePlan(_ action: ProposedAction, runStore: RunStore) async throws -> String? {
         guard let raceDate = action.race_date else { throw ActionError.badParams }
         guard let intake = action.intake else {
-            guard let goalTime = action.goal_time_s else { throw ActionError.badParams }
-            return try await invokePlanEngine(
-                regenerating(goalTimeS: goalTime, raceName: action.race_name, raceDate: raceDate, runStore: runStore),
-                runStore: runStore
-            )
+            guard let request = PlanRequest.fromChatProposal(
+                regenerating(goalTimeS: action.goal_time_s, raceName: action.race_name, raceDate: raceDate, runStore: runStore),
+                goalType: action.goal_type
+            ) else { throw ActionError.badParams }
+            return try await invokePlanEngine(request, runStore: runStore)
         }
         // The intake's profile half lands first: `plan` reads days, long-run day, strength
         // and risk from the profile, not from the request. Only here, on Confirm — writing it
