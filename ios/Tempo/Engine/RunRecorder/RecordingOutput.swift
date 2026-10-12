@@ -71,8 +71,13 @@ enum DistanceChunks {
     /// of the curve. Nil until it spans `minSpanS`, unless `final` (the run has ended and
     /// whatever is left must go). A chunk with no distance (a pause, a stop) still comes
     /// back so the caller can move `flushed` past it; the caller writes only `meters > 0`.
+    ///
+    /// Closing a track can credit its last metres at the same instant as the point before
+    /// them, so a final chunk may have no duration. It is still returned: HealthKit takes a
+    /// sample whose end equals its start, and dropping it would leave Health a few metres
+    /// short of the screen.
     static func next(timeline: [BestEfforts.Point], flushed: BestEfforts.Point, final: Bool) -> Chunk? {
-        guard let last = timeline.last, last.t > flushed.t else { return nil }
+        guard let last = timeline.last, last.t > flushed.t || last.m > flushed.m else { return nil }
         guard final || last.t - flushed.t >= minSpanS else { return nil }
         return Chunk(from: flushed, to: last)
     }
