@@ -21,6 +21,13 @@ struct GoalInfo: Decodable, Identifiable, Hashable {
     /// `5k` / `10k` / `half` / `marathon`. Optional only so a row read without the column
     /// still decodes; the column itself is `not null`. Read by `RaceRecap.isRace`.
     var distance: String? = nil
+    // #102 (`0014_training_intake.sql`). All nil on a goal written before the migration, or
+    // by a `plan` function that predates #104: read as "not stated", never as a default.
+    var distance_m: Int? = nil
+    var course_type: String? = nil
+    var goal_type: String? = nil
+    var started_week: Int? = nil
+    var preferences: GoalPreferences? = nil
 
     // How the block ended (#100, migration 0013). All nil on an open block — and on every
     // read that doesn't select them: `loadPlan` deliberately doesn't, so the active goal
@@ -35,6 +42,39 @@ struct GoalInfo: Decodable, Identifiable, Hashable {
     var raceDate: String { race_date ?? "" }
     var goalTimeSeconds: Int? { goal_time_seconds }
     var raceDay: Date? { race_date.flatMap { PlanDates.day.date(from: $0) } }
+}
+
+extension GoalInfo {
+    private enum CodingKeys: String, CodingKey {
+        case id, race_name, race_date, goal_time_seconds, distance
+        case distance_m, course_type, goal_type, started_week, preferences
+        case completed_at, outcome, result_time_s, race_run_id, review
+    }
+
+    /// Hand-written so the newer columns can never cost the athlete their goal. Each one
+    /// after the four originals is decoded with `try?`: a malformed `preferences` or `review`
+    /// blob loses that field, not the row — and a goal that fails to decode reads, on every
+    /// screen, as no goal at all.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(UUID.self, forKey: .id)
+        race_name = try c.decodeIfPresent(String.self, forKey: .race_name)
+        race_date = try c.decodeIfPresent(String.self, forKey: .race_date)
+        goal_time_seconds = try c.decodeIfPresent(Int.self, forKey: .goal_time_seconds)
+        distance = (try? c.decodeIfPresent(String.self, forKey: .distance)) ?? nil
+        // #102 (0014)
+        distance_m = (try? c.decodeIfPresent(Int.self, forKey: .distance_m)) ?? nil
+        course_type = (try? c.decodeIfPresent(String.self, forKey: .course_type)) ?? nil
+        goal_type = (try? c.decodeIfPresent(String.self, forKey: .goal_type)) ?? nil
+        started_week = (try? c.decodeIfPresent(Int.self, forKey: .started_week)) ?? nil
+        preferences = (try? c.decodeIfPresent(GoalPreferences.self, forKey: .preferences)) ?? nil
+        // #100 (0013)
+        completed_at = (try? c.decodeIfPresent(Date.self, forKey: .completed_at)) ?? nil
+        outcome = (try? c.decodeIfPresent(String.self, forKey: .outcome)) ?? nil
+        result_time_s = (try? c.decodeIfPresent(Int.self, forKey: .result_time_s)) ?? nil
+        race_run_id = (try? c.decodeIfPresent(UUID.self, forKey: .race_run_id)) ?? nil
+        review = (try? c.decodeIfPresent(BlockRetrospective.self, forKey: .review)) ?? nil
+    }
 }
 
 /// `goals.review` — the coach's retrospective on a closed block, cached so it costs one
@@ -157,13 +197,24 @@ extension RunStore {
             if plan != nil {
                 Telemetry.warn("plan.cleared", "server returned zero active plans")
             }
-            plan = nil; goal = nil; planWeeks = []; sessions = []
+            // A goal can stand without a plan: "No plan, just coaching" (#102) saves the race
+            // and nothing else. Reading the goal only through its plan would hide that
+            // athlete's race from every screen and from the coach.
+            let standalone: [GoalInfo]? = try? await Supa.client
+                .from("goals")
+                .select("*")
+                .eq("is_active", value: true)
+                .order("created_at", ascending: false)
+                .limit(1)
+                .execute()
+                .value
+            plan = nil; goal = standalone?.first; planWeeks = []; sessions = []
             return
         }
 
         let newGoal: GoalInfo? = try? await Supa.client
             .from("goals")
-            .select("id,race_name,race_date,goal_time_seconds,distance")
+            .select("*")   // not a column list: the intake columns (0014) may not exist yet
             .eq("id", value: newPlan.goal_id.uuidString)
             .single()
             .execute()

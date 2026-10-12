@@ -54,6 +54,11 @@ final class RunStore: ObservableObject {
     @Published var sessions: [SessionInfo] = []           // window: −7d … +14d
     @Published var todayCheckIn: CheckInInfo?
 
+    /// The training intake (#102) between the form and the confirm card it produces. In
+    /// memory only: if the app dies before the coach answers, the form is ninety seconds to
+    /// redo; once a card exists, the card itself carries the intake (`ProposedAction.intake`).
+    @Published private(set) var intakeHandoff: IntakeHandoff?
+
     /// Closed blocks, newest first (#100) — what You lists under "Past blocks". Empty, and the
     /// list hidden, until migration 0013 is applied: `BlockReviewService.pastBlocks` reports
     /// an unreadable column as nil rather than as "no blocks".
@@ -573,6 +578,20 @@ final class RunStore: ObservableObject {
         await refresh()
     }
 
+    /// The form was sent. Replaces any earlier intake: the latest answers are what the athlete
+    /// wants now.
+    func beginIntake(_ answers: IntakeAnswers) {
+        intakeHandoff = IntakeHandoff(
+            answers: answers,
+            stamp: answers.stamp(today: .now, calendar: Self.cal)
+        )
+    }
+
+    func markIntakeSent() { intakeHandoff?.sentToCoach = true }
+
+    /// The card it produced was confirmed and the plan engine ran; nothing left to carry.
+    func finishIntake() { intakeHandoff = nil }
+
     func setPlanSettings(daysPerWeek: Int?, longRunDay: Int?) {
         if let daysPerWeek { self.daysPerWeek = daysPerWeek }
         if let longRunDay { self.longRunDay = longRunDay }
@@ -746,6 +765,10 @@ struct CoachContext: Encodable {
     let recent_runs: [RunCtx]      // last 21 days
     let weekly_mileage: [WeekCtx]  // last 8 weeks, oldest first
     let best_efforts: BestEffortsCtx?   // nil until migration 0011 is applied
+    /// The active goal's intake columns (#102); nil for a goal that predates them.
+    let goal_detail: GoalDetailCoachContext?
+    /// A sent intake not yet turned into a plan (#102) — the coach's cue to reflect it back.
+    let intake: IntakeCoachContext?
 }
 
 extension RunStore {
@@ -766,7 +789,7 @@ extension RunStore {
         let day = Date.FormatStyle(date: .abbreviated, time: .omitted)
         return CoachContext(
             today: Date.now.formatted(day),
-            mode: todayMode.coachMode,
+            mode: TodayMode.coachMode(todayMode, goal: goal),
             goal: goalLine.coachLine,
             risk_tolerance: riskTolerance,
             max_hr: effectiveMaxHR,
@@ -804,7 +827,11 @@ extension RunStore {
                     runs: $0.runCount
                 )
             },
-            best_efforts: bestEffortsContext()
+            best_efforts: bestEffortsContext(),
+            goal_detail: GoalDetailCoachContext(goal),
+            intake: intakeHandoff.flatMap { h in
+                h.stamp.map { IntakeCoachContext($0, situation: h.answers.situation) }
+            }
         )
     }
 
@@ -852,6 +879,9 @@ extension RunStore {
         ]
         if let maxHR { known["max_hr_measured"] = "\(maxHR)" }
         if let birthdate { known["birthdate"] = birthdate }
+        if intakeHandoff?.answers.situation == .justRunning {
+            known["situation"] = "just_running — chose no race for now; the plan question is settled as no plan"
+        }
         if let goal, let t = goal.goalTimeSeconds {
             known["active_plan"] = "\(goal.raceName ?? "race") on \(goal.raceDate), goal \(PaceModel.formatFinish(t)) — keep unless the goal changes"
         }

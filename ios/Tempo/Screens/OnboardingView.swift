@@ -1,13 +1,16 @@
 import SwiftUI
 
 /// Hard-gated setup flow (spec: progress.md "Onboarding"):
-/// Welcome (brand) → Connect (HealthKit moment, run count) → coach interview.
+/// Welcome (brand) → Connect (HealthKit moment, run count) → "Where are you right now?"
+/// (the training intake, #102) → coach interview.
+/// The intake answers the structured questions by tap; the interview reflects them back,
+/// proposes the plan, and asks only what the form didn't.
 /// The coach's `complete_onboarding` tool flips `needsOnboarding`, and RootTabView
 /// swaps to the main app reactively — no callbacks needed here.
 struct OnboardingView: View {
     @EnvironmentObject private var store: RunStore
 
-    private enum Step { case welcome, connect, interview }
+    private enum Step { case welcome, connect, intake, interview }
     @State private var step: Step = .welcome
     @State private var connecting = false
     @State private var connected = false
@@ -18,6 +21,15 @@ struct OnboardingView: View {
             switch step {
             case .welcome: welcome
             case .connect: connect
+            case .intake:
+                TrainingIntakeView(
+                    entry: .onboarding,
+                    seed: IntakeAnswers(daysPerWeek: store.daysPerWeek, longRunDay: store.longRunDay, risk: store.riskTolerance)
+                ) { answers in
+                    // Onboarding has no close button, so this is always a send.
+                    if let answers { store.beginIntake(answers) }
+                    step = .interview
+                }
             case .interview: CoachView(onboarding: true)
             }
         }
@@ -59,7 +71,7 @@ struct OnboardingView: View {
     private var connect: some View {
         VStack(alignment: .leading, spacing: 0) {
             Spacer()
-            SectionLabel("Step 1 of 2", color: Tokens.Palette.accentText)
+            SectionLabel("Step 1 of 3", color: Tokens.Palette.accentText)
             Text("Connect your runs")
                 .font(Tokens.Font.display(34))
                 .foregroundStyle(Tokens.Palette.textPrimary)
@@ -77,8 +89,8 @@ struct OnboardingView: View {
             Spacer()
 
             if connected {
-                PrimaryButton(title: "Meet your coach") {
-                    step = .interview
+                PrimaryButton(title: "Continue") {
+                    step = .intake
                 }
             } else {
                 PrimaryButton(title: connecting ? "Reading Apple Health…" : "Connect Apple Health") {

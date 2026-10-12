@@ -120,6 +120,11 @@ struct CoachView: View {
             chat.runStore = store
             await chat.load(context: store.coachContext(onboarding: onboarding))
         }
+        // An intake sent while this tab was already alive — `load` has run, so hand it over
+        // here. `sendIntake` ignores one that has already gone.
+        .onChange(of: store.intakeHandoff?.id) { _, _ in
+            Task { await chat.sendIntake(runStore: store) }
+        }
         // Re-count when a card goes green, so the row moves with the change just confirmed.
         .task(id: chat.messages.filter { $0.actionState == .applied }.count) {
             guard !onboarding, let entries = try? await ChangeLedgerService.load() else { return }
