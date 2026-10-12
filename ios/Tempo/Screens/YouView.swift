@@ -9,6 +9,7 @@ struct YouView: View {
     var body: some View {
         Screen(title: "You", subtitle: subtitle) {
             goal
+            pastBlocks
             yearStats
             bests
             settings
@@ -61,6 +62,11 @@ struct YouView: View {
                 PrimaryButton(title: "Talk to Coach") { router.showCoach() }
             }
         }
+    }
+
+    /// Closed training blocks, newest first (#100). Hidden until there is one.
+    private var pastBlocks: some View {
+        PastBlocksCard()
     }
 
     private var yearStats: some View {

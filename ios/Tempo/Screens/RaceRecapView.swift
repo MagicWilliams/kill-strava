@@ -21,7 +21,10 @@ struct RaceRecapView: View {
     @State private var loading = true
     @State private var shareImage: Image?
 
-    private var goal: GoalInfo? { store.goal }
+    /// The block this run closed, if one recorded it — otherwise the active goal. Once a block
+    /// is closed `store.goal` is the *next* goal (or nothing), and reading it would grade
+    /// Chicago against a race that hasn't happened.
+    private var goal: GoalInfo? { store.raceGoal(for: run) ?? store.goal }
     private var raceMeters: Double { RaceRecap.raceMeters(goalDistance: goal?.distance) }
     private var raceName: String {
         goal?.raceName.flatMap { $0.isEmpty ? nil : $0 } ?? RaceCountdown.unnamedRace

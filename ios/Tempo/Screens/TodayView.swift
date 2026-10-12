@@ -7,6 +7,7 @@ struct TodayView: View {
 
     var body: some View {
         Screen(title: "Today", subtitle: Date.now.formatted(.dateTime.weekday(.wide).month(.wide).day())) {
+            BlockReviewPrompt()
             dataWarning
             switch store.todayMode {
             case .training:
@@ -17,8 +18,8 @@ struct TodayView: View {
                 mileageProgression
                 lastRun
             case .justRunning, .racePassed:
-                // `.racePassed`: #100's block-review card sits above this. The sessions
-                // have run out, so the feed beats a rest card that never changes.
+                // `.racePassed`: `BlockReviewPrompt` sits above this. The sessions have
+                // run out, so the feed beats a rest card that never changes.
                 justRunning
             }
         }

@@ -13,7 +13,7 @@ struct PlanInfo: Decodable, Identifiable {
     var startDate: Date { PlanDates.day.date(from: start_date) ?? .now }
 }
 
-struct GoalInfo: Decodable, Identifiable {
+struct GoalInfo: Decodable, Identifiable, Hashable {
     let id: UUID
     let race_name: String?
     let race_date: String?
@@ -22,10 +22,28 @@ struct GoalInfo: Decodable, Identifiable {
     /// still decodes; the column itself is `not null`. Read by `RaceRecap.isRace`.
     var distance: String? = nil
 
+    // How the block ended (#100, migration 0013). All nil on an open block — and on every
+    // read that doesn't select them: `loadPlan` deliberately doesn't, so the active goal
+    // still loads on a database where 0013 hasn't been applied.
+    var completed_at: Date? = nil
+    var outcome: String? = nil
+    var result_time_s: Int? = nil
+    var race_run_id: UUID? = nil
+    var review: BlockRetrospective? = nil
+
     var raceName: String? { race_name }
     var raceDate: String { race_date ?? "" }
     var goalTimeSeconds: Int? { goal_time_seconds }
     var raceDay: Date? { race_date.flatMap { PlanDates.day.date(from: $0) } }
+}
+
+/// `goals.review` — the coach's retrospective on a closed block, cached so it costs one
+/// Claude call per block rather than one per visit. Versioned so the shape can grow.
+struct BlockRetrospective: Codable, Hashable {
+    var v: Int? = 1
+    let text: String
+    /// ISO 8601, kept as the string that was written — it is provenance, not arithmetic.
+    let generated_at: String?
 }
 
 struct PlanWeekInfo: Decodable, Identifiable {
