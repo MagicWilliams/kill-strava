@@ -318,7 +318,10 @@ enum TrackMath {
                 if recentAltitudes.count > TrackMath.altitudeSmoothingFixes { recentAltitudes.removeFirst() }
                 let smoothed = recentAltitudes.reduce(0, +) / Double(recentAltitudes.count)
                 altitudes.append(AltitudePoint(t: t, altitudeM: smoothed))
-                climb.add(smoothed)
+                // Only a full window feeds the climb: the very first altitude is one raw
+                // reading, and setting the reference on it would let a single bad fix decide
+                // which way the run "started".
+                if recentAltitudes.count == TrackMath.altitudeSmoothingFixes { climb.add(smoothed) }
                 elevationGainM = climb.gain
                 elevationLossM = climb.loss
             }
