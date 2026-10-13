@@ -111,19 +111,27 @@ final class InProgressRunTests: XCTestCase {
         }
     }
 
+    /// A snapshot written while he is stopped is the one that matters most: the open pause is
+    /// what the recovery gap gets measured against, and a pause that came back closed would
+    /// hand him a run whose moving time swallowed the stop.
     func testPausesAndInterruptionsSurviveTheCodec() throws {
         let state = apply(
             started(),
             .pause(.manual(.lockScreen), at: t(300)),
             .resume(.manual(.liveScreen), at: t(340)),
             .interrupted(.phoneCall, at: t(500)),
-            .pause(.auto, at: t(580))
+            .pause(.auto, at: t(560)),
+            .pause(.manual(.liveScreen), at: t(580))
         )
+        XCTAssertEqual(state.pauses.count, 2, "auto-pause is off by default, so .pause(.auto) never happened")
+
         let back = try roundTrip(snapshot(state))
         XCTAssertEqual(back.state.pauses, state.pauses)
-        XCTAssertEqual(back.state.interruptions, state.interruptions)
-        XCTAssertEqual(back.state.openPause?.reason, .manual,
-                       "auto-pause was off, so the second pause was never taken — the open one is still his")
+        XCTAssertEqual(back.state.interruptions.map(\.kind), [.phoneCall],
+                       "the call it ran through is logged, not a pause")
+        XCTAssertEqual(back.state.openPause?.reason, .manual)
+        XCTAssertEqual(back.state.openPause?.start, t(580), "still stopped, and stopped since exactly then")
+        XCTAssertEqual(back.state.clocks(at: t(700)).movingS, state.clocks(at: t(700)).movingS)
     }
 
     /// The curve is written as two flat arrays of numbers, which is the only reason carrying
