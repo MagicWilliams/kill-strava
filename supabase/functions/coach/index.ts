@@ -366,10 +366,11 @@ Deno.serve(async (req) => {
         reply = retryBlocks.filter((b) => b.type === "text").map((b) => b.text).join("\n").trim();
         toolBlocks = retryBlocks.filter((b) => b.type === "tool_use");
       }
-      // Not for a block review: the app caches whatever comes back in goals.review, and a
-      // cached "lost my train of thought" would stand in for the retrospective forever. An
-      // empty reply is what tells the app to show "try again" instead.
-      if (!reply && toolBlocks.length === 0 && !blockReview) {
+      // Not for a one-shot read: the app caches a block review in goals.review and a takeaway
+      // in runs.coach_takeaway, and a cached "lost my train of thought" would stand in for
+      // the retrospective, or that run's read, forever (#137). An empty reply is what tells
+      // the app to cache nothing and ask again next time.
+      if (!reply && toolBlocks.length === 0 && !oneShot) {
         reply = "Lost my train of thought there — ask me that again.";
       }
     }

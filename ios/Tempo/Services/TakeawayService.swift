@@ -70,15 +70,15 @@ enum TakeawayService {
         guard let reply: Reply = try? await Supa.client.functions.invoke(
             "coach",
             options: FunctionInvokeOptions(body: Request(mode: "takeaway", run: payload, context: store.coachContext()))
-        ), !reply.reply.isEmpty else { return nil }
+        ), let text = TakeawayReply.usable(reply.reply) else { return nil }
 
         struct Patch: Encodable { let coach_takeaway: String }
-        _ = try? await Supa.client.from("runs").update(Patch(coach_takeaway: reply.reply))
+        _ = try? await Supa.client.from("runs").update(Patch(coach_takeaway: text))
             .eq("id", value: run.id.uuidString).execute()
         // The just-running Today shows the newest read; one written from Run Detail should
         // be there when the athlete navigates back, not after the next pull-to-refresh.
-        store.noteTakeaway(LatestRead.Read(runID: run.id, runStart: run.start, text: reply.reply))
-        return reply.reply
+        store.noteTakeaway(LatestRead.Read(runID: run.id, runStart: run.start, text: text))
+        return text
     }
 
     /// The newest run with a cached coach read, for the just-running Today (#101).
