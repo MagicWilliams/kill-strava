@@ -43,13 +43,7 @@ final class HealthWorkoutSession: NSObject, WorkoutSessionDriving {
         self.indoor = kind == .treadmill
         session = try HKWorkoutSession(healthStore: store, configuration: configuration)
         builder = session.associatedWorkoutBuilder()
-        let source = HKLiveWorkoutDataSource(healthStore: store, workoutConfiguration: configuration)
-        if !indoor {
-            // Outdoors the distance is written from the GPS track; HealthKit's own estimate
-            // alongside it would count every metre twice.
-            source.disableCollection(for: HKQuantityType(.distanceWalkingRunning))
-        }
-        builder.dataSource = source
+        builder.dataSource = Self.dataSource(store: store, configuration: configuration)
         super.init()
         session.delegate = self
         builder.delegate = self
@@ -61,6 +55,9 @@ final class HealthWorkoutSession: NSObject, WorkoutSessionDriving {
         session = recovered
         builder = recovered.associatedWorkoutBuilder()
         indoor = recovered.workoutConfiguration.locationType == .indoor
+        // A recovered builder comes back without a data source (Apple's iPhone workout
+        // sample sets it again); without one, heart rate and treadmill distance stop.
+        builder.dataSource = Self.dataSource(store: store, configuration: recovered.workoutConfiguration)
         super.init()
         session.delegate = self
         builder.delegate = self
@@ -149,7 +146,7 @@ final class HealthWorkoutSession: NSObject, WorkoutSessionDriving {
                 Telemetry.error("recorder.route_finish_failed", error)
             }
         }
-        return FinishedWorkout(id: workout.uuid, workout: workout)
+        return FinishedWorkout(id: workout.uuid, row: WorkoutRow.Workout(workout))
     }
 
     func discard() async {
@@ -158,6 +155,16 @@ final class HealthWorkoutSession: NSObject, WorkoutSessionDriving {
     }
 
     // MARK: - Private
+
+    private static func dataSource(store: HKHealthStore, configuration: HKWorkoutConfiguration) -> HKLiveWorkoutDataSource {
+        let source = HKLiveWorkoutDataSource(healthStore: store, workoutConfiguration: configuration)
+        if configuration.locationType != .indoor {
+            // Outdoors the distance is written from the GPS track; HealthKit's own estimate
+            // alongside it would count every metre twice.
+            source.disableCollection(for: HKQuantityType(.distanceWalkingRunning))
+        }
+        return source
+    }
 
     /// The route builder that belongs to the workout builder, so the route is saved with the
     /// workout and survives with the builder when a killed session is recovered (#115). A

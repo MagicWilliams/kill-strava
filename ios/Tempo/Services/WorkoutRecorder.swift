@@ -2,6 +2,7 @@ import CoreLocation
 import Foundation
 import HealthKit
 import Observation
+import UIKit
 
 // MARK: - Seams
 
@@ -47,11 +48,12 @@ enum WorkoutSessionSignal {
     case failed(reason: String)
 }
 
-/// A workout HealthKit has saved.
+/// A workout HealthKit has saved, read the way ingest reads every workout
+/// (`WorkoutRow.Workout(_ hkWorkout:)`), so the row the save path writes matches the one the
+/// sync would have written.
 struct FinishedWorkout {
     let id: UUID
-    /// Always present from HealthKit; nil only from a test double, which can't make one.
-    let workout: HKWorkout?
+    let row: WorkoutRow.Workout
 }
 
 /// Where GPS fixes come from: `RunLocationStream` on device, a fake in tests.
@@ -64,24 +66,16 @@ protocol RunLocationStreaming: AnyObject {
     func stop()
 }
 
-// MARK: - Hand-offs
-
-/// A run that is in Health, handed to whatever writes it into Tempo (#122) the moment the
-/// save lands. Health is the source of truth; this is the copy for the app.
-struct RecordedRun {
-    let workoutID: UUID
-    /// The saved workout, for the ingest mapping #122 shares with `HealthService`.
-    let workout: HKWorkout?
-    let recordingID: UUID
-    let kind: RecorderState.RunKind
-    let target: RecorderState.SessionTarget?
-    let startedAt: Date
-    let endedAt: Date
-    let clocks: TimeAccounting.Clocks
-    let distanceM: Double
-    let splits: [TrackMath.Split]
-    let units: Units
+/// Step-based speed for auto-pause: `RunPedometerStream` (Core Motion) on device, a fake in
+/// tests. Only started when auto-pause is on.
+@MainActor
+protocol RunMotionStreaming: AnyObject {
+    var onSample: ((AutoPause.Sample) -> Void)? { get set }
+    func start(from date: Date)
+    func stop()
 }
+
+// MARK: - Hand-offs
 
 /// The minimum kill recovery (#115) needs to persist, emitted on every state change and
 /// every `WorkoutRecorder.checkpointIntervalS` while a run is live. #115 owns where it goes
@@ -111,6 +105,12 @@ struct RecorderCheckpoint: Codable, Equatable {
 /// Results come back as events: a save that lands is `.saveSucceeded`, one that fails is
 /// `.saveFailed` and leaves everything in place for a retry.
 ///
+/// **Saving is Health, then Tempo** (#122). The workout is finished in HealthKit first —
+/// Health is the source of truth — and only then handed to `RecordedRunSaver`, which writes
+/// the `runs` row the sync would have written, and the journal with it. Its outcome is what
+/// the state machine hears (`saveEvent(for:workoutID:)`). A finished workout is kept, so a
+/// Retry after Tempo refused the row never finishes the HealthKit workout a second time.
+///
 /// **Kill recovery (#115) is built on this, not in it.** The hooks it needs:
 /// - `onCheckpoint` fires on every state change and every ten seconds while live.
 /// - The recording id and target are written into the workout builder's metadata when
@@ -119,6 +119,12 @@ struct RecorderCheckpoint: Codable, Equatable {
 /// - Ending a run stops the session's activity but does not end the session until the save
 ///   or the discard, so a kill on the save screen leaves a session to recover.
 /// - Distance samples and the route go into the builder as the run goes, not at the end.
+///
+/// **Auto-pause (#113), when he has turned it on**, is fed every GPS fix's speed and, from
+/// Core Motion, his step speed. What it decides goes through `applyAutoPause`, the single
+/// place a decision becomes an event, and the place the spoken cue (#118) hooks in
+/// (`onAutoPause`). Decisions are backdated to the start of the stop or the restart, so
+/// the moving clock can step back a few seconds when one lands; that is expected (#127).
 @MainActor
 @Observable
 final class WorkoutRecorder {
@@ -131,23 +137,36 @@ final class WorkoutRecorder {
     private(set) var lastFailure: String?
     /// This recording's id; nil when nothing is being recorded.
     private(set) var recordingID: UUID?
-
-    /// Called once the workout is in Health. #122 writes the run row from it.
-    @ObservationIgnored var onSaved: ((RecordedRun) -> Void)?
+    /// What happened when the run was written to Tempo, once it has been tried.
+    private(set) var saveOutcome: RecordedRunSaver.Outcome?
+    /// The `runs` row the recorded run became. For a race, what the result links to
+    /// (`goals.race_run_id`, #117).
+    var savedRunID: UUID? {
+        if case .saved(let runID) = saveOutcome { return runID }
+        return nil
+    }
     /// See `RecorderCheckpoint`.
     @ObservationIgnored var onCheckpoint: ((RecorderCheckpoint) -> Void)?
+    /// An auto-pause decision the run accepted: where the spoken + haptic cue (#118) fires,
+    /// so an auto pause is never silent.
+    @ObservationIgnored var onAutoPause: ((AutoPause.Decision) -> Void)?
 
     static let checkpointIntervalS = 10.0
     /// Route fixes are written in batches of about this many — a few seconds of running.
     static let routeBatchSize = 10
+    /// Fixes held while paused, in case auto-resume backdates the restart into them. Its
+    /// streak is 3 s; this is that with room to spare.
+    static let heldFixesS = 15.0
 
     // Collaborators
     private let makeSession: (RecorderState.RunKind) throws -> WorkoutSessionDriving
     private let location: RunLocationStreaming
+    private let motion: RunMotionStreaming
     private let unitsSource: () -> Units
     private let clock: () -> Date
     private let tickInterval: Duration?
     private let log: (String, [String: String]) -> Void
+    private let saveToTempo: (WorkoutRow.Workout, RunJournalEntry, UIImage?) async -> RecordedRunSaver.Outcome
 
     // One recording's working state
     @ObservationIgnored private var session: WorkoutSessionDriving?
@@ -162,6 +181,15 @@ final class WorkoutRecorder {
     @ObservationIgnored private var distanceFlushed = BestEfforts.Point(t: 0, m: 0)
     @ObservationIgnored private var heartRate: RecorderSnapshot.HeartRate?
     @ObservationIgnored private var lastCheckpoint: Date?
+    /// The workout once HealthKit has it. Set at most once per recording.
+    @ObservationIgnored private var finished: FinishedWorkout?
+    /// What the athlete wrote on the save screen, for the save in flight.
+    @ObservationIgnored private var journal = RunJournalEntry()
+    @ObservationIgnored private var photo: UIImage?
+    @ObservationIgnored private var autoPause = AutoPause()
+    @ObservationIgnored private var lastPedometerAt: Date?
+    /// Fixes that arrived while paused, newest `heldFixesS` only.
+    @ObservationIgnored private var heldFixes: [CLLocation] = []
     @ObservationIgnored private var ticker: Task<Void, Never>?
     @ObservationIgnored private var queue: Task<Void, Never>?
     @ObservationIgnored private var queued = 0
@@ -169,32 +197,44 @@ final class WorkoutRecorder {
     /// - Parameters:
     ///   - makeSession: builds the session for a run of the given kind, at the countdown.
     ///   - units: read once per run, at the countdown.
+    ///   - saveToTempo: writes the saved workout into Tempo — `RecordedRunSaver.save`.
     ///   - tickInterval: how often the snapshot refreshes; nil for none (tests drive it).
     init(
         makeSession: @escaping (RecorderState.RunKind) throws -> WorkoutSessionDriving,
         location: RunLocationStreaming,
+        motion: RunMotionStreaming,
         units: @escaping () -> Units,
+        saveToTempo: @escaping (WorkoutRow.Workout, RunJournalEntry, UIImage?) async -> RecordedRunSaver.Outcome,
         clock: @escaping () -> Date = Date.init,
         tickInterval: Duration? = .seconds(1),
         log: @escaping (String, [String: String]) -> Void = { Telemetry.info($0, context: $1) }
     ) {
         self.makeSession = makeSession
         self.location = location
+        self.motion = motion
         self.unitsSource = units
+        self.saveToTempo = saveToTempo
         self.clock = clock
         self.tickInterval = tickInterval
         self.log = log
         location.onLocations = { [weak self] in self?.receiveLocations($0) }
         location.onAccess = { [weak self] in self?.accessChanged($0) }
+        motion.onSample = { [weak self] in self?.receivePedometer($0) }
     }
 
-    /// The real thing: HealthKit and Core Location.
-    convenience init(units: @escaping () -> Units) {
-        let store = HKHealthStore()
+    /// The real thing: HealthKit, Core Location, and the save path into Tempo.
+    convenience init(store: RunStore) {
+        let health = HKHealthStore()
         self.init(
-            makeSession: { kind in try HealthWorkoutSession(store: store, kind: kind) },
+            makeSession: { kind in try HealthWorkoutSession(store: health, kind: kind) },
             location: RunLocationStream(),
-            units: units
+            motion: RunPedometerStream(),
+            units: { [weak store] in store?.units ?? .fallback },
+            saveToTempo: { [weak store] workout, journal, photo in
+                // No store means no app to show it in; the sync ingests it from Health.
+                guard let store else { return .queued }
+                return await RecordedRunSaver.save(workout, journal: journal, photo: photo, store: store)
+            }
         )
     }
 
@@ -211,6 +251,30 @@ final class WorkoutRecorder {
         checkpoint(force: true)
     }
 
+    /// Save on the post-run screen (or Retry after a failed save), with what he wrote there.
+    /// A race saves itself at the finish with no journal; his notes can follow (#125).
+    func confirmSave(journal: RunJournalEntry = RunJournalEntry(), photo: UIImage? = nil) {
+        self.journal = journal
+        self.photo = photo
+        send(.endConfirmed)
+    }
+
+    /// What the state machine hears from the Tempo half of a save. The run is in Health by
+    /// the time this is asked, so only a refusal is a failure:
+    /// - `.saved`: in Tempo.
+    /// - `.tooShort`: a blip, kept in Health only, by the same rule ingest applies.
+    /// - `.queued`: no signal. It is on disk and lands on the next refresh by itself.
+    /// - `.dropped`: the server refused the row. The sync will still ingest the workout,
+    ///   but the journal would be lost, so the save screen stays up with Retry.
+    static func saveEvent(for outcome: RecordedRunSaver.Outcome, workoutID: UUID) -> RecorderEvent {
+        switch outcome {
+        case .saved, .tooShort, .queued:
+            return .saveSucceeded(workoutID: workoutID)
+        case .dropped:
+            return .saveFailed(reason: "Saved to Apple Health, but Tempo couldn't store it")
+        }
+    }
+
     /// Back to idle once the post-run screen is dismissed, ready for the next run. Only
     /// from a run that is over: a live run can't be reset away.
     func reset() {
@@ -222,9 +286,15 @@ final class WorkoutRecorder {
         snapshot = .idle
         lastFailure = nil
         recordingID = nil
+        saveOutcome = nil
+        finished = nil
+        journal = RunJournalEntry()
+        photo = nil
         track = nil
         treadmill = []
         heartRate = nil
+        heldFixes = []
+        lastPedometerAt = nil
     }
 
     /// Rebuild the snapshot for now.
@@ -259,6 +329,12 @@ final class WorkoutRecorder {
             }
             distanceFlushed = BestEfforts.Point(t: 0, m: 0)
             routeGate.reset()
+            autoPause = AutoPause()
+            lastPedometerAt = nil
+            heldFixes = []
+            // Step speed only matters to auto-pause, so Motion & Fitness is only asked for
+            // by someone who turned it on.
+            if state.autoPauseEnabled { motion.start(from: at) }
             let metadata = RecordingMetadata.atBegin(
                 recordingID: recordingID ?? UUID(), kind: state.kind, target: state.target)
             enqueue { session in
@@ -270,14 +346,21 @@ final class WorkoutRecorder {
 
         case .pause(let at):
             session?.pause(at: at)
+            heldFixes = []
 
         case .resume(let at):
             session?.resume(at: at)
             track?.resumeAfterPause(at: at)
             routeGate.reset()
+            // Auto-resume is backdated to when he started moving again; the fixes since
+            // then arrived while still paused and are measured now.
+            let since = heldFixes.filter { $0.timestamp >= at }
+            heldFixes = []
+            measure(since)
 
         case .stop(let at):
             location.stop()
+            motion.stop()
             track?.close()
             flushRoute()
             flushDistance(final: true)
@@ -291,9 +374,21 @@ final class WorkoutRecorder {
 
         case .save:
             let metadata = RecordingMetadata.atSave(state: state)
+            let journal = journal, photo = photo
             enqueue { [weak self] session in
-                let finished = try await session.finish(metadata: metadata)
-                self?.saved(finished)
+                guard let self else { return }
+                // Health first, and only once: a retry after this point is Tempo's half.
+                let workout: FinishedWorkout
+                if let finished {
+                    workout = finished
+                } else {
+                    workout = try await session.finish(metadata: metadata)
+                    finished = workout
+                    log("recorder.saved", ["kind": state.kind.rawValue])
+                }
+                let outcome = await saveToTempo(workout.row, journal, photo)
+                saveOutcome = outcome
+                send(Self.saveEvent(for: outcome, workoutID: workout.id))
             } onError: { [weak self] error in
                 self?.lastFailure = String(describing: error)
                 self?.log("recorder.save_failed", ["error_type": String(describing: type(of: error))])
@@ -302,11 +397,15 @@ final class WorkoutRecorder {
 
         case .discard:
             location.stop()
-            enqueue { session in await session.discard() }
+            motion.stop()
+            // Already in Health (Tempo refused the row and he gave up): nothing to throw
+            // away. It stays in Health, and the sync ingests it like any other workout.
+            if finished == nil { enqueue { session in await session.discard() } }
             log("recorder.discarded", ["kind": state.kind.rawValue])
 
         case .tearDown:
             location.stop()
+            motion.stop()
             ticker?.cancel()
             ticker = nil
             // After whatever is still queued for this session, not before it.
@@ -323,6 +422,8 @@ final class WorkoutRecorder {
         units = unitsSource()
         recordingID = UUID()
         lastFailure = nil
+        saveOutcome = nil
+        finished = nil
         do {
             let session = try makeSession(state.kind)
             session.onSignal = { [weak self] in self?.receiveSignal($0) }
@@ -338,27 +439,6 @@ final class WorkoutRecorder {
         // (`TrackMath` calls them stale); the point is that the receiver is warm.
         if state.kind != .treadmill { location.start() }
         startTicker()
-    }
-
-    private func saved(_ finished: FinishedWorkout) {
-        let ended = state.endedAt ?? clock()
-        let run = RecordedRun(
-            workoutID: finished.id,
-            workout: finished.workout,
-            recordingID: recordingID ?? finished.id,
-            kind: state.kind,
-            target: state.target,
-            startedAt: state.startedAt ?? ended,
-            endedAt: ended,
-            clocks: state.clocks(at: ended),
-            distanceM: timeline.last?.m ?? 0,
-            splits: TrackMath.splits(timeline: timeline, altitudes: track?.altitudes ?? [],
-                                     splitMeters: units.splitMeters),
-            units: units
-        )
-        log("recorder.saved", ["kind": state.kind.rawValue])
-        send(.saveSucceeded(workoutID: finished.id))
-        onSaved?(run)
     }
 
     private func sessionFailed(_ step: String, _ error: Error) {
@@ -399,16 +479,58 @@ final class WorkoutRecorder {
     }
 
     /// GPS fixes. Only a running run is measured: not the countdown, not a pause, not a run
-    /// the recorder has lost hold of.
+    /// the recorder has lost hold of. Every fix's speed goes to auto-pause, paused or not —
+    /// it is how a stop ends.
     private func receiveLocations(_ locations: [CLLocation]) {
-        guard state.phase == .running, var track else { return }
+        for location in locations {
+            switch state.phase {
+            case .running:
+                measure([location])
+            case .paused:
+                heldFixes.append(location)
+                heldFixes.removeAll { location.timestamp.timeIntervalSince($0.timestamp) > Self.heldFixesS }
+            default:
+                break
+            }
+            // Core Location's speed is negative when it doesn't know; AutoPause reads that
+            // as no reading, never as standing still.
+            feedAutoPause(AutoPause.Sample(at: location.timestamp, speed: location.speed, source: .gps))
+        }
+        if routeBatch.count >= Self.routeBatchSize { flushRoute() }
+    }
+
+    /// Fixes into the distance and, the ones it used, the route.
+    private func measure(_ locations: [CLLocation]) {
+        guard var track, !locations.isEmpty else { return }
         for location in locations {
             let wasLocked = track.isLocked
             let verdict = track.ingest(TrackMath.Fix(location))
             routeBatch += routeGate.admit(location, verdict: verdict, wasLocked: wasLocked)
         }
         self.track = track
-        if routeBatch.count >= Self.routeBatchSize { flushRoute() }
+    }
+
+    private func receivePedometer(_ sample: AutoPause.Sample) {
+        lastPedometerAt = sample.at
+        feedAutoPause(sample)
+    }
+
+    private func feedAutoPause(_ sample: AutoPause.Sample) {
+        guard let decision = autoPause.ingest(sample, recorder: state) else { return }
+        applyAutoPause(decision)
+    }
+
+    /// The one place an auto-pause decision is applied. The reducer has the last word (off
+    /// means off; it never lifts his own pause); the cue fires only if it took.
+    private func applyAutoPause(_ decision: AutoPause.Decision) {
+        let before = state
+        send(decision.event)
+        guard state != before else { return }
+        switch decision {
+        case .pause: log("recorder.auto_paused", ["kind": state.kind.rawValue])
+        case .resume: log("recorder.auto_resumed", ["kind": state.kind.rawValue])
+        }
+        onAutoPause?(decision)
     }
 
     private func accessChanged(_ access: LocationAccess) {
@@ -458,6 +580,12 @@ final class WorkoutRecorder {
         switch state.phase {
         case .running, .paused: flushDistance(final: false)
         default: break
+        }
+        // A treadmill has no GPS to say he has stopped; a quiet pedometer does (see
+        // `PedometerSilence` for why only here).
+        if state.kind == .treadmill, state.autoPauseEnabled,
+           let still = PedometerSilence.filler(lastReadingAt: lastPedometerAt, now: clock()) {
+            feedAutoPause(still)
         }
         checkpoint(force: false)
     }

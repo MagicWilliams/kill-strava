@@ -17,7 +17,9 @@ import Foundation
 ///   not allowed with When In Use, so stopping on pause could mean never getting them back.
 ///   The recorder ignores fixes while paused instead.
 /// - Best accuracy, no distance filter, `.fitness`: every fix goes to `TrackMath`, which does
-///   all of the filtering, in one place, under test.
+///   all of the filtering, in one place, under test. The missing distance filter matters
+///   twice: auto-pause (#113) needs fixes while he stands still, and a filter would deliver
+///   none, so a stop could never be seen.
 @MainActor
 final class RunLocationStream: NSObject, RunLocationStreaming {
     var onLocations: (([CLLocation]) -> Void)?

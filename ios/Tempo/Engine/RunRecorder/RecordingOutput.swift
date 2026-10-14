@@ -135,3 +135,32 @@ enum RecordingMetadata {
         return [targetShownKey: state.targetVisible]
     }
 }
+
+// MARK: - Auto-pause on a treadmill
+
+/// What a quiet pedometer means on a treadmill, for auto-pause (#113).
+///
+/// `AutoPause` treats silence as "don't know", never as "stopped": outdoors a silent GPS is
+/// an underpass, and pausing for it is how Chicago was lost. On a treadmill there is no GPS,
+/// and Core Motion simply stops reporting when the steps stop. Without a reading, a
+/// treadmill run with auto-pause on could never pause. So on a treadmill, and only there,
+/// a pedometer that has gone quiet is read as standing still.
+///
+/// Two guards keep that from pausing someone who is running:
+/// - Only after the pedometer has reported at least once this run. No reading at all
+///   (Motion & Fitness denied, a phone sat on the console from the start) proves nothing,
+///   and filling zeros from the first second would pause him before he began.
+/// - Only once it has been quiet for longer than `AutoPause.Thresholds.freshness`. Until
+///   then its last real reading is still current, and a zero would overwrite it: the
+///   pedometer reports every few seconds even mid-stride.
+enum PedometerSilence {
+    /// Quiet for longer than this reads as stopped. Five seconds is `freshness`, so the
+    /// filler only ever replaces a reading `AutoPause` has already stopped trusting.
+    static let quietAfterS = 5.0
+
+    /// A zero-speed pedometer sample to feed at `now`, or nil.
+    static func filler(lastReadingAt: Date?, now: Date) -> AutoPause.Sample? {
+        guard let lastReadingAt, now.timeIntervalSince(lastReadingAt) > quietAfterS else { return nil }
+        return AutoPause.Sample(at: now, speed: 0, source: .pedometer)
+    }
+}

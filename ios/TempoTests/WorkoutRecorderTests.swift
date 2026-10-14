@@ -30,6 +30,8 @@ final class WorkoutRecorderTests: XCTestCase {
         var failPrepare = false
         var failFinishes = 0
         let workoutID = UUID()
+        private var began: Date?
+        private var stopped: Date?
 
         struct Refused: Error {}
 
@@ -39,11 +41,12 @@ final class WorkoutRecorderTests: XCTestCase {
         }
         func begin(at date: Date, metadata: [String: Any]) async throws {
             beginMetadata = metadata
+            began = date
             calls.append(.begin(date))
         }
         func pause(at date: Date) { calls.append(.pause(date)) }
         func resume(at date: Date) { calls.append(.resume(date)) }
-        func stop(at date: Date) async throws { calls.append(.stop(date)) }
+        func stop(at date: Date) async throws { stopped = date; calls.append(.stop(date)) }
         func addRoute(_ locations: [CLLocation]) async throws {
             route += locations
             calls.append(.route(locations.count))
@@ -57,7 +60,10 @@ final class WorkoutRecorderTests: XCTestCase {
             calls.append(.finish)
             if failFinishes > 0 { failFinishes -= 1; throw Refused() }
             finishMetadata = metadata
-            return FinishedWorkout(id: workoutID, workout: nil)
+            let start = began ?? .distantPast, end = stopped ?? start
+            return FinishedWorkout(id: workoutID, row: WorkoutRow.Workout(
+                uuid: workoutID, start: start, end: end, distanceM: distanceWritten,
+                movingS: end.timeIntervalSince(start), avgHR: nil))
         }
         func discard() async { calls.append(.discard) }
 
@@ -65,6 +71,15 @@ final class WorkoutRecorderTests: XCTestCase {
         var endedOrThrownAway: Bool {
             calls.contains { if case .stop = $0 { true } else { $0 == .finish || $0 == .discard } }
         }
+    }
+
+    @MainActor
+    final class FakeMotion: RunMotionStreaming {
+        var onSample: ((AutoPause.Sample) -> Void)?
+        var isOn = false
+        func start(from date: Date) { isOn = true }
+        func stop() { isOn = false }
+        func step(at: Date, speed: Double) { onSample?(AutoPause.Sample(at: at, speed: speed, source: .pedometer)) }
     }
 
     @MainActor
@@ -86,9 +101,14 @@ final class WorkoutRecorderTests: XCTestCase {
     private var now = Date.distantPast
     private var session: FakeSession!
     private var location: FakeLocation!
+    private var motion: FakeMotion!
     private var logged: [String] = []
     private var checkpoints: [RecorderCheckpoint] = []
-    private var saved: [RecordedRun] = []
+    /// What reached `RecordedRunSaver.save` (#122), and what it answers, in turn.
+    private var saved: [(workout: WorkoutRow.Workout, journal: RunJournalEntry)] = []
+    private var tempoAnswers: [RecordedRunSaver.Outcome] = []
+    private let runID = UUID()
+    private var autoPauses: [AutoPause.Decision] = []
     private var kindsMade: [RecorderState.RunKind] = []
 
     private let tempo = RecorderState.SessionTarget(sessionID: UUID(), type: "tempo", title: "6 mi tempo",
@@ -98,31 +118,39 @@ final class WorkoutRecorderTests: XCTestCase {
         now = t(-3)
         session = FakeSession()
         location = FakeLocation()
+        motion = FakeMotion()
         logged = []
         checkpoints = []
         saved = []
+        tempoAnswers = []
+        autoPauses = []
         kindsMade = []
     }
 
-    private func makeRecorder(units: Units = .km) -> WorkoutRecorder {
+    private func makeRecorder(units: @escaping () -> Units = { .km }) -> WorkoutRecorder {
         let recorder = WorkoutRecorder(
             makeSession: { [unowned self] kind in kindsMade.append(kind); return session! },
             location: location,
-            units: { units },
+            motion: motion,
+            units: units,
+            saveToTempo: { [unowned self] workout, journal, _ in
+                saved.append((workout, journal))
+                return tempoAnswers.isEmpty ? .saved(runID: runID) : tempoAnswers.removeFirst()
+            },
             clock: { [unowned self] in now },
             tickInterval: nil,
             log: { [unowned self] event, _ in logged.append(event) }
         )
         recorder.onCheckpoint = { [unowned self] in checkpoints.append($0) }
-        recorder.onSaved = { [unowned self] in saved.append($0) }
+        recorder.onAutoPause = { [unowned self] in autoPauses.append($0) }
         return recorder
     }
 
     private func started(_ kind: RecorderState.RunKind = .outdoor, target: RecorderState.SessionTarget? = nil,
-                         units: Units = .km) async -> WorkoutRecorder {
-        let recorder = makeRecorder(units: units)
+                         units: Units = .km, autoPause: Bool = false) async -> WorkoutRecorder {
+        let recorder = makeRecorder(units: { units })
         now = t(-3)
-        recorder.send(.start(RecorderState.Setup(kind: kind, target: target ?? tempo), at: now))
+        recorder.send(.start(RecorderState.Setup(kind: kind, target: target ?? tempo, autoPause: autoPause), at: now))
         now = t(0)
         recorder.send(.countdownDone(at: now))
         await recorder.settled()
@@ -132,16 +160,21 @@ final class WorkoutRecorderTests: XCTestCase {
     private let lat0 = 41.8756, lon0 = -87.6244
     private var mPerDegLat: Double { TrackMath.earthRadiusM * .pi / 180 }
 
-    /// One fix a second heading north from `north0` metres, `east` metres east, at a steady pace.
+    /// One fix a second heading north from `north0` metres, `east` metres east, at a steady
+    /// pace, each carrying that speed the way Core Location reports it.
     private func line(from s0: Double, seconds: Double, secPerKm: Double,
                       north0: Double = 0, east: Double = 0) -> [CLLocation] {
         stride(from: 0.0, through: seconds, by: 1).map { s in
-            let north = north0 + s * 1000 / secPerKm
-            let lon = lon0 + east / (mPerDegLat * cos(lat0 * .pi / 180))
-            return CLLocation(coordinate: CLLocationCoordinate2D(latitude: lat0 + north / mPerDegLat, longitude: lon),
-                              altitude: 180, horizontalAccuracy: 5, verticalAccuracy: 4,
-                              timestamp: t(s0 + s))
+            fix(at: s0 + s, north: north0 + s * 1000 / secPerKm, east: east, speed: 1000 / secPerKm)
         }
+    }
+
+    /// One fix. `speed` negative is Core Location's "unknown".
+    private func fix(at s: Double, north: Double, east: Double = 0, speed: Double) -> CLLocation {
+        let lon = lon0 + east / (mPerDegLat * cos(lat0 * .pi / 180))
+        return CLLocation(coordinate: CLLocationCoordinate2D(latitude: lat0 + north / mPerDegLat, longitude: lon),
+                          altitude: 180, horizontalAccuracy: 5, verticalAccuracy: 4,
+                          course: 0, speed: speed, timestamp: t(s))
     }
 
     /// Deliver fixes one at a time, ticking the recorder's clock with each, like a real run.
@@ -223,19 +256,21 @@ final class WorkoutRecorderTests: XCTestCase {
         XCTAssertFalse(session.route.contains { $0.timestamp < t(0) })
         XCTAssertFalse(session.route.contains { $0.timestamp > t(601) && $0.timestamp < t(722) })
 
-        recorder.send(.endConfirmed)
+        let journal = RunJournalEntry(rpe: 6, feelTags: ["strong"], title: "Fountain loop")
+        recorder.confirmSave(journal: journal)
         await recorder.settled()
         XCTAssertEqual(session.finishes, 1)
         XCTAssertEqual(recorder.state.phase, .saved(workoutID: session.workoutID))
         XCTAssertEqual(session.finishMetadata[RecordingMetadata.targetShownKey] as? Bool, true)
 
+        // Health first, then Tempo, with the workout as HealthKit saved it and his journal.
         let handed = try XCTUnwrap(saved.first, "the save path (#122) gets the run")
-        XCTAssertEqual(handed.workoutID, session.workoutID)
-        XCTAssertEqual(handed.recordingID, recordingID)
-        XCTAssertEqual(handed.distanceM, shown, accuracy: 0.001)
-        XCTAssertEqual(handed.clocks, TimeAccounting.Clocks(movingS: 902, elapsedS: 1023))
-        XCTAssertEqual(handed.splits.filter { !$0.isPartial }.count, 3)
-        XCTAssertEqual(handed.target, tempo)
+        XCTAssertEqual(saved.count, 1)
+        XCTAssertEqual(handed.workout.uuid, session.workoutID)
+        XCTAssertEqual(handed.workout.distanceM ?? 0, shown, accuracy: 0.01)
+        XCTAssertEqual(handed.journal, journal)
+        XCTAssertEqual(recorder.savedRunID, runID, "what a race result links to (#117)")
+        XCTAssertEqual(recorder.saveOutcome, .saved(runID: runID))
 
         XCTAssertEqual(Array(logged.prefix(1)), ["recorder.started"])
         XCTAssertTrue(logged.contains("recorder.saved"))
@@ -244,6 +279,7 @@ final class WorkoutRecorderTests: XCTestCase {
         recorder.reset()
         XCTAssertEqual(recorder.state, RecorderState())
         XCTAssertNil(recorder.recordingID)
+        XCTAssertNil(recorder.savedRunID)
     }
 
     /// Race mode saves itself at the finish (#125), stop then save, with no save screen.
@@ -259,6 +295,8 @@ final class WorkoutRecorderTests: XCTestCase {
         XCTAssertNotNil(stop)
         XCTAssertLessThan(stop ?? .max, finish ?? .min, "collection ends before the workout is finished")
         XCTAssertEqual(session.beginMetadata[RecordingMetadata.raceKey] as? Bool, true)
+        XCTAssertEqual(recorder.savedRunID, runID)
+        XCTAssertEqual(saved.first?.journal, RunJournalEntry(), "the journal can follow the recap")
     }
 
     // MARK: - Nothing ends a run but the athlete
@@ -314,7 +352,7 @@ final class WorkoutRecorderTests: XCTestCase {
         guard case .ending(.failed) = recorder.state.phase else {
             return XCTFail("expected a failed save, got \(recorder.state.phase)")
         }
-        XCTAssertTrue(saved.isEmpty)
+        XCTAssertTrue(saved.isEmpty, "nothing goes to Tempo until Health has it")
         XCTAssertTrue(logged.contains("recorder.save_failed"))
 
         recorder.send(.endConfirmed)
@@ -388,7 +426,7 @@ final class WorkoutRecorderTests: XCTestCase {
         await recorder.settled()
         XCTAssertEqual(session.distanceWritten, 0, "HealthKit already has the treadmill's distance")
         XCTAssertTrue(session.route.isEmpty)
-        XCTAssertEqual(saved.first?.distanceM ?? 0, 1250, accuracy: 0.001)
+        XCTAssertEqual(saved.first?.workout.uuid, session.workoutID)
     }
 
     /// Heart rate shows when a strap sends it; when it stops, the tile becomes the last split.
@@ -411,9 +449,7 @@ final class WorkoutRecorderTests: XCTestCase {
     /// re-cut a run in progress.
     func testUnitsAreFixedAtTheStart() async {
         var units = Units.mi
-        let recorder = WorkoutRecorder(
-            makeSession: { [unowned self] _ in session! }, location: location,
-            units: { units }, clock: { [unowned self] in now }, tickInterval: nil, log: { _, _ in })
+        let recorder = makeRecorder(units: { units })
         now = t(-3)
         recorder.send(.start(RecorderState.Setup(kind: .outdoor), at: now))
         now = t(0)
@@ -432,5 +468,163 @@ final class WorkoutRecorderTests: XCTestCase {
         let decoded = try JSONDecoder().decode(RecorderCheckpoint.self, from: JSONEncoder().encode(last))
         XCTAssertEqual(decoded, last)
         XCTAssertEqual(last.recordingID, recorder.recordingID)
+    }
+
+    // MARK: - Tempo's half of the save (#122)
+
+    /// Health has the run; Tempo refused the row. The save screen stays up with Retry, and
+    /// Retry is Tempo's half only: the HealthKit workout is never finished twice.
+    func testTempoRefusingTheRowKeepsTheSaveScreenAndRetryNeverSavesToHealthTwice() async {
+        let recorder = await started()
+        run(recorder, line(from: 0, seconds: 200, secPerKm: 300))
+        tempoAnswers = [.dropped]
+        now = t(201)
+        recorder.send(.endRequested(.liveScreen, at: now))
+        recorder.confirmSave()
+        await recorder.settled()
+
+        guard case .ending(.failed) = recorder.state.phase else {
+            return XCTFail("expected Retry, got \(recorder.state.phase)")
+        }
+        XCTAssertEqual(recorder.saveOutcome, .dropped)
+        XCTAssertNil(recorder.savedRunID)
+
+        recorder.confirmSave()
+        await recorder.settled()
+        XCTAssertEqual(recorder.state.phase, .saved(workoutID: session.workoutID))
+        XCTAssertEqual(session.finishes, 1, "one workout in Health, however many retries")
+        XCTAssertEqual(saved.count, 2)
+        XCTAssertEqual(recorder.savedRunID, runID)
+    }
+
+    /// Giving up after Tempo refused the row does not reach into Health: the workout is
+    /// already there, and the sync will ingest it.
+    func testDiscardingAfterHealthHasItLeavesItInHealth() async {
+        let recorder = await started()
+        run(recorder, line(from: 0, seconds: 200, secPerKm: 300))
+        tempoAnswers = [.dropped]
+        now = t(201)
+        recorder.send(.endRequested(.liveScreen, at: now))
+        recorder.confirmSave()
+        await recorder.settled()
+        recorder.send(.discard(.liveScreen))
+        await recorder.settled()
+
+        XCTAssertEqual(recorder.state.phase, .discarded)
+        XCTAssertFalse(session.calls.contains(.discard))
+    }
+
+    /// Queued (no signal) and too short (a blip) are both done as far as the run goes: it is
+    /// in Health either way, and a queued row lands on the next refresh by itself.
+    func testOnlyARefusedRowIsAFailedSave() {
+        let id = UUID()
+        XCTAssertEqual(WorkoutRecorder.saveEvent(for: .saved(runID: UUID()), workoutID: id), .saveSucceeded(workoutID: id))
+        XCTAssertEqual(WorkoutRecorder.saveEvent(for: .queued, workoutID: id), .saveSucceeded(workoutID: id))
+        XCTAssertEqual(WorkoutRecorder.saveEvent(for: .tooShort, workoutID: id), .saveSucceeded(workoutID: id))
+        guard case .saveFailed = WorkoutRecorder.saveEvent(for: .dropped, workoutID: id) else {
+            return XCTFail("a refused row keeps the save screen up")
+        }
+    }
+
+    // MARK: - Auto-pause (#113)
+
+    /// A red light with auto-pause on: two minutes of running, standing still, running on.
+    /// The pause is backdated to when he stopped and the restart to when he started, the
+    /// cue hook fires for each, and the seconds he ran before the restart was confirmed are
+    /// still measured.
+    func testAutoPauseAtALightPausesAndResumesAndLosesNoDistance() async {
+        let recorder = await started(autoPause: true)
+        XCTAssertTrue(motion.isOn, "step speed backs up GPS once auto-pause is on")
+        let speed = 1000.0 / 300
+        run(recorder, line(from: 0, seconds: 120, secPerKm: 300))
+        let light = 120 * speed
+        run(recorder, (121...140).map { fix(at: Double($0), north: light, speed: 0) })
+
+        XCTAssertEqual(recorder.state.openPause?.reason, .auto)
+        XCTAssertEqual(recorder.state.openPause?.start, t(121), "backdated to the first still second")
+        XCTAssertTrue(session.calls.contains(.pause(t(121))))
+
+        run(recorder, (141...200).map { fix(at: Double($0), north: light + Double($0 - 141) * speed, speed: speed) })
+        XCTAssertEqual(recorder.state.phase, .running)
+        XCTAssertEqual(recorder.state.pauses.last?.end, t(141), "backdated to the first running second")
+        XCTAssertEqual(autoPauses, [.pause(at: t(121)), .resume(at: t(141))])
+        XCTAssertTrue(logged.contains("recorder.auto_paused"))
+        XCTAssertTrue(logged.contains("recorder.auto_resumed"))
+
+        now = t(201)
+        recorder.send(.endRequested(.liveScreen, at: now))
+        XCTAssertEqual(recorder.snapshot.distanceM, light + 59 * speed, accuracy: 5,
+                       "the three seconds before the restart was confirmed are not lost")
+        XCTAssertFalse(motion.isOn)
+    }
+
+    /// Lower Wacker: GPS stuck in place reporting no speed. Silence is not stopping.
+    func testAGPSDropoutNeverAutoPauses() async {
+        let recorder = await started(autoPause: true)
+        run(recorder, line(from: 0, seconds: 60, secPerKm: 300))
+        run(recorder, (61...120).map { fix(at: Double($0), north: 200, speed: -1) })
+        XCTAssertEqual(recorder.state.phase, .running)
+        XCTAssertTrue(autoPauses.isEmpty)
+    }
+
+    /// Off by default (David, 2026-10-12): standing still for a minute changes nothing, and
+    /// Motion & Fitness is never asked for.
+    func testAutoPauseOffNeverPausesAndNeverAsksForMotion() async {
+        let recorder = await started()
+        XCTAssertFalse(motion.isOn)
+        run(recorder, line(from: 0, seconds: 60, secPerKm: 300))
+        run(recorder, (61...120).map { fix(at: Double($0), north: 200, speed: 0) })
+        XCTAssertEqual(recorder.state.phase, .running)
+        XCTAssertTrue(autoPauses.isEmpty)
+    }
+
+    /// He paused; running again doesn't lift it. Only he does.
+    func testAutoResumeNeverLiftsHisOwnPause() async {
+        let recorder = await started(autoPause: true)
+        run(recorder, line(from: 0, seconds: 60, secPerKm: 300))
+        now = t(61)
+        recorder.send(.pause(.manual(.liveScreen), at: now))
+        run(recorder, line(from: 62, seconds: 30, secPerKm: 300, north0: 200))
+        XCTAssertEqual(recorder.state.openPause?.reason, .manual)
+        XCTAssertTrue(autoPauses.isEmpty)
+    }
+
+    /// A treadmill: the pedometer is the only speed, and it goes quiet when he steps off.
+    /// Quiet past `PedometerSilence.quietAfterS` reads as standing; steps again resume.
+    func testATreadmillAutoPausesWhenThePedometerGoesQuiet() async {
+        let recorder = await started(.treadmill, autoPause: true)
+        XCTAssertTrue(motion.isOn)
+        for s in 1...100 {
+            now = t(Double(s))
+            let running = s <= 60 || s >= 90
+            if running, s % 2 == 0 || s >= 90 { motion.step(at: now, speed: 3) }
+            recorder.tick()
+            if s == 85 {
+                XCTAssertEqual(recorder.state.openPause?.reason, .auto)
+                XCTAssertEqual(recorder.state.openPause?.start, t(66),
+                               "the first zero after five quiet seconds starts the stop")
+            }
+        }
+        XCTAssertEqual(recorder.state.phase, .running)
+        XCTAssertEqual(autoPauses, [.pause(at: t(66)), .resume(at: t(90))])
+    }
+
+    /// A pedometer that never reports (Motion denied, phone on the console) proves nothing,
+    /// so it never pauses a treadmill run.
+    func testATreadmillWithASilentPedometerNeverPauses() async {
+        let recorder = await started(.treadmill, autoPause: true)
+        for s in 1...120 {
+            now = t(Double(s))
+            recorder.tick()
+        }
+        XCTAssertEqual(recorder.state.phase, .running)
+        XCTAssertTrue(autoPauses.isEmpty)
+    }
+
+    func testPedometerSilenceFillsOnlyAfterAReadingAndFiveQuietSeconds() {
+        XCTAssertNil(PedometerSilence.filler(lastReadingAt: nil, now: t(60)), "never reported: no evidence")
+        XCTAssertNil(PedometerSilence.filler(lastReadingAt: t(55), now: t(60)), "its last reading is still current")
+        XCTAssertEqual(PedometerSilence.filler(lastReadingAt: t(54), now: t(60)),
+                       AutoPause.Sample(at: t(60), speed: 0, source: .pedometer))
     }
 }
