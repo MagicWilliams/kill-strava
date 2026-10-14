@@ -118,8 +118,11 @@ final class WorkoutRecorderTests: XCTestCase {
     private var location: FakeLocation!
     private var motion: FakeMotion!
     private var cues: FakeCues!
+    /// Every telemetry event name, #131 lines and diagnostics alike, in order.
     private var logged: [String] = []
-    private var checkpoints: [RecorderCheckpoint] = []
+    private var lines: [RecorderTelemetry.Line] = []
+    /// What the recorder wrote for kill recovery (#115); nil is a clear.
+    private var persisted: [InProgressRun?] = []
     /// What reached `RecordedRunSaver.save` (#122), and what it answers, in turn.
     private var saved: [(workout: WorkoutRow.Workout, journal: RunJournalEntry)] = []
     private var tempoAnswers: [RecordedRunSaver.Outcome] = []
@@ -137,7 +140,8 @@ final class WorkoutRecorderTests: XCTestCase {
         motion = FakeMotion()
         cues = FakeCues()
         logged = []
-        checkpoints = []
+        lines = []
+        persisted = []
         saved = []
         tempoAnswers = []
         autoPauses = []
@@ -157,9 +161,10 @@ final class WorkoutRecorderTests: XCTestCase {
             },
             clock: { [unowned self] in now },
             tickInterval: nil,
-            log: { [unowned self] event, _ in logged.append(event) }
+            report: { [unowned self] in lines += $0; logged += $0.map(\.event.rawValue) },
+            log: { [unowned self] event, _ in logged.append(event) },
+            persist: { [unowned self] in persisted.append($0) }
         )
-        recorder.onCheckpoint = { [unowned self] in checkpoints.append($0) }
         recorder.onAutoPause = { [unowned self] in autoPauses.append($0) }
         return recorder
     }
@@ -264,6 +269,8 @@ final class WorkoutRecorderTests: XCTestCase {
         await recorder.settled()
         XCTAssertEqual(session.calls.last, .stop(t(1023)), "collection ends after the last distance and route")
         XCTAssertFalse(session.calls.contains(.finish), "the save screen saves nothing until he says so")
+        XCTAssertEqual((persisted.last ?? nil)?.state.phase, .ending(.review),
+                       "a run on the save screen is still written down (#115)")
 
         let shown = recorder.snapshot.distanceM
         XCTAssertEqual(shown, 3000, accuracy: 10, "2 km + 1 km, not the walk")
@@ -294,7 +301,11 @@ final class WorkoutRecorderTests: XCTestCase {
 
         XCTAssertEqual(Array(logged.prefix(1)), ["recorder.started"])
         XCTAssertTrue(logged.contains("recorder.saved"))
-        XCTAssertTrue(checkpoints.contains { $0.state.phase == .paused }, "every state change is checkpointed (#115)")
+        XCTAssertTrue(persisted.contains { $0?.state.phase == .paused }, "every state change is written down (#115)")
+        XCTAssertEqual(persisted.last, .some(nil), "in Health: the recovery snapshot is cleared")
+        let savedLine = try XCTUnwrap(lines.first { $0.event == .saved }, "one line once both halves answered")
+        XCTAssertNotNil(savedLine.context["tempo_outcome"])
+        XCTAssertEqual(savedLine.context["moving_s"], "902")
 
         recorder.reset()
         XCTAssertEqual(recorder.state, RecorderState())
@@ -333,7 +344,8 @@ final class WorkoutRecorderTests: XCTestCase {
         XCTAssertEqual(recorder.state.phase, .recovering(since: t(301)))
         XCTAssertFalse(session.endedOrThrownAway, "nothing stopped or discarded: \(session.calls)")
         XCTAssertNotNil(recorder.lastFailure)
-        XCTAssertTrue(logged.contains("recorder.session_failed"))
+        XCTAssertTrue(logged.contains("recorder.session_error"))
+        XCTAssertTrue(logged.contains("recorder.interrupted"))
     }
 
     /// The Lock Screen can't end a run, so the session never hears about it.
@@ -409,7 +421,8 @@ final class WorkoutRecorderTests: XCTestCase {
         XCTAssertEqual(recorder.state.phase, .idle)
         XCTAssertNotNil(recorder.lastFailure)
         XCTAssertEqual(location.starts, 0)
-        XCTAssertTrue(logged.contains("recorder.session_failed"))
+        XCTAssertTrue(logged.contains("recorder.session_error"))
+        XCTAssertTrue(logged.contains("recorder.interrupted"))
     }
 
     func testCancellingTheCountdownDiscardsThePreparedSession() async {
@@ -480,14 +493,46 @@ final class WorkoutRecorderTests: XCTestCase {
         XCTAssertEqual(recorder.snapshot.completedSplits, 0, "1.3 km is not yet a mile")
     }
 
-    /// A checkpoint round-trips through JSON: #115 persists exactly this.
-    func testCheckpointsAreCodable() async throws {
+    /// Kill recovery (#115): the snapshot is rewritten every ten seconds mid-run, carries the
+    /// curve and the recording id, round-trips through JSON, and is a run `InProgressRun.recover`
+    /// gives back when the session survived the kill.
+    func testTheRecoverySnapshotIsWrittenEveryTenSecondsAndRecovers() async throws {
         let recorder = await started()
-        run(recorder, line(from: 0, seconds: 30, secPerKm: 300))
-        let last = try XCTUnwrap(checkpoints.last)
-        let decoded = try JSONDecoder().decode(RecorderCheckpoint.self, from: JSONEncoder().encode(last))
+        let before = persisted.count
+        run(recorder, line(from: 0, seconds: 60, secPerKm: 300))
+        XCTAssertEqual(persisted.count - before, 6, "one write per ten seconds of running")
+
+        let last = try XCTUnwrap(persisted.last ?? nil)
+        XCTAssertEqual(last.savedAt, t(60))
+        XCTAssertEqual(last.workoutSessionID, recorder.recordingID, "matches the recovered session's metadata")
+        XCTAssertEqual(last.distanceM, recorder.snapshot.distanceM, accuracy: 0.1)
+        XCTAssertFalse(last.lastFixes.isEmpty)
+        let decoded = try JSONDecoder().decode(InProgressRun.self, from: JSONEncoder().encode(last))
         XCTAssertEqual(decoded, last)
-        XCTAssertEqual(last.recordingID, recorder.recordingID)
+
+        let back = InProgressRun.recover(snapshot: decoded, session: .init(isPaused: false), now: t(90))
+        XCTAssertEqual(back.state?.phase, .running)
+    }
+
+    /// Once the run is in Health the snapshot goes, or the next launch would offer to rescue
+    /// a run already saved, and one run would become two.
+    func testTheSnapshotIsClearedOnceSavedOrDiscarded() async {
+        let recorder = await started(.race)
+        run(recorder, line(from: 0, seconds: 30, secPerKm: 240))
+        now = t(31)
+        recorder.send(.endRequested(.liveScreen, at: now))
+        await recorder.settled()
+        XCTAssertEqual(recorder.state.phase, .saved(workoutID: session.workoutID))
+        XCTAssertEqual(persisted.last, .some(nil), "cleared")
+        XCTAssertEqual(persisted.filter { $0 == nil }.count, 1, "and only once")
+
+        session = FakeSession()
+        persisted = []
+        let other = await started()
+        now = t(10)
+        other.send(.pause(.manual(.liveScreen), at: now))
+        other.send(.discard(.liveScreen))
+        XCTAssertEqual(persisted.last, .some(nil))
     }
 
     // MARK: - Tempo's half of the save (#122)
@@ -569,8 +614,8 @@ final class WorkoutRecorderTests: XCTestCase {
         XCTAssertEqual(recorder.state.pauses.last?.end, t(141), "backdated to the first running second")
         XCTAssertEqual(autoPauses, [.pause(at: t(121)), .resume(at: t(141))])
         XCTAssertEqual(cues.decisions, autoPauses, "an auto pause is never silent (#118)")
-        XCTAssertTrue(logged.contains("recorder.auto_paused"))
-        XCTAssertTrue(logged.contains("recorder.auto_resumed"))
+        XCTAssertEqual(lines.filter { $0.context["trigger"] == "auto" }.map(\.event), [.paused, .resumed],
+                       "auto decisions are reported as the pause and resume they became, once each")
 
         now = t(201)
         recorder.send(.endRequested(.liveScreen, at: now))

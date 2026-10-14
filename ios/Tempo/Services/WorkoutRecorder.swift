@@ -91,14 +91,20 @@ extension CueSpeaker: RunCueSpeaking {}
 
 // MARK: - Hand-offs
 
-/// The minimum kill recovery (#115) needs to persist, emitted on every state change and
-/// every `WorkoutRecorder.checkpointIntervalS` while a run is live. #115 owns where it goes
-/// and what else it adds; the recorder only says when.
-struct RecorderCheckpoint: Codable, Equatable {
-    let recordingID: UUID
-    let state: RecorderState
-    let distanceM: Double
-    let savedAt: Date
+/// Writes the in-progress run (#115) to disk, or clears it (`nil`), in the order asked.
+///
+/// One serial queue, off the main thread: a marathon's snapshot is tens of kilobytes every
+/// ten seconds, and the order is load-bearing. A write that lands after the clear that
+/// followed it leaves a snapshot behind for a run already in Health, and the next launch
+/// offers to rescue a run that was saved, which turns one run into two.
+enum InProgressRunWriter {
+    private static let queue = DispatchQueue(label: "studio.delight.tempo.in-progress-run", qos: .utility)
+
+    static func persist(_ snapshot: InProgressRun?) {
+        queue.async {
+            if let snapshot { InProgressRunStore.save(snapshot) } else { InProgressRunStore.clear() }
+        }
+    }
 }
 
 // MARK: - The recorder
@@ -125,11 +131,16 @@ struct RecorderCheckpoint: Codable, Equatable {
 /// the state machine hears (`saveEvent(for:workoutID:)`). A finished workout is kept, so a
 /// Retry after Tempo refused the row never finishes the HealthKit workout a second time.
 ///
-/// **Kill recovery (#115) is built on this, not in it.** The hooks it needs:
-/// - `onCheckpoint` fires on every state change and every ten seconds while live.
-/// - The recording id and target are written into the workout builder's metadata when
+/// **Kill recovery (#115).** This file writes the run down; the launch path that reads it
+/// back is a follow-up. What is in place:
+/// - An `InProgressRun` snapshot is written on every state change and every
+///   `InProgressRun.saveInterval` while the run is rescuable (`InProgressRun.shouldSave`),
+///   and cleared once it is in Health or discarded (`shouldClear`). Its `workoutSessionID` is
+///   this recording's id.
+/// - The same id and the target are written into the workout builder's metadata when
 ///   collection begins, so the session `HKHealthStore.recoverActiveWorkoutSession` hands
-///   back after a relaunch identifies itself (`HealthWorkoutSession.recoverActive`).
+///   back after a relaunch identifies itself (`HealthWorkoutSession.recoverActive`, whose
+///   `recordingID` matches `workoutSessionID`).
 /// - Ending a run stops the session's activity but does not end the session until the save
 ///   or the discard, so a kill on the save screen leaves a session to recover.
 /// - Distance samples and the route go into the builder as the run goes, not at the end.
@@ -159,8 +170,6 @@ final class WorkoutRecorder {
         if case .saved(let runID) = saveOutcome { return runID }
         return nil
     }
-    /// See `RecorderCheckpoint`.
-    @ObservationIgnored var onCheckpoint: ((RecorderCheckpoint) -> Void)?
     /// An auto-pause decision the run accepted: where the spoken + haptic cue (#118) fires,
     /// so an auto pause is never silent.
     @ObservationIgnored var onAutoPause: ((AutoPause.Decision) -> Void)?
@@ -173,7 +182,6 @@ final class WorkoutRecorder {
     /// music would stay ducked.
     @ObservationIgnored private(set) var cues: RunCueSpeaking?
 
-    static let checkpointIntervalS = 10.0
     /// Route fixes are written in batches of about this many — a few seconds of running.
     static let routeBatchSize = 10
     /// Fixes held while paused, in case auto-resume backdates the restart into them. Its
@@ -188,7 +196,11 @@ final class WorkoutRecorder {
     private let unitsSource: () -> Units
     private let clock: () -> Date
     private let tickInterval: Duration?
+    /// The #131 vocabulary: one line per transition, one per save.
+    private let report: ([RecorderTelemetry.Line]) -> Void
+    /// Diagnostics outside that vocabulary: which HealthKit call failed, and how.
     private let log: (String, [String: String]) -> Void
+    private let persist: (InProgressRun?) -> Void
     private let saveToTempo: (WorkoutRow.Workout, RunJournalEntry, UIImage?) async -> RecordedRunSaver.Outcome
 
     // One recording's working state
@@ -203,7 +215,12 @@ final class WorkoutRecorder {
     @ObservationIgnored private var routeBatch: [CLLocation] = []
     @ObservationIgnored private var distanceFlushed = BestEfforts.Point(t: 0, m: 0)
     @ObservationIgnored private var heartRate: RecorderSnapshot.HeartRate?
-    @ObservationIgnored private var lastCheckpoint: Date?
+    /// The last snapshot written, for `InProgressRun.shouldSave`.
+    @ObservationIgnored private var lastSnapshot: InProgressRun?
+    /// Whether the snapshot on disk has been cleared for a run that came to rest.
+    @ObservationIgnored private var snapshotCleared = true
+    /// The newest fixes the track used, for the snapshot's `lastFixes`.
+    @ObservationIgnored private var usedFixes: [TrackMath.Fix] = []
     /// The workout once HealthKit has it. Set at most once per recording.
     @ObservationIgnored private var finished: FinishedWorkout?
     /// What the athlete wrote on the save screen, for the save in flight.
@@ -233,7 +250,9 @@ final class WorkoutRecorder {
         saveToTempo: @escaping (WorkoutRow.Workout, RunJournalEntry, UIImage?) async -> RecordedRunSaver.Outcome,
         clock: @escaping () -> Date = Date.init,
         tickInterval: Duration? = .seconds(1),
-        log: @escaping (String, [String: String]) -> Void = { Telemetry.info($0, context: $1) }
+        report: @escaping ([RecorderTelemetry.Line]) -> Void = { Telemetry.log($0) },
+        log: @escaping (String, [String: String]) -> Void = { Telemetry.warn($0, context: $1) },
+        persist: @escaping (InProgressRun?) -> Void = InProgressRunWriter.persist
     ) {
         self.makeSession = makeSession
         self.location = location
@@ -243,7 +262,9 @@ final class WorkoutRecorder {
         self.saveToTempo = saveToTempo
         self.clock = clock
         self.tickInterval = tickInterval
+        self.report = report
         self.log = log
+        self.persist = persist
         location.onLocations = { [weak self] in self?.receiveLocations($0) }
         location.onAccess = { [weak self] in self?.accessChanged($0) }
         motion.onSample = { [weak self] in self?.receivePedometer($0) }
@@ -274,9 +295,10 @@ final class WorkoutRecorder {
         let new = RecorderState.reduce(old, event)
         guard new != old else { return }
         state = new
+        report(RecorderTelemetry.lines(from: old, on: event, to: new))
         for effect in RecorderEffect.between(old, new) { perform(effect) }
         refresh()
-        checkpoint(force: true)
+        writeSnapshot()
     }
 
     /// Save on the post-run screen (or Retry after a failed save), with what he wrote there.
@@ -370,7 +392,6 @@ final class WorkoutRecorder {
             } onError: { [weak self] error in
                 self?.sessionFailed("begin", error)
             }
-            log("recorder.started", ["kind": state.kind.rawValue])
 
         case .pause(let at):
             session?.pause(at: at)
@@ -408,19 +429,23 @@ final class WorkoutRecorder {
                 guard let self else { return }
                 // Health first, and only once: a retry after this point is Tempo's half.
                 let workout: FinishedWorkout
+                let began = clock()
                 if let finished {
                     workout = finished
                 } else {
                     workout = try await session.finish(metadata: metadata)
                     finished = workout
-                    log("recorder.saved", ["kind": state.kind.rawValue])
                 }
                 let outcome = await saveToTempo(workout.row, journal, photo)
                 saveOutcome = outcome
+                // One line per save, once both halves have answered (#131).
+                report([RecorderTelemetry.saved(
+                    state, distanceM: timeline.last?.m, fixes: track?.verdicts ?? [:],
+                    tempo: outcome, saveLatency: clock().timeIntervalSince(began))])
                 send(Self.saveEvent(for: outcome, workoutID: workout.id))
             } onError: { [weak self] error in
                 self?.lastFailure = String(describing: error)
-                self?.log("recorder.save_failed", ["error_type": String(describing: type(of: error))])
+                self?.log("recorder.health_save_error", ["error_type": String(describing: type(of: error))])
                 self?.send(.saveFailed(reason: "Couldn't save to Apple Health"))
             }
 
@@ -431,7 +456,6 @@ final class WorkoutRecorder {
             // Already in Health (Tempo refused the row and he gave up): nothing to throw
             // away. It stays in Health, and the sync ingests it like any other workout.
             if finished == nil { enqueue { session in await session.discard() } }
-            log("recorder.discarded", ["kind": state.kind.rawValue])
 
         case .tearDown:
             location.stop()
@@ -456,6 +480,8 @@ final class WorkoutRecorder {
         finished = nil
         cues = makeCues()
         announcedThroughM = 0
+        usedFixes = []
+        lastSnapshot = nil
         do {
             let session = try makeSession(state.kind)
             session.onSignal = { [weak self] in self?.receiveSignal($0) }
@@ -475,7 +501,7 @@ final class WorkoutRecorder {
 
     private func sessionFailed(_ step: String, _ error: Error) {
         lastFailure = String(describing: error)
-        log("recorder.session_failed", ["step": step, "error_type": String(describing: type(of: error))])
+        log("recorder.session_error", ["step": step, "error_type": String(describing: type(of: error))])
         send(.interrupted(.sessionFailed, at: clock()))
     }
 
@@ -505,7 +531,7 @@ final class WorkoutRecorder {
             treadmill.append(BestEfforts.Point(t: max(last.t, at.timeIntervalSince(start)), m: meters))
         case .failed(let reason):
             lastFailure = reason
-            log("recorder.session_failed", ["step": "running"])
+            log("recorder.session_error", ["step": "running"])
             send(.interrupted(.sessionFailed, at: clock()))
         }
     }
@@ -537,7 +563,9 @@ final class WorkoutRecorder {
         for location in locations {
             let wasLocked = track.isLocked
             let verdict = track.ingest(TrackMath.Fix(location))
-            routeBatch += routeGate.admit(location, verdict: verdict, wasLocked: wasLocked)
+            let used = routeGate.admit(location, verdict: verdict, wasLocked: wasLocked)
+            routeBatch += used
+            usedFixes = Array((usedFixes + used.map(TrackMath.Fix.init)).suffix(InProgressRun.maxCarriedFixes))
         }
         self.track = track
     }
@@ -557,11 +585,8 @@ final class WorkoutRecorder {
     private func applyAutoPause(_ decision: AutoPause.Decision) {
         let before = state
         send(decision.event)
+        // Reported by `send`, as a pause or resume with `trigger: auto` (#131).
         guard state != before else { return }
-        switch decision {
-        case .pause: log("recorder.auto_paused", ["kind": state.kind.rawValue])
-        case .resume: log("recorder.auto_resumed", ["kind": state.kind.rawValue])
-        }
         onAutoPause?(decision)
         if cues?.isEnabled == true { cues?.speak(decision) }
     }
@@ -607,7 +632,7 @@ final class WorkoutRecorder {
     // MARK: - The clock
 
     /// Once a second while a run is being recorded: refresh the numbers, write distance as
-    /// it accrues, and checkpoint.
+    /// it accrues, and write the recovery snapshot.
     func tick() {
         refresh()
         if state.phase == .running { announce() }
@@ -621,7 +646,7 @@ final class WorkoutRecorder {
            let still = PedometerSilence.filler(lastReadingAt: lastPedometerAt, now: clock()) {
             feedAutoPause(still)
         }
-        checkpoint(force: false)
+        writeSnapshot()
     }
 
     /// The split cue (#118): once per finished split, said with the split's own pace and the
@@ -653,13 +678,32 @@ final class WorkoutRecorder {
         }
     }
 
-    private func checkpoint(force: Bool) {
-        guard let recordingID, let onCheckpoint else { return }
+    /// The kill-recovery snapshot (#115): written on every state change and every
+    /// `InProgressRun.saveInterval` while the run could still be lost, cleared once it can't.
+    private func writeSnapshot() {
+        if InProgressRun.shouldClear(state) {
+            if !snapshotCleared {
+                persist(nil)
+                snapshotCleared = true
+                lastSnapshot = nil
+            }
+            return
+        }
         let now = clock()
-        if !force, let last = lastCheckpoint, now.timeIntervalSince(last) < Self.checkpointIntervalS { return }
-        lastCheckpoint = now
-        onCheckpoint(RecorderCheckpoint(recordingID: recordingID, state: state,
-                                        distanceM: timeline.last?.m ?? 0, savedAt: now))
+        guard InProgressRun.shouldSave(last: lastSnapshot, state: state, now: now) else { return }
+        let snapshot = InProgressRun(
+            savedAt: now,
+            state: state,
+            workoutSessionID: recordingID,
+            curve: InProgressRun.DistanceCurve(timeline),
+            movingS: track?.movingS ?? 0,
+            elevationGainM: track?.elevationGainM ?? 0,
+            elevationLossM: track?.elevationLossM ?? 0,
+            lastFixes: usedFixes.map(InProgressRun.CarriedFix.init)
+        )
+        persist(snapshot)
+        lastSnapshot = snapshot
+        snapshotCleared = false
     }
 }
 
