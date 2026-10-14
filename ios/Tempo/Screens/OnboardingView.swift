@@ -7,6 +7,10 @@ import SwiftUI
 /// proposes the plan, and asks only what the form didn't.
 /// The coach's `complete_onboarding` tool flips `needsOnboarding`, and RootTabView
 /// swaps to the main app reactively — no callbacks needed here.
+///
+/// The interview is never the only way out (#167). A coach that forgets to call
+/// `complete_onboarding` once shut a just-running athlete out of the app behind a chat with
+/// nothing left to say, so "Finish setup later" takes the same exit by hand.
 struct OnboardingView: View {
     @EnvironmentObject private var store: RunStore
     @Environment(\.units) private var units
@@ -15,6 +19,7 @@ struct OnboardingView: View {
     @State private var step: Step = .welcome
     @State private var connecting = false
     @State private var connected = false
+    @State private var finishing = false
 
     var body: some View {
         ZStack {
@@ -31,10 +36,42 @@ struct OnboardingView: View {
                     if let answers { store.beginIntake(answers) }
                     step = .interview
                 }
-            case .interview: CoachView(onboarding: true)
+            case .interview:
+                VStack(spacing: 0) {
+                    finishLaterBar
+                    CoachView(onboarding: true)
+                }
             }
         }
         .animation(.easeInOut(duration: 0.25), value: step)
+    }
+
+    // MARK: - Interview exit
+
+    /// Quiet on purpose: the interview is still the way in, and this is the escape hatch, not
+    /// a second CTA competing with it.
+    private var finishLaterBar: some View {
+        HStack {
+            Spacer()
+            Button {
+                guard !finishing else { return }
+                finishing = true
+                Task {
+                    await store.markOnboarded()
+                    // Normally this view is gone by now; if it isn't, the tap must work again.
+                    finishing = false
+                }
+            } label: {
+                Text(finishing ? "Opening Tempo…" : "Finish setup later")
+                    .font(Tokens.Font.ui(13, .medium))
+                    .foregroundStyle(Tokens.Palette.textSecondary)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+            }
+            .buttonStyle(Pressable())
+            .disabled(finishing)
+        }
+        .padding(.horizontal, 8)
     }
 
     // MARK: - Welcome (brand moment)
