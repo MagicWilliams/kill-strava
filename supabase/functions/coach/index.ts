@@ -83,13 +83,14 @@ Training intake (ONLY when <athlete_context>.intake is present):
 - After the first reply, intake stays present until the card is confirmed. Keep its answers in mind if they push back, and propose a revised create_plan if the goal changes.
 
 Onboarding interview (ONLY when <athlete_context>.onboarding is present):
-- You are running the athlete's setup interview. Warm but efficient. ONE question per message, ~8 questions max total.
-- onboarding.known lists what's already on file — confirm those in passing ("I have you at 6 days a week — still right?" folded into another question), never re-ask cold.
-- If <athlete_context>.intake is present, the form already answered the goal, race, days per week, long-run day, risk appetite, strength and plan questions: reflect it back and propose create_plan as above, then cover only what is left (injuries or niggles if notes do not cover them, birthdate, tested max HR). If onboarding.known.situation is just_running, the athlete chose no race for now: do not propose a goal or a plan, skip those questions, and treat the plan question as settled.
+- You are running the athlete's setup interview. Warm but efficient. ONE question per message, ~8 questions max total. Every message ends in one question, a confirm card, or a complete_onboarding call; never end on a statement.
+- onboarding.known lists what's already on file — confirm those in passing ("I have you at 6 days a week — still right?" folded into another question), never re-ask cold. Anything not in known has not been answered: a value for it in settings is an app default, so ask rather than state it.
+- If onboarding.starting_point is just_running, the plan question is settled as no plan: do not ask about a goal or race, and do not propose a plan. Instead of the list below, ask at most 3 short questions (how often they run, what they enjoy or want from running, injuries or niggles), record the answers, then call complete_onboarding and tell them they can tap Train for something on Today any time.
+- If <athlete_context>.intake is present, the form already answered the goal, race, days per week, long-run day, risk appetite, strength and plan questions: reflect it back and propose create_plan as above, then cover only what is left (injuries or niggles if notes do not cover them, birthdate, tested max HR).
 - Otherwise, cover in a natural order: the goal (race on the calendar? date + target — if none, run the inference: what are they chasing, how do they want training to feel); days per week + long-run day; risk appetite (name the trade in one line); injuries or niggles from the past year; strength/cross-training today and whether they want it prescribed; birthdate; tested max HR if they know it (skippable).
 - Record each answer IMMEDIATELY with the matching tool (update_athlete / update_plan_settings / set_risk_tolerance) — during onboarding these apply silently, no confirm card, so keep summaries short.
 - If onboarding.runs_found is 0: ask what they've been running lately and say plainly you'll start conservative from their word until real runs sync in.
-- Finish line: if the athlete chose just_running, call complete_onboarding once the remaining questions are done. Otherwise, if there's no active plan (or the goal changed in this interview), propose the goal grounded in their data, and call create_plan when they agree. Once a plan exists — or they're keeping their current one — call complete_onboarding. Do not call complete_onboarding before the plan question is settled.`;
+- Finish line: if starting_point is just_running, call complete_onboarding after those questions. Otherwise, if there's no active plan (or the goal changed in this interview), propose the goal grounded in their data, and call create_plan when they agree. Once a plan exists — or they're keeping their current one — call complete_onboarding. Do not call complete_onboarding before the plan question is settled.`;
 
 const TAKEAWAY_INSTRUCTIONS = `Write the coach's takeaway for the single run in <run_detail> — the athlete sees it as a card at the top of that run's detail page.
 2–4 sentences, calm expert voice. Ground it in this run's actual numbers and the athlete's context (goal, recent weeks). Say what the run *was* (its role/effect), one honest observation, and — only if it earns it — one pointed implication for what's next. No greeting, no sign-off, no questions, no markdown.`;
@@ -155,7 +156,7 @@ const TOOLS = [
   {
     name: "complete_onboarding",
     description:
-      "ONLY during onboarding: call when the interview is finished AND the plan question is settled (plan just created, or athlete is keeping their current plan). Ends the onboarding flow.",
+      "ONLY during onboarding: call when the interview is finished AND the plan question is settled (plan just created, athlete is keeping their current plan, or starting_point is just_running: no plan). Ends the onboarding flow.",
     input_schema: {
       type: "object",
       properties: {
