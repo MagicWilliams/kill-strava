@@ -21,9 +21,9 @@ import Foundation
 /// The distance curve is a `[BestEfforts.Point]` on purpose: it is the same cumulative
 /// (seconds, metres) shape `RunDetailLoader` builds from HealthKit samples and the PR scan
 /// consumes, so a recorded run can go straight into `BestEfforts.efforts` with no adapter.
-/// The rolling pace window (≥30 s and ≥100 m) and the boundary interpolation for splits are
-/// the same rules `RunDetailLoader.compute` uses for best pace and mile splits; they live
-/// here as pure functions rather than a third inline copy.
+/// Elevation gain (`elevation(rawAltitudes:)`) and best pace (`bestPace`) are also what
+/// `RunDetailLoader.compute` reports for imported runs (#144), so a recorded run and a
+/// Garmin run are measured the same way.
 enum TrackMath {
 
     // MARK: - Thresholds
@@ -77,12 +77,17 @@ enum TrackMath {
     /// run recorded here and a run imported from the watch split their clocks the same way.
     static let stoppedSpeedMps = 0.45
 
-    /// The current-pace window: at least this long *and* at least this far, the same pair
-    /// `RunDetailLoader` uses for best pace. Thirty seconds alone is ~90 m at easy pace, too
+    /// The current-pace window: at least this long *and* at least this far. Thirty seconds alone is ~90 m at easy pace, too
     /// short for GPS error to average out; a hundred metres alone is fifteen seconds at
     /// strides, too twitchy to read.
     static let paceWindowS = 30.0
     static let paceWindowM = 100.0
+
+    /// Best pace on a finished run looks at windows between these two lengths (and at least
+    /// `paceWindowM`). Not the current-pace window: these are the numbers RunDetail has always
+    /// used, kept so moving the function did not move the number (#144).
+    static let bestPaceMinWindowS = 25.0
+    static let bestPaceMaxWindowS = 45.0
 
     /// If covering the window takes longer than this, there is no current pace to show.
     /// Standing at a light should read "--", not a pace that slowly decays toward an hour.
@@ -98,9 +103,10 @@ enum TrackMath {
     /// step every few seconds; ten without one is a stop, not a slow stride.
     static let paceStaleS = 10.0
 
-    /// Altitudes averaged before gain is measured — the trailing version of the smoothing
-    /// `RunDetailLoader` applies to imported routes (it averages ±5 around each point; a
-    /// live run cannot look ahead, so it looks ten back). Elevation changes slowly enough
+    /// Altitudes averaged before gain is measured, on recorded and imported runs alike
+    /// (#144). Trailing because a live run cannot look ahead; `RunDetailLoader` still draws
+    /// its elevation *chart* from a ±5 centred mean, but its gain number comes through here
+    /// too, so the two kinds of run cannot disagree about a climb. Elevation changes slowly enough
     /// that ten seconds of lag costs under a metre at a split boundary, and five was not
     /// enough: with ±3 m of per-fix noise a five-fix mean still swung 3 m often enough to
     /// read a flat 30 minutes as ~50 m of climb.
@@ -109,7 +115,8 @@ enum TrackMath {
     /// The climb has to reverse by this much before it counts as turning.
     ///
     /// GPS altitude wanders by a few metres even on a track. Summing every upward wiggle —
-    /// what `RunDetailLoader` does with imported routes — turns a flat 10 K into a hilly one.
+    /// what `RunDetailLoader` did with imported routes until #144 — turns a flat 10 K into a
+    /// hilly one.
     /// With a 3 m hysteresis, noise smaller than that never registers, while a real climb is
     /// still counted in full once it has established itself.
     static let elevationHysteresisM = 3.0
@@ -484,6 +491,28 @@ enum TrackMath {
         return (end.t - startT) / (dm / unitMeters)
     }
 
+    /// The fastest stretch of a finished run, seconds per `unitMeters`: every window of at
+    /// least `bestPaceMinWindowS` and `paceWindowM`, no longer than `bestPaceMaxWindowS`.
+    ///
+    /// Moved verbatim out of `RunDetailLoader.compute` (#144). It is deliberately not
+    /// `currentPace` swept along the run: that window is ≥30 s with a 120 s look-back, and
+    /// switching would move the BEST PACE on every past run for no reason anyone asked for.
+    /// Nil when no window qualifies.
+    static func bestPace(timeline: [BestEfforts.Point], unitMeters: Double) -> Double? {
+        guard timeline.count > 2, unitMeters > 0 else { return nil }
+        var best = Double.infinity
+        var i = 0
+        for j in 1..<timeline.count {
+            while timeline[j].t - timeline[i].t > bestPaceMaxWindowS { i += 1 }
+            let dt = timeline[j].t - timeline[i].t
+            let dm = timeline[j].m - timeline[i].m
+            if dt >= bestPaceMinWindowS, dm >= paceWindowM {
+                best = min(best, dt / (dm / unitMeters))
+            }
+        }
+        return best.isFinite ? best : nil
+    }
+
     /// Seconds per `unitMeters`. Nil under 5 % of a unit — the same guard as
     /// `TimeAccounting.paceSecPerMile`: a 50 m blip produces a pace in the hours.
     static func averagePace(meters: Double, seconds: Double, unitMeters: Double) -> Double? {
@@ -606,5 +635,26 @@ enum TrackMath {
         var h = Hysteresis(threshold: threshold)
         for a in altitudes { h.add(a) }
         return (h.gain, h.loss)
+    }
+
+    /// Gain and loss from *raw* altitudes, exactly as `Track` arrives at them live: a
+    /// trailing `altitudeSmoothingFixes` mean, and only full windows fed to `elevation`.
+    ///
+    /// This is what an imported run's detail page reports (#144). Before it, imported routes
+    /// summed every upward wiggle of a ±5 centred mean while recorded runs used the
+    /// hysteresis, so the same road read two different climbs depending on which device
+    /// wrote it down — and the imported number was the inflated one. David chose one method
+    /// everywhere, knowing it lowers the gain on every historical run.
+    static func elevation(rawAltitudes raw: [Double]) -> (gainM: Double, lossM: Double) {
+        var window: [Double] = []
+        var smoothed: [Double] = []
+        for a in raw where a.isFinite {
+            window.append(a)
+            if window.count > altitudeSmoothingFixes { window.removeFirst() }
+            if window.count == altitudeSmoothingFixes {
+                smoothed.append(window.reduce(0, +) / Double(window.count))
+            }
+        }
+        return elevation(smoothed)
     }
 }
