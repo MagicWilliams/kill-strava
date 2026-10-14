@@ -250,18 +250,20 @@ final class PreRunTests: XCTestCase {
 
     // MARK: - Which screen covers the app
 
-    /// The live screen follows the recorder, not a view's opinion. Every phase after the
-    /// countdown keeps it up, including `.recovering` (#115) and a save that failed — a
-    /// screen that went away there would hide a run that is still on the line.
+    /// The cover follows the recorder, not a view's opinion. Every phase after the countdown
+    /// keeps it up, including `.recovering` (#115) and a save that failed — a screen that
+    /// went away there would hide a run that is still on the line. The live screen has the
+    /// run until the clock stops; the save screen (#129) has it from then until the reset.
     func testTheCoverFollowsTheRecordersPhase() {
         XCTAssertEqual(PreRun.screen(for: .idle), .none)
         XCTAssertEqual(PreRun.screen(for: .countdown(startedAt: .now)), .countdown)
-        let live: [RecorderState.Phase] = [
-            .running, .paused, .recovering(since: .now),
+        let live: [RecorderState.Phase] = [.running, .paused, .recovering(since: .now)]
+        for phase in live { XCTAssertEqual(PreRun.screen(for: phase), .live, "\(phase)") }
+        let save: [RecorderState.Phase] = [
             .ending(.review), .ending(.saving), .ending(.failed(reason: "x")),
             .saved(workoutID: nil), .discarded,
         ]
-        for phase in live { XCTAssertEqual(PreRun.screen(for: phase), .live, "\(phase)") }
+        for phase in save { XCTAssertEqual(PreRun.screen(for: phase), .save, "\(phase)") }
     }
 
     /// The sheet's answers become exactly the run the reducer starts: a hidden target is

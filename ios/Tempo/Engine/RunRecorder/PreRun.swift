@@ -265,16 +265,21 @@ enum PreRun {
     enum Screen: Equatable {
         case none
         case countdown
-        /// The live run (#127), and for now everything after it: the post-run screen (#128)
-        /// takes `.ending` and `.saved` / `.discarded` from here when it lands.
+        /// The live run (#127): recording, paused, or lost and waiting to be picked back up.
         case live
+        /// The save screen (#129), from the moment the clock stops until the recorder is
+        /// reset: the journal, the save in flight, a failed save and its retry, and the
+        /// instant after a save or a discard when only the cover is left to close
+        /// (`PostRun.stage`).
+        case save
     }
 
     static func screen(for phase: RecorderState.Phase) -> Screen {
         switch phase {
         case .idle: .none
         case .countdown: .countdown
-        case .running, .paused, .recovering, .ending, .saved, .discarded: .live
+        case .running, .paused, .recovering: .live
+        case .ending, .saved, .discarded: .save
         }
     }
 

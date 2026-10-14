@@ -188,6 +188,19 @@ final class WorkoutRecorder {
     /// streak is 3 s; this is that with room to spare.
     static let heldFixesS = 15.0
 
+    /// Every fix written to the workout's route, kept for the save screen's map (#129). The
+    /// route is already in the builder by then, but `HKWorkoutRoute` can't be read back until
+    /// the workout is saved, which is the one thing the save screen comes before. Not
+    /// observed: it grows once a fix, and is only read once the run has ended.
+    @ObservationIgnored private(set) var route: [CLLocation] = []
+
+    /// The run's splits, in the unit it started in, for the save screen (#129). Off the same
+    /// timeline the live numbers and the voice cues read, so the table can't disagree with
+    /// what he heard at each split.
+    var splits: [TrackMath.Split] {
+        TrackMath.splits(timeline: timeline, altitudes: track?.altitudes ?? [], splitMeters: units.splitMeters)
+    }
+
     // Collaborators
     private let makeSession: (RecorderState.RunKind) throws -> WorkoutSessionDriving
     private let location: RunLocationStreaming
@@ -340,6 +353,7 @@ final class WorkoutRecorder {
         finished = nil
         journal = RunJournalEntry()
         photo = nil
+        route = []
         track = nil
         treadmill = []
         heartRate = nil
@@ -608,6 +622,7 @@ final class WorkoutRecorder {
         guard !routeBatch.isEmpty else { return }
         let batch = routeBatch
         routeBatch.removeAll()
+        route += batch
         enqueue { session in try await session.addRoute(batch) } onError: { [weak self] error in
             self?.log("recorder.route_failed", ["error_type": String(describing: type(of: error))])
         }
