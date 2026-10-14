@@ -389,7 +389,7 @@ extension WidgetSnapshot {
             weekTargetMiles: 40,
             nextWeekTargetMiles: 42,
             upcoming: [Session(day: tomorrow, type: "threshold", title: "Threshold repeats",
-                               targetMiles: 7, targetPaceSec: 425, detail: "3×1 mi @ 7:05")],
+                               targetMiles: 7, targetPaceSec: 425, detail: "3 reps at threshold, 2:00 jog")],
             coach: CoachLine(text: "Even splits on a warm morning — that's the aerobic base showing. Keep tomorrow honest at threshold, not faster.", day: today)
         )
     }

@@ -210,7 +210,7 @@ struct MileageProgressionCard: View {
             if week != nil { Haptics.select() }
         }
         .frame(height: 140)
-        .accessibilityLabel("Weekly mileage, last 12 weeks")
+        .accessibilityLabel("\(units.weeklyVolumeTitle), last 12 weeks")
         .accessibilityValue(accessibilitySummary)
     }
 
@@ -286,7 +286,7 @@ private extension MileageProgression.Progression {
             let back = miles.count - 1 - index
             let day = Calendar.current.date(byAdding: .weekOfYear, value: -back, to: .now) ?? .now
             return [0.45, 0.3, 0.25].map { share in
-                RunSummary(id: UUID(), start: day, distanceM: Int(total * share * 1609.34), durationS: 3_000, avgHR: nil)
+                RunSummary(id: UUID(), start: day, distanceM: Int(total * share * Units.metersPerMile), durationS: 3_000, avgHR: nil)
             }
         }
         return MileageProgression.progression(runs: runs)
