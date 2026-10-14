@@ -20,6 +20,42 @@ struct RunJournalEntry: Hashable, Codable {
     var isEmpty: Bool { self == RunJournalEntry() }
 }
 
+/// What of a journal the coach sees (#123): effort, feel and notes on each recent run, so
+/// it can say "you logged heavy legs three runs straight". Title, photo and shoe stay out —
+/// they say nothing about how the run went.
+///
+/// Every field is nil when there is nothing to say, so the key is absent from the payload
+/// rather than present and empty: an empty `feel_tags` or `notes` would read as "he said
+/// nothing was off", and absence here only ever means "he didn't log it".
+///
+/// These go to the coach and nowhere else. Notes are free text the athlete typed, which
+/// `Telemetry`'s rules keep out of `app_events`; nothing here is ever logged.
+struct CoachJournal: Equatable {
+    let rpe: Int?
+    let feelTags: [String]?
+    let notes: String?
+
+    /// A note longer than this is cut, so one long entry can't crowd the rest of the
+    /// context out of the coach's window. Three or four sentences fit.
+    static let notesLimit = 500
+
+    init(_ entry: RunJournalEntry) {
+        rpe = entry.rpe.flatMap { (1...10).contains($0) ? $0 : nil }
+        let tags = entry.feelTags
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        feelTags = tags.isEmpty ? nil : tags
+        let note = entry.notes?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if note.isEmpty {
+            notes = nil
+        } else if note.count > Self.notesLimit {
+            notes = String(note.prefix(Self.notesLimit)) + "…"
+        } else {
+            notes = note
+        }
+    }
+}
+
 /// The decisions behind writing a journal, kept pure so they can be pinned.
 /// `Services/RunJournal.swift` does the I/O and nothing else.
 enum RunJournalPayload {

@@ -4,7 +4,9 @@ import Foundation
 ///
 /// Each run scores load = miles × intensity², where intensity is the run's pace
 /// relative to the athlete's own recent baseline (their median pace — so the model
-/// is self-calibrating and works without HR). Two exponential moving averages:
+/// is self-calibrating and works without HR). A run the athlete rated scores his RPE
+/// instead, in the same units — see `LoadModel.load(of:baseline:)`. Two exponential
+/// moving averages:
 ///   CTL (fitness, 42-day) — what you've built
 ///   ATL (fatigue,  7-day) — what you're carrying
 ///   Form = CTL − ATL      — what you can spend today
@@ -54,9 +56,7 @@ enum LoadModel {
         // Daily load buckets.
         var daily: [Date: Double] = [:]
         for run in runs where run.start >= windowStart {
-            guard let pace = run.paceSecPerMile, pace > 0 else { continue }
-            let intensity = baseline / Double(pace)
-            let load = run.miles * intensity * intensity
+            guard let load = load(of: run, baseline: baseline) else { continue }
             let day = cal.startOfDay(for: run.start)
             daily[day, default: 0] += load
         }
@@ -87,5 +87,57 @@ enum LoadModel {
             atl: atl,
             ctlSeries: Array(series.suffix(56)).map { (date: $0.0, ctl: $0.1) }
         )
+    }
+
+    // MARK: - One run's load
+
+    /// The RPE a run at the athlete's median pace is taken to carry. It sets the exchange
+    /// rate between the two scores, and 4 is where they agree on the sessions that make up
+    /// most weeks: an easy run ~8 % slower than the median scores ~0.86 per mile by pace
+    /// and 3/4 × 1.08 ≈ 0.81 by RPE 3; a threshold run ~15 % faster scores ~1.38 by pace
+    /// and 7/4 × 0.85 ≈ 1.49 by RPE 7. So a block that switches from pace to RPE scoring
+    /// mid-way doesn't put a step into the CTL chart. It is a calibration, not a fact
+    /// about the athlete — if his logged RPEs run consistently high or low against his
+    /// paces, this is the number to move.
+    static let referenceRPE = 4.0
+
+    /// One run's contribution to the day's load, in miles-at-median-pace — or nil when the
+    /// run can't be scored at all and is skipped, as it always was.
+    ///
+    /// **With an RPE (#123): session-RPE load.** Foster's session RPE — effort × minutes —
+    /// is a validated training-load measure that needs no heart rate, which is the point:
+    /// Garmin's HR doesn't reliably reach us, and pace alone reads a hot, sick, or
+    /// heavy-legged 8:30 as the same 8:30 as a fresh one. The athlete's own number does
+    /// not. It is put in the pace model's units so the two can share one EWMA:
+    ///
+    ///     load = (rpe / referenceRPE) × (moving seconds / baseline sec-per-mile)
+    ///          = rpe × minutes / (referenceRPE × baseline minutes-per-mile)
+    ///
+    /// i.e. the miles the session's time would have covered at the median pace, scaled by
+    /// how hard he said it was. Moving time, like every other clock in the model. It needs
+    /// no distance, so an RPE'd treadmill run with no distance now counts where it was
+    /// skipped before.
+    ///
+    /// **Without one: pace load, unchanged.** miles × intensity², intensity = baseline /
+    /// pace. The expression is kept exactly as it was — same operands, same order — because
+    /// the 2,000+ runs that predate the journal never get an RPE and their numbers are
+    /// pinned bit-for-bit (`LoadModelRPETests`).
+    ///
+    /// **The blend is per run, not per day.** Each run is scored one way or the other and
+    /// both land in the same daily bucket, so a history that is mostly pace-scored with
+    /// RPE'd runs arriving from the recorder needs no switch-over: the RPE'd ones simply
+    /// count what he said they cost. RPE replaces the pace score for that run rather than
+    /// averaging with it — averaging would dilute exactly the disagreement (an easy pace
+    /// that felt like a 9) that makes RPE worth asking for.
+    ///
+    /// An RPE outside 1–10 is ignored rather than clamped (the database refuses one, so it
+    /// can only come from a bad decode), and the run falls back to its pace score.
+    static func load(of run: RunSummary, baseline: Double) -> Double? {
+        if let rpe = run.journal.rpe, (1...10).contains(rpe), run.durationS > 0 {
+            return Double(rpe) / referenceRPE * (Double(run.durationS) / baseline)
+        }
+        guard let pace = run.paceSecPerMile, pace > 0 else { return nil }
+        let intensity = baseline / Double(pace)
+        return run.miles * intensity * intensity
     }
 }
