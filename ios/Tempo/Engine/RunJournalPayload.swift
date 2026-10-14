@@ -7,7 +7,7 @@ import CoreGraphics
 ///
 /// Every field is optional because every question on the post-run screen is skippable.
 /// An empty entry is the normal state for the 2,000+ runs that predate the journal.
-struct RunJournalEntry: Hashable {
+struct RunJournalEntry: Hashable, Codable {
     var rpe: Int? = nil
     var feelTags: [String] = []
     var notes: String? = nil
