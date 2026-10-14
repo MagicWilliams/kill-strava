@@ -81,6 +81,25 @@ enum DistanceChunks {
         guard final || last.t - flushed.t >= minSpanS else { return nil }
         return Chunk(from: flushed, to: last)
     }
+
+    /// Everything from `flushed` to the end of the curve, as samples of at least `minSpanS`
+    /// each, cut at the curve's own points — the same shape `next` produces a tick at a time.
+    ///
+    /// For the end of a run, and for a stretch that was never written as it was run: a run
+    /// rebuilt from its snapshot after a kill (#115) has its whole curve still to write, and
+    /// one sample for all of it would flatten every split `RunDetailLoader` reads back out of
+    /// Health to the run's average. On a live run the backlog at the end is one short chunk,
+    /// exactly what `next(…, final: true)` would give.
+    static func backlog(timeline: [BestEfforts.Point], flushed: BestEfforts.Point) -> [Chunk] {
+        var chunks: [Chunk] = []
+        var from = flushed
+        for point in timeline where point.t > from.t && point.t - from.t >= minSpanS {
+            chunks.append(Chunk(from: from, to: point))
+            from = point
+        }
+        if let last = next(timeline: timeline, flushed: from, final: true) { chunks.append(last) }
+        return chunks
+    }
 }
 
 // MARK: - Workout metadata

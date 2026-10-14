@@ -307,6 +307,68 @@ struct InProgressRun: Codable, Equatable {
         return max(0, reported - carried.lastMeters)
     }
 
+    // MARK: - Picking the run back up
+
+    /// Whether a recovered session is this snapshot's run.
+    ///
+    /// The recording id goes into the workout builder's metadata at `begin`, a moment after
+    /// collection starts, so a session killed in that moment comes back without one — and
+    /// a snapshot written before `prepare` has none either. Either side missing is not a
+    /// mismatch; both present and different is: that session is some other run, and
+    /// grafting it onto this one would splice two runs into one.
+    static func matches(snapshot: InProgressRun, sessionRecordingID: UUID?) -> Bool {
+        guard let ours = snapshot.workoutSessionID, let theirs = sessionRecordingID else { return true }
+        return ours == theirs
+    }
+
+    /// Where the recorder picks a run up after a kill: the curve to carry on from, and how
+    /// much of it the workout in Health already holds.
+    struct Resumption: Equatable {
+        /// The carried curve, plus the gap the session covered, ending at the instant
+        /// recording came back. `TrackMath.Track(start:resuming:…)` takes it as its history.
+        var curve: DistanceCurve
+        /// How far along `curve` the workout's own distance samples already reach, so the
+        /// recorder writes the rest and not the whole run a second time (`DistanceChunks`).
+        var inHealth: BestEfforts.Point
+    }
+
+    /// The curve and the distance-in-Health bookmark for a run coming back from `snapshot`.
+    ///
+    /// `resumedAt` is when recording came back — launch, for a session that survived — and
+    /// nil when it did not: a run being rescued or one already on the save screen ends where
+    /// our knowledge does and gains nothing.
+    ///
+    /// **What Health already has** is the one judgement here. Outdoors the session's distance
+    /// statistic is exactly the samples Tempo wrote (HealthKit's own collection is off), so
+    /// it is the bookmark, and when it is *ahead* of the snapshot — the last chunk landed
+    /// after the last write — the difference is real running and `gapMeters` credits it.
+    /// With no session behind the run, Health has nothing and everything is written. With a
+    /// session but no statistic, we cannot tell, and the bookmark goes at the end of the
+    /// carried curve: writing it all again would double the distance in Health, and under-
+    /// writing costs at most the ten seconds between snapshots. A short run is the honest
+    /// failure of the two.
+    static func resumption(snapshot: InProgressRun, session: SessionRecovery?, resumedAt: Date?) -> Resumption {
+        let carried = snapshot.curve
+        let resumedAtS = resumedAt.flatMap { at in snapshot.state.startedAt.map { at.timeIntervalSince($0) } } ?? 0
+        let curve = splice(
+            carried: carried,
+            after: DistanceCurve([]),
+            gapMetersM: gapMeters(carried: carried, session: session),
+            resumedAtS: resumedAtS
+        )
+        let points = curve.points
+        let origin = BestEfforts.Point(t: 0, m: 0)
+        guard let session, let end = points.last else { return Resumption(curve: curve, inHealth: origin) }
+
+        let carriedEnd = carried.points.last ?? origin
+        guard let reported = session.distanceM, reported.isFinite else {
+            return Resumption(curve: curve, inHealth: carriedEnd)
+        }
+        let m = min(max(0, reported), end.m)
+        let t = TrackMath.time(atMeters: m, in: points) ?? end.t
+        return Resumption(curve: curve, inHealth: BestEfforts.Point(t: t, m: m))
+    }
+
     // MARK: - Telemetry
 
     /// The `recorder.recovered` / `recorder.recovery_failed` line for an outcome (#115, #131),

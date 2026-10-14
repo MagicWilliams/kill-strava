@@ -252,9 +252,36 @@ enum TrackMath {
         private var anchor: (lat: Double, lon: Double)?
         private var recentAltitudes: [Double] = []
         private var climb = Hysteresis(threshold: TrackMath.elevationHysteresisM)
+        /// Climb carried over from before a kill (#115), under whatever `climb` adds after it.
+        private var carriedGainM = 0.0
+        private var carriedLossM = 0.0
 
         init(start: Date) {
             self.start = start
+        }
+
+        /// A track picking a run back up after iOS killed the app mid-run (#115).
+        ///
+        /// `timeline` is the curve the in-progress snapshot carried, already spliced with
+        /// whatever the session covered while Tempo was gone (`InProgressRun.resumption`). It
+        /// becomes this track's history exactly, so splits, pace and the distance on screen
+        /// carry straight on from it. What does not come back is the position: no fix is
+        /// trusted from before the gap, for the same reason none is trusted across a pause
+        /// (`resumeAfterPause`) — he is somewhere else now. The next fixes lock and anchor
+        /// afresh, at the cost of a couple of seconds of display lag.
+        ///
+        /// The climb so far comes back as totals, and the hysteresis starts over on top of
+        /// them, so the first climb after the gap is under-counted by at most one
+        /// `elevationHysteresisM`.
+        init(start: Date, resuming timeline: [BestEfforts.Point], movingS: Double,
+             elevationGainM: Double, elevationLossM: Double) {
+            self.start = start
+            if !timeline.isEmpty { self.timeline = timeline }
+            self.movingS = max(0, movingS)
+            carriedGainM = max(0, elevationGainM)
+            carriedLossM = max(0, elevationLossM)
+            self.elevationGainM = carriedGainM
+            self.elevationLossM = carriedLossM
         }
 
         /// Feed one fix; returns what was done with it.
@@ -343,8 +370,8 @@ enum TrackMath {
                 // reading, and setting the reference on it would let a single bad fix decide
                 // which way the run "started".
                 if recentAltitudes.count == TrackMath.altitudeSmoothingFixes { climb.add(smoothed) }
-                elevationGainM = climb.gain
-                elevationLossM = climb.loss
+                elevationGainM = carriedGainM + climb.gain
+                elevationLossM = carriedLossM + climb.loss
             }
         }
 
