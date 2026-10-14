@@ -8,6 +8,7 @@ import SwiftUI
 /// `ShoeMileage`; this view draws it.
 struct ShoesCard: View {
     @EnvironmentObject private var store: RunStore
+    @Environment(\.units) private var units
     @StateObject private var shoes = ShoeStore()
     @AppStorage(ShoeStore.retirementMilesKey) private var retirementMiles = ShoeMileage.defaultRetirementMiles
 
@@ -17,6 +18,13 @@ struct ShoesCard: View {
     @State private var failure: String?
 
     private var threshold: Int { ShoeMileage.clampedThreshold(retirementMiles) }
+
+    /// The retirement bar is a whole-mile setting (300–500 mi). In km it is said as the
+    /// whole kilometres it comes to, "644 km", rather than re-cut into a km scale: the
+    /// setting itself didn't change, only how it reads.
+    private func wholeUnits(miles: Double) -> String {
+        units.formatDistance(miles: miles, decimals: 0)
+    }
 
     var body: some View {
         let tallies = ShoeMileage.tallies(shoes.shoes, runs: store.runs.map(ShoeMileage.Run.init))
@@ -47,7 +55,7 @@ struct ShoesCard: View {
                 .buttonStyle(Pressable())
             case .ready:
                 if active.isEmpty && retired.isEmpty {
-                    Text("Add the pairs you run in. Each run you tag adds to its pair's mileage, and Tempo tells you when one gets close to \(threshold) mi.")
+                    Text("Add the pairs you run in. Each run you tag adds to its pair's mileage, and Tempo tells you when one gets close to \(wholeUnits(miles: Double(threshold))).")
                         .font(Tokens.Font.ui(13)).foregroundStyle(Tokens.Palette.textSecondary)
                 }
                 ForEach(active) { shoe in
@@ -111,7 +119,7 @@ struct ShoesCard: View {
                         Tag(text: "Default", fg: Tokens.Palette.onVolt, bg: Tokens.Palette.volt)
                     }
                     Spacer()
-                    Text(Self.milesLabel(tally.miles))
+                    Text(Self.distanceLabel(tally.miles, units))
                         .font(Tokens.Font.mono(13)).foregroundStyle(Tokens.Palette.textPrimary)
                     Image(systemName: "ellipsis")
                         .font(.system(size: 12)).foregroundStyle(Tokens.Palette.textTertiary)
@@ -131,10 +139,10 @@ struct ShoesCard: View {
         case .fine:
             EmptyView()
         case .nearing(let left):
-            Text("\(left) mi to \(threshold) — time to line up the next pair.")
+            Text("\(wholeUnits(miles: Double(left))) to \(units.number(miles: Double(threshold), decimals: 0)) — time to line up the next pair.")
                 .font(Tokens.Font.ui(12, .medium)).foregroundStyle(Tokens.Palette.warning)
         case .due:
-            Text("Past \(threshold) mi — worth retiring.")
+            Text("Past \(wholeUnits(miles: Double(threshold))) — worth retiring.")
                 .font(Tokens.Font.ui(12, .medium)).foregroundStyle(Tokens.Palette.warning)
         }
     }
@@ -165,7 +173,7 @@ struct ShoesCard: View {
                         }
                     }
                     Spacer()
-                    Text(Self.milesLabel(tallies[shoe.id]?.miles ?? 0))
+                    Text(Self.distanceLabel(tallies[shoe.id]?.miles ?? 0, units))
                         .font(Tokens.Font.mono(12)).foregroundStyle(Tokens.Palette.textSecondary)
                 }
             }
@@ -179,11 +187,11 @@ struct ShoesCard: View {
             Spacer()
             Menu {
                 Picker("Retire at", selection: Binding(get: { threshold }, set: { retirementMiles = $0 })) {
-                    ForEach(ShoeMileage.retirementMilesOptions, id: \.self) { Text("\($0) mi").tag($0) }
+                    ForEach(ShoeMileage.retirementMilesOptions, id: \.self) { Text(wholeUnits(miles: Double($0))).tag($0) }
                 }
             } label: {
                 HStack(spacing: 4) {
-                    Text("\(threshold) mi").font(Tokens.Font.mono(13)).foregroundStyle(Tokens.Palette.accentText)
+                    Text(wholeUnits(miles: Double(threshold))).font(Tokens.Font.mono(13)).foregroundStyle(Tokens.Palette.accentText)
                     Image(systemName: "chevron.up.chevron.down")
                         .font(.system(size: 10)).foregroundStyle(Tokens.Palette.accentText)
                 }
@@ -192,8 +200,9 @@ struct ShoesCard: View {
         .frame(minHeight: 24)
     }
 
-    static func milesLabel(_ miles: Double) -> String {
-        String(format: miles < 10 ? "%.1f mi" : "%.0f mi", miles)
+    /// A pair's total, from the miles `ShoeMileage` sums: one decimal under 10, whole above.
+    static func distanceLabel(_ miles: Double, _ units: Units) -> String {
+        units.formatDistance(miles: miles, decimals: units.distance(miles: miles) < 10 ? 1 : 0)
     }
 }
 
@@ -208,6 +217,7 @@ struct AddShoeSheet: View {
     let onAdd: (ShoeMileage.Draft, _ makeDefault: Bool) async -> Bool
 
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.units) private var units
     @State private var name = ""
     @State private var startMiles: Double?
     @State private var makeDefault: Bool
@@ -238,8 +248,12 @@ struct AddShoeSheet: View {
                     }
 
                     Card {
-                        SectionLabel("Miles already on them")
-                        TextField("0", value: $startMiles, format: .number)
+                        SectionLabel("\(units.name(plural: true).capitalized) already on them")
+                        // Typed in the athlete's unit, handed to `ShoeMileage.draft` in miles.
+                        TextField("0", value: Binding(
+                            get: { startMiles.map { units.distance(miles: $0) } },
+                            set: { startMiles = $0.map { units.meters(distance: $0) / Units.metersPerMile } }
+                        ), format: .number)
                             .font(Tokens.Font.mono(17))
                             .keyboardType(.decimalPad)
                         Text("Leave blank for a new pair. Runs you tag with it add on from here.")
