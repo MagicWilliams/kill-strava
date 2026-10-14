@@ -75,6 +75,20 @@ protocol RunMotionStreaming: AnyObject {
     func stop()
 }
 
+/// The voice (#118): `CueSpeaker` on device, a fake in tests. One per run.
+@MainActor
+protocol RunCueSpeaking: AnyObject {
+    /// The voice-cues setting. Nothing is said when it is off.
+    var isEnabled: Bool { get }
+    func speakSplit(_ split: TrackMath.Split, averagePaceS: Double?, units: Units)
+    func speak(_ decision: AutoPause.Decision)
+    func speakRaceDistance(meters: Double, elapsedS: Double, averagePaceS: Double?, units: Units)
+    /// Cut off anything being said and give the audio back.
+    func stop()
+}
+
+extension CueSpeaker: RunCueSpeaking {}
+
 // MARK: - Hand-offs
 
 /// The minimum kill recovery (#115) needs to persist, emitted on every state change and
@@ -150,6 +164,14 @@ final class WorkoutRecorder {
     /// An auto-pause decision the run accepted: where the spoken + haptic cue (#118) fires,
     /// so an auto pause is never silent.
     @ObservationIgnored var onAutoPause: ((AutoPause.Decision) -> Void)?
+    /// Distance moved on, `(previous, current)` metres, once a second while running. The
+    /// race-distance cue (#117) hangs off this: `CueText.crossed(raceM, …)` then
+    /// `cues?.speakRaceDistance`.
+    @ObservationIgnored var onDistanceAdvanced: ((Double, Double) -> Void)?
+    /// This run's voice. Made at the countdown and kept after the run ends, until the next
+    /// run replaces it: a speaker let go mid-cue would never hand the audio back, and the
+    /// music would stay ducked.
+    @ObservationIgnored private(set) var cues: RunCueSpeaking?
 
     static let checkpointIntervalS = 10.0
     /// Route fixes are written in batches of about this many — a few seconds of running.
@@ -162,6 +184,7 @@ final class WorkoutRecorder {
     private let makeSession: (RecorderState.RunKind) throws -> WorkoutSessionDriving
     private let location: RunLocationStreaming
     private let motion: RunMotionStreaming
+    private let makeCues: () -> RunCueSpeaking
     private let unitsSource: () -> Units
     private let clock: () -> Date
     private let tickInterval: Duration?
@@ -188,6 +211,8 @@ final class WorkoutRecorder {
     @ObservationIgnored private var photo: UIImage?
     @ObservationIgnored private var autoPause = AutoPause()
     @ObservationIgnored private var lastPedometerAt: Date?
+    /// Distance at the last split check, for `CueText.splitToAnnounce`.
+    @ObservationIgnored private var announcedThroughM = 0.0
     /// Fixes that arrived while paused, newest `heldFixesS` only.
     @ObservationIgnored private var heldFixes: [CLLocation] = []
     @ObservationIgnored private var ticker: Task<Void, Never>?
@@ -203,6 +228,7 @@ final class WorkoutRecorder {
         makeSession: @escaping (RecorderState.RunKind) throws -> WorkoutSessionDriving,
         location: RunLocationStreaming,
         motion: RunMotionStreaming,
+        cues: @escaping () -> RunCueSpeaking,
         units: @escaping () -> Units,
         saveToTempo: @escaping (WorkoutRow.Workout, RunJournalEntry, UIImage?) async -> RecordedRunSaver.Outcome,
         clock: @escaping () -> Date = Date.init,
@@ -212,6 +238,7 @@ final class WorkoutRecorder {
         self.makeSession = makeSession
         self.location = location
         self.motion = motion
+        self.makeCues = cues
         self.unitsSource = units
         self.saveToTempo = saveToTempo
         self.clock = clock
@@ -229,6 +256,7 @@ final class WorkoutRecorder {
             makeSession: { kind in try HealthWorkoutSession(store: health, kind: kind) },
             location: RunLocationStream(),
             motion: RunPedometerStream(),
+            cues: { CueSpeaker() },
             units: { [weak store] in store?.units ?? .fallback },
             saveToTempo: { [weak store] workout, journal, photo in
                 // No store means no app to show it in; the sync ingests it from Health.
@@ -359,6 +387,7 @@ final class WorkoutRecorder {
             measure(since)
 
         case .stop(let at):
+            cues?.stop()
             location.stop()
             motion.stop()
             track?.close()
@@ -396,6 +425,7 @@ final class WorkoutRecorder {
             }
 
         case .discard:
+            cues?.stop()
             location.stop()
             motion.stop()
             // Already in Health (Tempo refused the row and he gave up): nothing to throw
@@ -424,6 +454,8 @@ final class WorkoutRecorder {
         lastFailure = nil
         saveOutcome = nil
         finished = nil
+        cues = makeCues()
+        announcedThroughM = 0
         do {
             let session = try makeSession(state.kind)
             session.onSignal = { [weak self] in self?.receiveSignal($0) }
@@ -531,6 +563,7 @@ final class WorkoutRecorder {
         case .resume: log("recorder.auto_resumed", ["kind": state.kind.rawValue])
         }
         onAutoPause?(decision)
+        if cues?.isEnabled == true { cues?.speak(decision) }
     }
 
     private func accessChanged(_ access: LocationAccess) {
@@ -577,6 +610,7 @@ final class WorkoutRecorder {
     /// it accrues, and checkpoint.
     func tick() {
         refresh()
+        if state.phase == .running { announce() }
         switch state.phase {
         case .running, .paused: flushDistance(final: false)
         default: break
@@ -588,6 +622,23 @@ final class WorkoutRecorder {
             feedAutoPause(still)
         }
         checkpoint(force: false)
+    }
+
+    /// The split cue (#118): once per finished split, said with the split's own pace and the
+    /// average so far. Checked against the snapshot just refreshed, so the voice and the
+    /// screen read the same numbers.
+    private func announce() {
+        let previous = announcedThroughM
+        let current = snapshot.distanceM
+        guard current > previous else { return }
+        announcedThroughM = current
+        onDistanceAdvanced?(previous, current)
+        guard let cues, cues.isEnabled,
+              let index = CueText.splitToAnnounce(previousMeters: previous, currentMeters: current, units: units),
+              let split = TrackMath.splits(timeline: timeline, splitMeters: units.splitMeters)
+                .first(where: { $0.index == index && !$0.isPartial })
+        else { return }
+        cues.speakSplit(split, averagePaceS: snapshot.averagePaceS, units: units)
     }
 
     private func startTicker() {

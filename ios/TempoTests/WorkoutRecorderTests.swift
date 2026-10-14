@@ -83,6 +83,21 @@ final class WorkoutRecorderTests: XCTestCase {
     }
 
     @MainActor
+    final class FakeCues: RunCueSpeaking {
+        var isEnabled = true
+        var splits: [TrackMath.Split] = []
+        var decisions: [AutoPause.Decision] = []
+        var stops = 0
+        func speakSplit(_ split: TrackMath.Split, averagePaceS: Double?, units: Units) {
+            guard isEnabled else { return }
+            splits.append(split)
+        }
+        func speak(_ decision: AutoPause.Decision) { decisions.append(decision) }
+        func speakRaceDistance(meters: Double, elapsedS: Double, averagePaceS: Double?, units: Units) {}
+        func stop() { stops += 1 }
+    }
+
+    @MainActor
     final class FakeLocation: RunLocationStreaming {
         var onLocations: (([CLLocation]) -> Void)?
         var onAccess: ((LocationAccess) -> Void)?
@@ -102,6 +117,7 @@ final class WorkoutRecorderTests: XCTestCase {
     private var session: FakeSession!
     private var location: FakeLocation!
     private var motion: FakeMotion!
+    private var cues: FakeCues!
     private var logged: [String] = []
     private var checkpoints: [RecorderCheckpoint] = []
     /// What reached `RecordedRunSaver.save` (#122), and what it answers, in turn.
@@ -119,6 +135,7 @@ final class WorkoutRecorderTests: XCTestCase {
         session = FakeSession()
         location = FakeLocation()
         motion = FakeMotion()
+        cues = FakeCues()
         logged = []
         checkpoints = []
         saved = []
@@ -132,6 +149,7 @@ final class WorkoutRecorderTests: XCTestCase {
             makeSession: { [unowned self] kind in kindsMade.append(kind); return session! },
             location: location,
             motion: motion,
+            cues: { [unowned self] in cues! },
             units: units,
             saveToTempo: { [unowned self] workout, journal, _ in
                 saved.append((workout, journal))
@@ -241,6 +259,8 @@ final class WorkoutRecorderTests: XCTestCase {
         now = t(1023)
         recorder.send(.endRequested(.liveScreen, at: now))
         XCTAssertFalse(location.isOn, "ending stops GPS")
+        XCTAssertEqual(cues.stops, 1, "ending cuts off any cue and gives the music back")
+        XCTAssertEqual(cues.splits.map(\.index), [1, 2], "one cue per finished kilometre; the third finishes with the run, unsaid")
         await recorder.settled()
         XCTAssertEqual(session.calls.last, .stop(t(1023)), "collection ends after the last distance and route")
         XCTAssertFalse(session.calls.contains(.finish), "the save screen saves nothing until he says so")
@@ -548,6 +568,7 @@ final class WorkoutRecorderTests: XCTestCase {
         XCTAssertEqual(recorder.state.phase, .running)
         XCTAssertEqual(recorder.state.pauses.last?.end, t(141), "backdated to the first running second")
         XCTAssertEqual(autoPauses, [.pause(at: t(121)), .resume(at: t(141))])
+        XCTAssertEqual(cues.decisions, autoPauses, "an auto pause is never silent (#118)")
         XCTAssertTrue(logged.contains("recorder.auto_paused"))
         XCTAssertTrue(logged.contains("recorder.auto_resumed"))
 
@@ -626,5 +647,40 @@ final class WorkoutRecorderTests: XCTestCase {
         XCTAssertNil(PedometerSilence.filler(lastReadingAt: t(55), now: t(60)), "its last reading is still current")
         XCTAssertEqual(PedometerSilence.filler(lastReadingAt: t(54), now: t(60)),
                        AutoPause.Sample(at: t(60), speed: 0, source: .pedometer))
+    }
+
+    // MARK: - Voice cues (#118)
+
+    /// A split is said once, when it finishes, with its own pace. The distance hook (#117's
+    /// race-distance cue) sees every step forward.
+    func testEachSplitIsSaidOnceWithItsPace() async throws {
+        let recorder = await started(units: .km)
+        var advanced: [(Double, Double)] = []
+        recorder.onDistanceAdvanced = { advanced.append(($0, $1)) }
+        run(recorder, line(from: 0, seconds: 650, secPerKm: 300))
+
+        XCTAssertEqual(cues.splits.map(\.index), [1, 2])
+        XCTAssertEqual(try XCTUnwrap(cues.splits.first).paceS, 300, accuracy: 3)
+        XCTAssertFalse(advanced.isEmpty)
+        XCTAssertTrue(advanced.allSatisfy { $0.1 > $0.0 })
+    }
+
+    /// Voice cues switched off: nothing is said, not a split and not an auto pause.
+    func testCuesOffSaysNothing() async {
+        cues.isEnabled = false
+        let recorder = await started(units: .km, autoPause: true)
+        run(recorder, line(from: 0, seconds: 400, secPerKm: 300))
+        run(recorder, (401...420).map { fix(at: Double($0), north: 400 * 1000 / 300, speed: 0) })
+        XCTAssertEqual(recorder.state.openPause?.reason, .auto)
+        XCTAssertTrue(cues.splits.isEmpty)
+        XCTAssertTrue(cues.decisions.isEmpty)
+    }
+
+    func testDiscardCutsOffTheVoice() async {
+        let recorder = await started()
+        now = t(30)
+        recorder.send(.pause(.manual(.liveScreen), at: now))
+        recorder.send(.discard(.liveScreen))
+        XCTAssertEqual(cues.stops, 1)
     }
 }

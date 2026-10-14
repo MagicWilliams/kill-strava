@@ -18,8 +18,10 @@ import Foundation
 ///   with the phone locked in a pocket.
 /// - **`.duckOthers`**: Spotify or Apple Music drops in volume under the voice instead of
 ///   stopping, or the voice being lost under it.
-/// - **`.mixWithOthers`**: never take over the music. Without it, activating the session
-///   stops whatever else is playing.
+/// - **`.interruptSpokenAudioAndMixWithOthers`**: never take over the music (it includes
+///   `.mixWithOthers`; without that, activating the session stops whatever else is playing),
+///   but pause a podcast or audiobook for the cue and let it resume after, rather than talk
+///   over it (EM, 2026-10-14).
 /// - **`.voicePrompt` mode**: Apple's mode for short spoken prompts (navigation-style), tuned
 ///   for speech over other audio.
 /// - **Deactivated after every cue, with `.notifyOthersOnDeactivation`.** A ducked app stays
@@ -106,7 +108,12 @@ final class CueSpeaker: NSObject {
         release?.cancel()
         release = nil
         do {
-            try session.setCategory(.playback, mode: .voicePrompt, options: [.duckOthers, .mixWithOthers])
+            // EM's call, 2026-10-14: music ducks under a cue, while a podcast or audiobook
+            // pauses and resumes after it, as Strava and Nike do. Talking over someone
+            // talking loses both. `.interruptSpokenAudioAndMixWithOthers` includes
+            // `.mixWithOthers`.
+            try session.setCategory(.playback, mode: .voicePrompt,
+                                    options: [.duckOthers, .interruptSpokenAudioAndMixWithOthers])
             try session.setActive(true)
         } catch {
             // Most often a phone call holding the audio. Skip this cue rather than queue it:
