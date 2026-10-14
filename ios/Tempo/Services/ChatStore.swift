@@ -199,7 +199,7 @@ final class ChatStore: ObservableObject {
         guard let handoff = runStore.intakeHandoff, !handoff.sentToCoach, !isThinking else { return }
         runStore.markIntakeSent()
         errorText = nil
-        append(.user, handoff.answers.transcriptLine(calendar: RunStore.cal))
+        append(.user, handoff.answers.transcriptLine(calendar: RunStore.cal, units: runStore.units))
         isThinking = true
         defer { isThinking = false }
         let history = messages.suffix(24).map {
@@ -302,7 +302,8 @@ final class ChatStore: ObservableObject {
         } catch {
             messages[idx].actionState = .failed
             persist(.failed, for: messageID)
-            errorText = "That change didn't go through — Confirm to retry."
+            Telemetry.error("coach.action_failed", error, context: ["type": action.type])
+            errorText = (error as? ActionError)?.message ?? "That change didn't go through — Confirm to retry."
             // No acknowledgement on a failure: the retry card is the response.
             return false
         }
@@ -620,7 +621,7 @@ final class ChatStore: ObservableObject {
             projectedFinishSeconds: rep.projected_finish_s,
             startWeeklyMiles: rep.start_weekly_mi,
             peakWeeklyMiles: rep.peak_weekly_mi
-        ))
+        ), units: runStore.units)
     }
 
     private func applyAthleteUpdate(_ action: ProposedAction, runStore: RunStore) async throws {
@@ -653,7 +654,16 @@ final class ChatStore: ObservableObject {
         await runStore.markOnboarded()
     }
 
-    private enum ActionError: Error { case badParams }
+    /// `message` is what the athlete reads under a card that didn't go through. A bare
+    /// "didn't go through" left David tapping Confirm on a card that could never succeed.
+    private enum ActionError: Error {
+        case badParams
+        var message: String {
+            switch self {
+            case .badParams: return "That card is missing something the plan needs. Ask the coach to propose it again."
+            }
+        }
+    }
 
     // MARK: - Plumbing
 

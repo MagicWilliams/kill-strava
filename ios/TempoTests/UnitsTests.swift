@@ -101,8 +101,8 @@ final class UnitsTests: XCTestCase {
         XCTAssertEqual(PaceModel.format(60), "1:00")
         XCTAssertEqual(PaceModel.format(0), "0:00")
         XCTAssertEqual(ChangeLedger.Format.pace(446), "7:26 /mi")
-        XCTAssertEqual(ChangeLedger.Format.miles(32_187), "20.00 mi")
-        XCTAssertEqual(ChangeLedger.Format.miles(0), "0.00 mi")
+        XCTAssertEqual(ChangeLedger.Format.distance(32_187), "20.00 mi")
+        XCTAssertEqual(ChangeLedger.Format.distance(0), "0.00 mi")
     }
 
     // MARK: - Split length

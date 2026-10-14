@@ -100,6 +100,10 @@ targets:
       - path: TempoWidgets
       - path: Shared
       - path: Tempo/DesignSystem/Tokens.swift
+      # The snapshot counts in miles; the widget prints it in the athlete's unit (#109)
+      # with the app's own formatter, so the two can't disagree. Both files are pure.
+      - path: Tempo/Engine/Units.swift
+      - path: Tempo/Engine/UnitsDisplay.swift
       - path: Tempo/Resources/Fonts
         excludes: ["README.md"]
     info:

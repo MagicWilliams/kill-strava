@@ -15,6 +15,7 @@ struct RaceRecapView: View {
     @EnvironmentObject private var store: RunStore
     @Environment(\.dismiss) private var dismiss
     @Environment(\.displayScale) private var displayScale
+    @Environment(\.units) private var units
 
     @State private var detail: RunDetail?
     @State private var recap: RaceRecap.Recap?
@@ -187,7 +188,7 @@ struct RaceRecapView: View {
                         .mono(12, mat.isFinish ? Tokens.Palette.textPrimary : Tokens.Palette.textSecondary)
                         .frame(width: 50, alignment: .leading)
                     Text(RaceRecap.formatClock(mat.elapsedS)).mono(12).frame(width: 76, alignment: .leading)
-                    Text(PaceModel.format(Int(mat.segmentPaceSecPerMile.rounded())))
+                    Text(units.clock(secondsPerMile: mat.segmentPaceSecPerMile))
                         .mono(12, Tokens.Palette.textSecondary).frame(width: 56, alignment: .leading)
                     if recap.fadePoint?.id == mat.id {
                         Tag(text: "fade", fg: Tokens.Palette.warning, bg: Tokens.Well.warning.insetFill)
@@ -202,7 +203,7 @@ struct RaceRecapView: View {
                 legendDot(Tokens.Palette.success, "BANKED")
                 legendDot(Tokens.Palette.warning, "GIVEN BACK")
                 Spacer()
-                Text("PACE /MI").mono(9, Tokens.Palette.textTertiary).tracking(1)
+                Text("PACE " + units.paceSuffix.uppercased()).mono(9, Tokens.Palette.textTertiary).tracking(1)
             }
             Text(distanceNote(recap))
                 .font(Tokens.Font.ui(12)).foregroundStyle(Tokens.Palette.textTertiary)
@@ -210,15 +211,15 @@ struct RaceRecapView: View {
     }
 
     private func distanceNote(_ recap: RaceRecap.Recap) -> String {
-        let measuredMi = recap.measuredMeters / RaceRecap.metersPerMile
-        let raceMi = recap.raceMeters / RaceRecap.metersPerMile
+        let measured = units.formatDistance(meters: recap.measuredMeters)
+        let race = units.formatDistance(meters: recap.raceMeters, decimals: 1)
         if recap.wasScaled {
-            return String(format: "Your watch read %.2f mi. GPS reads long between tall buildings, so every distance was scaled by %.3f to put the finish on %.1f — that's what puts the mats where the real ones are.", measuredMi, recap.scale, raceMi)
+            return "Your watch read \(measured). GPS reads long between tall buildings, so every distance was scaled by \(String(format: "%.3f", recap.scale)) to put the finish on \(race) — that's what puts the mats where the real ones are."
         }
         if recap.measuredMeters > recap.raceMeters {
-            return String(format: "Your watch read %.2f mi — too far over to be GPS drift, so the mats use the raw distance.", measuredMi)
+            return "Your watch read \(measured) — too far over to be GPS drift, so the mats use the raw distance."
         }
-        return String(format: "Your watch read %.2f mi, short of the course, so the finish is placed at the end of the recording.", measuredMi)
+        return "Your watch read \(measured), short of the course, so the finish is placed at the end of the recording."
     }
 
     private func legendDot(_ color: Color, _ label: String) -> some View {
@@ -232,14 +233,15 @@ struct RaceRecapView: View {
 
     private struct ChartPoint: Identifiable {
         let id: Int
-        let km: Double
+        /// Along the course, in the athlete's unit.
+        let distance: Double
         /// Seconds ahead of goal — the delta negated, so ahead plots *up*.
         let ahead: Double
     }
 
     private func deltaChart(_ recap: RaceRecap.Recap) -> some View {
-        let points = [ChartPoint(id: -1, km: 0, ahead: 0)] + recap.mats.compactMap { mat in
-            mat.deltaS.map { ChartPoint(id: mat.id, km: mat.meters / 1000, ahead: -$0) }
+        let points = [ChartPoint(id: -1, distance: 0, ahead: 0)] + recap.mats.compactMap { mat in
+            mat.deltaS.map { ChartPoint(id: mat.id, distance: units.distance(meters: mat.meters), ahead: -$0) }
         }
         let fade = recap.fadePoint.flatMap { f in points.first { $0.id == f.id } }
         let extent = max(points.map { abs($0.ahead) }.max() ?? 0, 30)
@@ -254,17 +256,17 @@ struct RaceRecapView: View {
                     .foregroundStyle(Tokens.Palette.textTertiary)
                     .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 4]))
                 ForEach(points) { p in
-                    AreaMark(x: .value("km", p.km), y: .value("Ahead", p.ahead))
+                    AreaMark(x: .value("Distance", p.distance), y: .value("Ahead", p.ahead))
                         .foregroundStyle(Tokens.Palette.voltMark.opacity(0.18))
-                    LineMark(x: .value("km", p.km), y: .value("Ahead", p.ahead))
+                    LineMark(x: .value("Distance", p.distance), y: .value("Ahead", p.ahead))
                         .foregroundStyle(Tokens.Palette.accentText)
                         .lineStyle(StrokeStyle(lineWidth: 2))
-                    PointMark(x: .value("km", p.km), y: .value("Ahead", p.ahead))
+                    PointMark(x: .value("Distance", p.distance), y: .value("Ahead", p.ahead))
                         .foregroundStyle(Tokens.Palette.accentText)
                         .symbolSize(18)
                 }
                 if let fade {
-                    PointMark(x: .value("km", fade.km), y: .value("Ahead", fade.ahead))
+                    PointMark(x: .value("Distance", fade.distance), y: .value("Ahead", fade.ahead))
                         .foregroundStyle(Tokens.Palette.warning)
                         .symbolSize(90)
                         .annotation(position: .top, spacing: 4) {
@@ -274,7 +276,8 @@ struct RaceRecapView: View {
             }
             .chartYScale(domain: -extent * 1.25 ... extent * 1.25)
             .chartXAxis {
-                AxisMarks(values: [0, 10, 20, 30, 40]) { _ in
+                // Every 10 km or every 5 mi: about five ticks over a marathon either way.
+                AxisMarks(values: .stride(by: units == .km ? 10 : 5)) { _ in
                     AxisValueLabel().font(Tokens.Font.mono(9)).foregroundStyle(Tokens.Palette.textTertiary)
                 }
             }
@@ -341,8 +344,8 @@ struct RaceRecapView: View {
         Card(well: .cool) {
             SectionLabel("The block that got you here")
             LazyVGrid(columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)], spacing: 10) {
-                blockTile(String(format: "%.0f mi", block.miles), "\(RaceRecap.blockWeeks) weeks · \(block.runCount) runs")
-                blockTile(block.longest.map { String(format: "%.1f mi", $0.miles) } ?? "—",
+                blockTile(units.formatDistance(miles: block.miles, decimals: 0), "\(RaceRecap.blockWeeks) weeks · \(block.runCount) runs")
+                blockTile(block.longest.map { units.formatDistance(meters: Double($0.distanceM), decimals: 1) } ?? "—",
                           "Longest" + (block.longest.map { " · " + $0.start.formatted(.dateTime.month(.abbreviated).day()) } ?? ""))
                 if raceMeters == RaceRecap.marathonMeters {
                     blockTile(block.projectedFinishS.map(PaceModel.formatFinish) ?? GoalLine.unknownFinish, "Projected that morning")

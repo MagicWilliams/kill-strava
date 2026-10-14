@@ -10,7 +10,7 @@
 //    tweak would rebuild their block as a marathon and drop every intake answer.
 
 import { assert, assertEquals, assertThrows } from "jsr:@std/assert@^1";
-import { advanceStartedWeek, goalInsertRow, isFinishGoal, isMissingColumnError, resolveGoal } from "./goal.ts";
+import { advanceStartedWeek, goalInsertRow, isFinishGoal, isMissingColumnError, requiresTargetTime, resolveGoal } from "./goal.ts";
 
 const NOW = new Date("2026-10-14T15:00:00Z"); // a Wednesday
 const BODY = { goal_time_s: 1200, race_name: "Turkey Trot", race_date: "2026-11-26" };
@@ -144,4 +144,10 @@ Deno.test("#104 finish: the goal row stores no invented time, before or after 00
   assertEquals(goalInsertRow(base, goal, false).goal_time_seconds, null);
   assertEquals(goalInsertRow(base, goal, false).goal_type, "finish");
   assertEquals(goalInsertRow(base, goal, true).goal_time_seconds, null);
+});
+
+Deno.test("only a time goal (or an untyped legacy goal) requires a target time", () => {
+  for (const t of ["time", "Time", "", null, undefined]) assert(requiresTargetTime(t), String(t));
+  // 2026-10-14: an "unsure" intake right after Chicago could never be confirmed.
+  for (const t of ["finish", "just finish", "pr", "unsure", "Not sure"]) assert(!requiresTargetTime(t), String(t));
 });

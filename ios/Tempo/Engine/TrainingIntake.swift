@@ -91,6 +91,19 @@ struct IntakeAnswers: Equatable {
         }
     }
 
+    /// Whether a plan for this goal can't be built without a target time. Only a stated time
+    /// goal needs one — and a nil type, which is how every goal before the intake (#102) and
+    /// every plain chat proposal arrives. "A PR" and "Not sure" ask the coach to *propose* a
+    /// target, but right after a race there is often nothing honest to propose; the plan
+    /// engine then paces from current fitness exactly as it does for "Just finish".
+    ///
+    /// The scar: until 2026-10-14 only "finish" could go without a time. David's first intake
+    /// after Chicago said "Not sure", the coach (rightly) proposed no time, and Confirm failed
+    /// on the phone without ever reaching `/plan`.
+    static func requiresTargetTime(_ goalType: String?) -> Bool {
+        goalType == nil || goalType == GoalType.time.rawValue
+    }
+
     enum PlanStyle: String, CaseIterable {
         case full, weekly, none
         var label: String {
@@ -222,6 +235,14 @@ struct IntakeAnswers: Equatable {
             case .raceTooSoonForPlan:
                 return "Under two weeks out is too close to build a plan — choose No plan, just coaching."
             }
+        }
+
+        /// `message` in the athlete's unit (#109). Only the weekly-volume bound names a
+        /// length; it is checked in miles (the answer is stored in miles) and said in km.
+        func message(_ units: Units) -> String {
+            guard self == .weeklyMilesOutOfRange, units != .mi else { return message }
+            let top = Int(units.distance(miles: IntakeAnswers.weeklyMilesRange.upperBound).rounded(.down))
+            return "Weekly \(units.abbreviation) should be between 0 and \(top)."
         }
     }
 
@@ -401,7 +422,7 @@ struct IntakeStamp: Codable, Equatable {
     /// Whether a create_plan card's goal time is enough to build on. Every goal type needs
     /// one except "just finish", which `plan` builds from current fitness instead.
     func accepts(goalTimeS: Int?) -> Bool {
-        goal_type == IntakeAnswers.GoalType.finish.rawValue || goalTimeS != nil
+        goalTimeS != nil || !IntakeAnswers.requiresTargetTime(goal_type)
     }
 
     var profilePatch: ProfilePatch {
@@ -525,7 +546,7 @@ struct PlanRequest: Encodable, Equatable {
             r.goal_time_s = nil
             return r
         }
-        return r.goal_time_s == nil ? nil : r
+        return r.goal_time_s == nil && IntakeAnswers.requiresTargetTime(r.goal_type) ? nil : r
     }
 
     /// Whether the active goal can be rebuilt after a settings change: it needs a race date,
@@ -534,7 +555,7 @@ struct PlanRequest: Encodable, Equatable {
     /// one, wrong once "just finish" exists.
     static func canRegenerate(_ goal: GoalInfo) -> Bool {
         !goal.raceDate.isEmpty
-            && (goal.goalTimeSeconds != nil || goal.goal_type == IntakeAnswers.GoalType.finish.rawValue)
+            && (goal.goalTimeSeconds != nil || !IntakeAnswers.requiresTargetTime(goal.goal_type))
     }
 
     /// Whole weeks from the plan's first Monday to this week's. Zero when unknown or ahead.
@@ -561,7 +582,10 @@ extension IntakeAnswers {
     /// Visible rather than a hidden kickoff, so the coach's reflect-back answers a message
     /// that is actually in the history — and so a relaunch, or David scrolling back a month
     /// later, shows what was asked for beside what was proposed.
-    func transcriptLine(calendar: Calendar) -> String {
+    ///
+    /// Written in the athlete's unit, since it is their turn in the chat. The answers
+    /// themselves stay in miles (`currentWeeklyMiles`, the 20/12-mile bar).
+    func transcriptLine(calendar: Calendar, units: Units = .mi) -> String {
         var lines: [String] = []
 
         let distanceText = distance == .custom
@@ -584,13 +608,13 @@ extension IntakeAnswers {
 
         if situation == .midBlock, let week = startedWeek {
             var mid = "Already mid-block: week \(week)"
-            if let miles = currentWeeklyMiles { mid += ", ~\(Int(miles.rounded())) mi a week" }
+            if let miles = currentWeeklyMiles { mid += ", ~\(Int(units.distance(miles: miles).rounded())) \(units.abbreviation) a week" }
             lines.append(mid)
         }
 
         var plan = "Plan: \(planStyle.label.lowercased()), \(daysPerWeek) days a week, long run \(Self.weekday(longRunDay))"
         if asksLongRunCount, let threshold = distance.longRunThresholdMiles {
-            plan += ", \(longRunCount)× \(threshold)+ mi"
+            plan += ", \(longRunCount)× \(units.longRunThresholdLabel(miles: threshold))"
         }
         lines.append(plan)
 

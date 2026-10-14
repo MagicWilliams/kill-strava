@@ -61,7 +61,9 @@ enum TakeawayService {
             zone_minutes: d.map { $0.zoneSeconds.map { ($0 / 60 * 10).rounded() / 10 } },
             elev_gain_ft: d?.elevGainM.map { Int($0 * 3.28084) },
             cadence_spm: d?.cadenceSPM,
-            splits: d.map { $0.splits.map { s in "mi \(s.id): \(PaceModel.format(s.paceSec))\(s.avgHR.map { " @ \($0) bpm" } ?? "")" } },
+            // In the athlete's unit (#109): the coach cites splits by number, and "km 7" can't be
+            // converted out of a mile table.
+            splits: d.map { $0.splits(store.units).map { s in "\(store.units.abbreviation) \(s.id): \(PaceModel.format(s.paceSec))\(s.avgHR.map { " @ \($0) bpm" } ?? "")" } },
             corrected_note: row?.correction_note
         )
 

@@ -100,13 +100,13 @@ struct WeekWidgetView: View {
                 }
                 Spacer(minLength: 4)
                 HStack(alignment: .firstTextBaseline, spacing: 4) {
-                    Text(Fmt.miles(week.miles))
+                    Text(Fmt.miles(week.miles, week.units))
                         .font(Tokens.Font.display(40))
                         .minimumScaleFactor(0.6)
                         .lineLimit(1)
                         .foregroundStyle(Tokens.Palette.textPrimary)
                         .widgetAccentable()
-                    Text("mi")
+                    Text(week.units.abbreviation)
                         .font(Tokens.Font.mono(13))
                         .foregroundStyle(Tokens.Palette.textSecondary)
                 }
@@ -125,8 +125,8 @@ struct WeekWidgetView: View {
     /// otherwise — the same choice the Lock Screen gauge makes.
     private func comparison(_ week: WidgetSnapshot.Week) -> String {
         switch week.gaugeBasis {
-        case .plan:     return "OF \(Fmt.miles(week.gaugeTarget ?? 0)) PLANNED"
-        case .lastWeek: return "LAST WK \(Fmt.miles(week.gaugeTarget ?? 0))"
+        case .plan:     return "OF \(Fmt.miles(week.gaugeTarget ?? 0, week.units)) PLANNED"
+        case .lastWeek: return "LAST WK \(Fmt.miles(week.gaugeTarget ?? 0, week.units))"
         case nil:       return week.lastWeekMiles == nil ? " " : "LAST WK 0.0"
         }
     }
@@ -145,9 +145,9 @@ struct WeekWidgetView: View {
         case .current(let week):
             if week.gaugeTarget != nil {
                 Gauge(value: week.gaugeFraction) {
-                    Text("mi")
+                    Text(week.units.abbreviation)
                 } currentValueLabel: {
-                    Text(Fmt.milesShort(week.miles))
+                    Text(Fmt.milesShort(week.miles, week.units))
                 }
                 .gaugeStyle(.accessoryCircularCapacity)
                 .widgetAccentable()
@@ -155,10 +155,10 @@ struct WeekWidgetView: View {
                 ZStack {
                     AccessoryWidgetBackground()
                     VStack(spacing: -2) {
-                        Text(Fmt.milesShort(week.miles))
+                        Text(Fmt.milesShort(week.miles, week.units))
                             .font(.system(size: 20, weight: .bold, design: .rounded))
                             .minimumScaleFactor(0.6)
-                        Text("mi").font(.system(size: 10, weight: .semibold))
+                        Text(week.units.abbreviation).font(.system(size: 10, weight: .semibold))
                     }
                 }
             }
@@ -182,8 +182,10 @@ struct WeekWidgetView: View {
         case .current(let week):
             VStack(alignment: .leading, spacing: 1) {
                 HStack(alignment: .firstTextBaseline, spacing: 3) {
-                    Text(Fmt.miles(week.miles)).font(.system(.title3, design: .rounded, weight: .bold))
-                    Text(week.gaugeBasis == .plan ? "/ \(Fmt.miles(week.gaugeTarget ?? 0)) mi" : "mi this week")
+                    Text(Fmt.miles(week.miles, week.units)).font(.system(.title3, design: .rounded, weight: .bold))
+                    Text(week.gaugeBasis == .plan
+                         ? "/ \(Fmt.miles(week.gaugeTarget ?? 0, week.units)) \(week.units.abbreviation)"
+                         : "\(week.units.abbreviation) this week")
                         .font(.caption)
                 }
                 .widgetAccentable()
@@ -191,7 +193,7 @@ struct WeekWidgetView: View {
                     Text("\(WidgetSnapshot.dayLabel(for: next.day, at: entry.date)) · \(next.name)")
                         .font(.caption.weight(.semibold))
                         .lineLimit(1)
-                    if let target = Fmt.target(next) {
+                    if let target = Fmt.target(next, week.units) {
                         Text(target).font(.caption).lineLimit(1)
                     }
                 } else {
@@ -251,7 +253,7 @@ struct CoachWidgetView: View {
             NeedsApp(title: "Open Tempo to refresh", detail: "Last synced \(asOf.formatted(.dateTime.weekday(.abbreviated).hour().minute()))")
         case .current(let week):
             VStack(alignment: .leading, spacing: 8) {
-                session(week.nextSession)
+                session(week.nextSession, units: week.units)
                 Rectangle().fill(Tokens.Palette.divider).frame(height: 0.5)
                 coach(week.coach)
                 Spacer(minLength: 0)
@@ -260,7 +262,7 @@ struct CoachWidgetView: View {
         }
     }
 
-    @ViewBuilder private func session(_ next: WidgetSnapshot.Session?) -> some View {
+    @ViewBuilder private func session(_ next: WidgetSnapshot.Session?, units: Units) -> some View {
         if let next {
             VStack(alignment: .leading, spacing: 2) {
                 Eyebrow("Next · \(WidgetSnapshot.dayLabel(for: next.day, at: entry.date))", color: Tokens.Palette.accentText)
@@ -271,7 +273,7 @@ struct CoachWidgetView: View {
                         .lineLimit(1)
                         .widgetAccentable()
                     Spacer(minLength: 6)
-                    if let target = Fmt.target(next) {
+                    if let target = Fmt.target(next, units) {
                         Text(target)
                             .font(Tokens.Font.mono(12))
                             .foregroundStyle(Tokens.Palette.textSecondary)
@@ -350,19 +352,24 @@ private struct NeedsApp: View {
     }
 }
 
+/// The snapshot counts in miles; these print in the snapshot's unit (#109), through the same
+/// `Units` the app formats with, so a widget and Today agree to the digit.
 private enum Fmt {
     /// One decimal, matching Today's "This week" card — the numbers are meant to be checked
     /// against each other.
-    static func miles(_ m: Double) -> String { String(format: "%.1f", m) }
+    static func miles(_ m: Double, _ units: Units) -> String { units.number(miles: m) }
 
-    /// For the 40-point circle: whole miles once there's no room for the decimal.
-    static func milesShort(_ m: Double) -> String { m >= 100 ? String(format: "%.0f", m) : String(format: "%.1f", m) }
+    /// For the 40-point circle: whole units once there's no room for the decimal.
+    static func milesShort(_ m: Double, _ units: Units) -> String {
+        units.number(miles: m, decimals: units.distance(miles: m) >= 100 ? 0 : 1)
+    }
 
-    /// "6.0 mi · 8:30 /mi", or the session's detail line when it has no numbers.
-    static func target(_ s: WidgetSnapshot.Session) -> String? {
+    /// "6.0 mi · 8:30 /mi" / "9.7 km · 5:17 /km", or the session's detail line when it has
+    /// no numbers.
+    static func target(_ s: WidgetSnapshot.Session, _ units: Units) -> String? {
         var parts: [String] = []
-        if let miles = s.targetMiles { parts.append(String(format: "%.1f mi", miles)) }
-        if let pace = s.targetPaceSec { parts.append(String(format: "%d:%02d /mi", pace / 60, pace % 60)) }
+        if let miles = s.targetMiles { parts.append(units.formatDistance(miles: miles)) }
+        if let pace = s.targetPaceSec { parts.append(units.formatPace(secondsPerMile: pace)) }
         return parts.isEmpty ? s.detail : parts.joined(separator: " · ")
     }
 }
@@ -382,7 +389,7 @@ extension WidgetSnapshot {
             weekTargetMiles: 40,
             nextWeekTargetMiles: 42,
             upcoming: [Session(day: tomorrow, type: "threshold", title: "Threshold repeats",
-                               targetMiles: 7, targetPaceSec: 425, detail: "3×1 mi @ 7:05")],
+                               targetMiles: 7, targetPaceSec: 425, detail: "3 reps at threshold, 2:00 jog")],
             coach: CoachLine(text: "Even splits on a warm morning — that's the aerobic base showing. Keep tomorrow honest at threshold, not faster.", day: today)
         )
     }

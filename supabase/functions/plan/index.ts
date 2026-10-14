@@ -21,7 +21,7 @@ import {
   equivalentTime, fmtClock, fmtPace, generate, type Generated, MI, mondayOf, paceBasis, planWrites,
   racePlacement, readPreferences, sessionDate, type Shape, taperWeeksFor, trainingPaces,
 } from "./generator.ts";
-import { goalInsertRow, isFinishGoal, isMissingColumnError, resolveGoal } from "./goal.ts";
+import { goalInsertRow, isMissingColumnError, requiresTargetTime, resolveGoal } from "./goal.ts";
 
 const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
 const MODEL = "claude-sonnet-5";
@@ -213,8 +213,8 @@ Deno.serve(async (req) => {
       .order("created_at", { ascending: false }).limit(1).maybeSingle();
     const now = new Date();
     const goal = resolveGoal(body, (activeGoal ?? null) as Record<string, unknown> | null, now);
-    if (goal_time_s == null && !isFinishGoal(goal.goal_type)) {
-      return Response.json({ error: "goal_time_s required unless goal_type is finish" }, { status: 400 });
+    if (goal_time_s == null && requiresTargetTime(goal.goal_type)) {
+      return Response.json({ error: "goal_time_s required for a time goal" }, { status: 400 });
     }
     const prefs = readPreferences(goal.preferences, goal.course_type);
     const distance = goal.distance.profile;

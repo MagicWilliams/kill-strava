@@ -9,6 +9,7 @@ struct ChangesView: View {
     @EnvironmentObject private var store: RunStore
     @EnvironmentObject private var router: TabRouter
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.units) private var units
 
     private enum Load: Equatable { case loading, loaded, failed }
 
@@ -35,12 +36,13 @@ struct ChangesView: View {
             backButton
         }
         .toolbar(.hidden, for: .navigationBar)
-        .task { await reload() }
+        // Keyed on the unit: the entries are built as strings, so a flip has to rebuild them.
+        .task(id: units) { await reload() }
     }
 
     private func reload() async {
         do {
-            entries = try await ChangeLedgerService.load()
+            entries = try await ChangeLedgerService.load(units: units)
             load = .loaded
         } catch {
             Telemetry.error("ledger.unreadable", error)

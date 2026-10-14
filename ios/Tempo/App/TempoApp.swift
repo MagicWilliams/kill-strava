@@ -13,6 +13,9 @@ struct TempoApp: App {
             RootTabView()
                 .environmentObject(runs)
                 .environmentObject(router)
+                // Every distance and pace below reads this (#109). Flipping it on the You tab
+                // re-renders the whole tree in the new unit.
+                .environment(\.units, runs.units)
                 .task { await runs.start() }
                 // Widget taps (#76): Week opens Today, Coach opens the Coach tab.
                 .onOpenURL { url in

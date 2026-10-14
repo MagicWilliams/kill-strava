@@ -102,6 +102,7 @@ struct BlockReviewView: View {
     @EnvironmentObject private var store: RunStore
     @EnvironmentObject private var router: TabRouter
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.units) private var units
 
     /// Local, because closing changes it here and now — and because once the store reloads
     /// after a close, `store.goal` is no longer this block.
@@ -295,7 +296,8 @@ struct BlockReviewView: View {
     // MARK: - Weeks
 
     private func weeksCard(_ r: BlockReview.Review) -> some View {
-        let top = max(r.weeks.map { max($0.actualMiles, $0.plannedMiles ?? 0) }.max() ?? 0, 10)
+        // In the athlete's unit, with the same 10 mi floor in either.
+        let top = units.distance(miles: max(r.weeks.map { max($0.actualMiles, $0.plannedMiles ?? 0) }.max() ?? 0, 10))
         let hasPlan = r.weeks.contains { $0.plannedMiles != nil }
         return Card {
             HStack {
@@ -308,15 +310,15 @@ struct BlockReviewView: View {
             }
             Chart {
                 ForEach(r.weeks) { w in
-                    BarMark(x: .value("Week", w.index + 1), y: .value("Miles", w.actualMiles), width: .ratio(0.6))
+                    BarMark(x: .value("Week", w.index + 1), y: .value("Distance", units.distance(miles: w.actualMiles)), width: .ratio(0.6))
                         .foregroundStyle(w.isRaceWeek ? Tokens.Palette.info : Tokens.Palette.voltMark)
                         .cornerRadius(3)
                 }
                 ForEach(r.weeks.filter { $0.plannedMiles != nil }) { w in
-                    LineMark(x: .value("Week", w.index + 1), y: .value("Planned", w.plannedMiles ?? 0))
+                    LineMark(x: .value("Week", w.index + 1), y: .value("Planned", units.distance(miles: w.plannedMiles ?? 0)))
                         .foregroundStyle(Tokens.Palette.textTertiary)
                         .lineStyle(StrokeStyle(lineWidth: 1.5, dash: [4, 3]))
-                    PointMark(x: .value("Week", w.index + 1), y: .value("Planned", w.plannedMiles ?? 0))
+                    PointMark(x: .value("Week", w.index + 1), y: .value("Planned", units.distance(miles: w.plannedMiles ?? 0)))
                         .foregroundStyle(Tokens.Palette.textTertiary)
                         .symbolSize(14)
                 }
@@ -338,7 +340,7 @@ struct BlockReviewView: View {
             .frame(height: 170)
             Text(planSide == nil && !loading
                  ? "Couldn't load the plan, so this is the \(RaceRecap.blockWeeks) weeks before race day without targets."
-                 : "Race week in blue — its miles stop the day before the race.")
+                 : "Race week in blue — its \(units.name(plural: true)) stop the day before the race.")
                 .font(Tokens.Font.ui(12)).foregroundStyle(Tokens.Palette.textTertiary)
         }
     }
@@ -354,14 +356,15 @@ struct BlockReviewView: View {
 
     private func tiles(_ r: BlockReview.Review) -> some View {
         var t: [(String, String)] = [
-            (String(format: "%.0f mi", r.totalMiles), "Total · \(r.runCount) runs"),
-            (r.peakWeek.map { String(format: "%.1f mi", $0.actualMiles) } ?? "—",
+            (units.formatDistance(miles: r.totalMiles, decimals: 0), "Total · \(r.runCount) runs"),
+            (r.peakWeek.map { units.formatDistance(miles: $0.actualMiles) } ?? "—",
              "Peak week" + (r.peakWeek.map { " · W\($0.index + 1)" } ?? "")),
-            (r.longest.map { String(format: "%.1f mi", $0.miles) } ?? "—",
+            (r.longest.map { units.formatDistance(meters: Double($0.distanceM), decimals: 1) } ?? "—",
              "Longest" + (r.longest.map { " · " + $0.start.formatted(.dateTime.month(.abbreviated).day()) } ?? "")),
         ]
         if r.showsLongRunCount {
-            t.append(("\(r.twentyPlusCount)", "Runs of 20+ mi"))
+            // 20 mi or 32 km, counted against the label it sits under.
+            t.append(("\(r.longRunCount(units))", "Runs of \(units.longRunThresholdLabel)"))
         } else {
             t.append(("\(r.quality.done)", "Quality sessions done"))
         }
@@ -369,7 +372,7 @@ struct BlockReviewView: View {
         t.append((percent(r.quality.fraction), "Quality · \(r.quality.done)/\(r.quality.planned)"))
         t.append((percent(r.long.fraction), "Long runs · \(r.long.done)/\(r.long.planned)"))
         t.append((r.taper.map { String(format: "%.0f%%", $0.drop * 100) } ?? "—",
-                  "Taper" + (r.taper.map { String(format: " · %.0f → %.0f mi", $0.peakMiles, $0.raceWeekMiles) } ?? "")))
+                  "Taper" + (r.taper.map { " · \(units.number(miles: $0.peakMiles, decimals: 0)) → \(units.formatDistance(miles: $0.raceWeekMiles, decimals: 0))" } ?? "")))
         return LazyVGrid(columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)], spacing: 10) {
             ForEach(Array(t.enumerated()), id: \.offset) { _, tile in
                 StatTile(value: tile.0, label: tile.1)
@@ -431,7 +434,7 @@ struct BlockReviewView: View {
                 HStack {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Race recap").font(Tokens.Font.ui(15, .semibold)).foregroundStyle(Tokens.Palette.textPrimary)
-                        Text(run.metricsLine).font(Tokens.Font.mono(12)).foregroundStyle(Tokens.Palette.textSecondary)
+                        Text(run.metricsLine(units)).font(Tokens.Font.mono(12)).foregroundStyle(Tokens.Palette.textSecondary)
                     }
                     Spacer()
                     Image(systemName: "chevron.right").foregroundStyle(Tokens.Palette.textTertiary)
@@ -495,6 +498,7 @@ struct CloseBlockSheet: View {
     let onClosed: (GoalInfo) -> Void
 
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.units) private var units
     @State private var outcome: BlockCloseout.Outcome = .raced
     @State private var timeText: String
     @State private var logAsRun = false
@@ -566,15 +570,14 @@ struct CloseBlockSheet: View {
                 .autocorrectionDisabled()
                 .focused($timeFocused)
             if let s = parsed {
-                let pace = Int((Double(s) / (raceMeters / RaceRecap.metersPerMile)).rounded())
-                Text("\(PaceModel.formatFinish(s)) · \(PaceModel.format(pace)) /mi")
+                Text("\(PaceModel.formatFinish(s)) · \(units.formatPace(seconds: Double(s), meters: raceMeters))")
                     .mono(12, Tokens.Palette.textSecondary)
             } else if !timeText.isEmpty {
                 Text("Type it as h:mm:ss — e.g. 3:28:15.")
                     .font(Tokens.Font.ui(12)).foregroundStyle(Tokens.Palette.warning)
             }
             if let raceRun {
-                Text("Pre-filled from your race-day run (\(raceRun.metricsLine)) — that's the watch clock. Swap in the chip time if it differs.")
+                Text("Pre-filled from your race-day run (\(raceRun.metricsLine(units))) — that's the watch clock. Swap in the chip time if it differs.")
                     .font(Tokens.Font.ui(12)).foregroundStyle(Tokens.Palette.textTertiary)
             } else {
                 Text("No race run in your history — enter the time from the results page.")
@@ -587,8 +590,7 @@ struct CloseBlockSheet: View {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Also log it as a run")
                             .font(Tokens.Font.ui(15, .semibold)).foregroundStyle(Tokens.Palette.textPrimary)
-                        Text(String(format: "%.1f mi at the finish time, so it counts in your history and totals.",
-                                    raceMeters / RaceRecap.metersPerMile))
+                        Text("\(units.formatDistance(meters: raceMeters, decimals: 1)) at the finish time, so it counts in your history and totals.")
                             .font(Tokens.Font.ui(12)).foregroundStyle(Tokens.Palette.textSecondary)
                     }
                 }

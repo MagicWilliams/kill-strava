@@ -4,6 +4,7 @@ struct TodayView: View {
     @EnvironmentObject private var store: RunStore
     @EnvironmentObject private var router: TabRouter
     @Environment(\.zoomNamespace) private var zoom
+    @Environment(\.units) private var units
 
     var body: some View {
         Screen(title: "Today", subtitle: Date.now.formatted(.dateTime.weekday(.wide).month(.wide).day())) {
@@ -132,8 +133,8 @@ struct TodayView: View {
                 }
             }
             HStack(spacing: 18) {
-                if let miles = s.targetMiles { metric("DISTANCE", String(format: "%.1f mi", miles)) }
-                if let pace = s.target_pace_sec { metric("TARGET", PaceModel.format(pace) + " /mi") }
+                if let m = s.target_distance_m { metric("DISTANCE", units.formatDistance(meters: Double(m), decimals: 1)) }
+                if let pace = s.target_pace_sec { metric("TARGET", units.formatPace(secondsPerMile: pace)) }
             }
             if s.status == "done" {
                 doneRow(s)
@@ -231,7 +232,7 @@ struct TodayView: View {
     private func doneRow(_ s: SessionInfo) -> some View {
         HStack(spacing: 8) {
             Image(systemName: "checkmark.circle.fill").foregroundStyle(Tokens.Palette.success)
-            Text(store.matchedRun(for: s).map { String(format: "Done — %.1f mi logged", $0.miles) } ?? "Done")
+            Text(store.matchedRun(for: s).map { "Done — \(units.formatDistance(meters: Double($0.distanceM), decimals: 1)) logged" } ?? "Done")
                 .font(Tokens.Font.ui(13, .semibold)).foregroundStyle(Tokens.Palette.success)
             Spacer()
             if let run = store.matchedRun(for: s) {
@@ -267,19 +268,19 @@ struct TodayView: View {
                 if store.phase == .loading {
                     ProgressView().controlSize(.small).tint(Tokens.Palette.textTertiary)
                 } else {
-                    Text("LAST WK \(store.lastWeekMiles, specifier: "%.1f")")
+                    Text("LAST WK \(units.number(miles: store.lastWeekMiles))")
                         .font(Tokens.Font.mono(11)).tracking(1.2)
                         .foregroundStyle(Tokens.Palette.textTertiary)
-                        .rolling(store.lastWeekMiles)
+                        .rolling(units.distance(miles: store.lastWeekMiles))
                 }
             }
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 // The number rolls rather than snapping. A pull-to-refresh that changed
                 // nothing and one that never landed look identical when digits just swap.
-                Text("\(store.thisWeekMiles, specifier: "%.1f")")
+                Text(units.number(miles: store.thisWeekMiles))
                     .display(38)
-                    .rolling(store.thisWeekMiles)
-                Text("mi").font(Tokens.Font.mono(15)).foregroundStyle(Tokens.Palette.textSecondary)
+                    .rolling(units.distance(miles: store.thisWeekMiles))
+                Text(units.abbreviation).font(Tokens.Font.mono(15)).foregroundStyle(Tokens.Palette.textSecondary)
                 Spacer()
                 weekDelta
             }
@@ -295,7 +296,7 @@ struct TodayView: View {
     }
 
     @ViewBuilder private var weekDelta: some View {
-        let delta = store.thisWeekMiles - store.lastWeekMiles
+        let delta = units.distance(miles: store.thisWeekMiles - store.lastWeekMiles)
         if store.phase == .ready, abs(delta) >= 0.1 {
             Tag(
                 text: String(format: "%+.1f vs last wk", delta),
@@ -352,7 +353,7 @@ struct TodayView: View {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(relativeDay(run.start))
                                     .font(Tokens.Font.ui(15, .semibold)).foregroundStyle(Tokens.Palette.textPrimary)
-                                Text(run.metricsLine)
+                                Text(run.metricsLine(units))
                                     .font(Tokens.Font.mono(12)).foregroundStyle(Tokens.Palette.textSecondary)
                             }
                             Spacer()
