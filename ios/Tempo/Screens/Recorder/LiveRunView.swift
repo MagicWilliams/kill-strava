@@ -270,10 +270,12 @@ struct LiveRunLayout: View {
 // MARK: - Run over
 
 /// The minimum between the end of a run and the save screen (#129), so a run that reaches it
-/// before #129 lands is never stranded: Save puts it in Health with no journal, which is what
-/// a race does anyway. #129 replaces this view wholesale.
+/// before #129 and #128 land is never stranded: Save puts it in Health with no journal, which
+/// is what a race does anyway, and Discard asks once more first (#128: "Discard needs a
+/// second confirmation"). #129 replaces this view wholesale.
 private struct RunEndedHandOff: View {
     @Environment(WorkoutRecorder.self) private var recorder
+    @State private var confirmingDiscard = false
 
     var body: some View {
         let snapshot = recorder.snapshot
@@ -289,6 +291,7 @@ private struct RunEndedHandOff: View {
             switch snapshot.phase {
             case .ending(.review):
                 PrimaryButton(title: "Save to Apple Health") { recorder.send(.endConfirmed) }
+                QuietButton(title: "Discard") { confirmingDiscard = true }
             case .ending(.saving):
                 PrimaryButton(title: "Saving\u{2026}", loading: true)
             case .ending(.failed(let reason)):
@@ -297,12 +300,19 @@ private struct RunEndedHandOff: View {
                     .foregroundStyle(Tokens.Palette.danger)
                     .multilineTextAlignment(.center)
                 PrimaryButton(title: "Try again") { recorder.send(.endConfirmed) }
+                QuietButton(title: "Discard") { confirmingDiscard = true }
             default:
-                // Back to idle closes the cover (#126's contract).
+                // Back to idle closes the cover (`PreRun.screen(for:)`, #126).
                 PrimaryButton(title: "Done") { recorder.reset() }
             }
         }
         .padding(Tokens.Space.xl2)
+        .confirmationDialog("Discard this run?", isPresented: $confirmingDiscard, titleVisibility: .visible) {
+            Button("Discard run", role: .destructive) { recorder.send(.discard(.liveScreen)) }
+            Button("Keep it", role: .cancel) {}
+        } message: {
+            Text("It won't be saved to Apple Health or Tempo.")
+        }
     }
 }
 

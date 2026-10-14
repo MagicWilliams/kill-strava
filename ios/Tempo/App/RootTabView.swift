@@ -51,10 +51,14 @@ final class TabRouter: ObservableObject {
     @Published var coachDraft: String?
     /// The training intake (#102), presented over the whole app by `.trainingIntake(...)`.
     @Published var trainingIntakeShown = false
-    /// The run being recorded, full-screen over everything (#127). Not a `Route`: a pushed
-    /// screen can be swiped away, and a live run must not be one edge-swipe from vanishing
-    /// behind the tab bar with the clock still going.
-    @Published var liveRun: WorkoutRecorder?
+    /// The pre-run sheet (#126), presented over the whole app by `.runRecorder(...)`.
+    @Published var preRun: PreRun.Request?
+    /// The sheet's answers, waiting for it to finish leaving before `.start` is sent.
+    var pendingStart: RecorderState.Setup?
+    /// The last sheet opened, to come back to when a countdown is cancelled.
+    var lastPreRun: PreRun.Request?
+    /// Set by the countdown's Cancel: re-open `lastPreRun` once the cover is gone.
+    var reopenPreRun = false
 
     func openRun(_ run: RunSummary) { path.append(.run(run)) }
     func openReadiness() { path.append(.readiness) }
@@ -64,19 +68,6 @@ final class TabRouter: ObservableObject {
     func openChanges() { path.append(.changes) }
     func openOverlapReview() { path.append(.overlapReview) }
     func openBlockReview(_ goal: GoalInfo) { path.append(.blockReview(goal)) }
-
-    /// The one way onto the live run screen: the Start flow (#126) calls this once
-    /// `recorder` has been sent `.start`.
-    func openLiveRun(_ recorder: WorkoutRecorder) { liveRun = recorder }
-
-    /// Off the live run screen, once the run is over (saved or discarded). A run still being
-    /// recorded can't be closed away: only the athlete ends a run, and he does it with
-    /// hold-to-end, not by navigating.
-    func closeLiveRun() {
-        guard let recorder = liveRun, !recorder.state.isLive else { return }
-        recorder.reset()
-        liveRun = nil
-    }
 
     /// Land on the Coach tab scrolled to one message.
     func showCoachMessage(_ id: UUID) {
@@ -89,6 +80,14 @@ final class TabRouter: ObservableObject {
     /// answers to the coach itself: see `View.trainingIntake(router:store:)`.
     func trainForSomething() {
         trainingIntakeShown = true
+    }
+
+    /// The Start button on Today (#126): open the pre-run sheet. The one way into a recorded
+    /// run; the countdown and the live screen follow the recorder from there.
+    func startRun(_ request: PreRun.Request) {
+        lastPreRun = request
+        reopenPreRun = false
+        preRun = request
     }
 
     /// Pop everything and land on a tab (e.g. "Discuss with Coach").
@@ -106,6 +105,7 @@ final class TabRouter: ObservableObject {
 struct RootTabView: View {
     @EnvironmentObject private var router: TabRouter
     @EnvironmentObject private var store: RunStore
+    @Environment(WorkoutRecorder.self) private var recorder
 
     /// Owned here because a zoom push needs both ends in one namespace, and the two ends live
     /// in different places: the card is on a tab, the destination is in `navigationDestination`.
@@ -162,16 +162,7 @@ struct RootTabView: View {
         }
         .environment(\.zoomNamespace, zoom)
         .trainingIntake(router: router, store: store)
-        .fullScreenCover(item: $router.liveRun) { recorder in
-            LiveRunView()
-                .environment(recorder)
-                .environmentObject(router)
-                .environmentObject(store)
-                // Done on the live screen resets the recorder; back at idle, the cover goes.
-                .onChange(of: recorder.state.phase == .idle) { _, idle in
-                    if idle { router.liveRun = nil }
-                }
-        }
+        .runRecorder(router: router, recorder: recorder)
     }
 
     @ViewBuilder private var content: some View {
@@ -184,9 +175,6 @@ struct RootTabView: View {
         }
     }
 }
-
-/// One recorder is one cover: `fullScreenCover(item:)` keys on the instance.
-extension WorkoutRecorder: Identifiable {}
 
 struct TempoTabBar: View {
     @Binding var selection: Tab
@@ -303,15 +291,19 @@ struct LaunchErrorView: View {
 }
 
 #Preview("Light") {
+    let store = RunStore()
     RootTabView()
         .environmentObject(TabRouter())
-        .environmentObject(RunStore())
+        .environmentObject(store)
+        .environment(WorkoutRecorder(store: store))
         .preferredColorScheme(.light)
 }
 
 #Preview("Dark") {
+    let store = RunStore()
     RootTabView()
         .environmentObject(TabRouter())
-        .environmentObject(RunStore())
+        .environmentObject(store)
+        .environment(WorkoutRecorder(store: store))
         .preferredColorScheme(.dark)
 }
