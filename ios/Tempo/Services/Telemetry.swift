@@ -58,6 +58,15 @@ enum Telemetry {
         log(.error, event, String(describing: error).prefix(300).description, context: ctx)
     }
 
+    /// Sends recorder lines built by `RecorderTelemetry` (#131), whose names and keys live there.
+    static func log(_ lines: [RecorderTelemetry.Line]) {
+        for line in lines { log(line) }
+    }
+
+    static func log(_ line: RecorderTelemetry.Line) {
+        log(line.level, line.event.rawValue, line.detail, context: line.context)
+    }
+
     enum Level: String { case info, warn, error }
 
     // MARK: - Private
