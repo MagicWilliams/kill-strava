@@ -806,6 +806,11 @@ struct CoachContext: Encodable {
         let stopped_min: Int?
         let avg_hr: Int?
         let corrected: Bool
+        /// What the athlete said after the run (#123), each absent when he didn't say it —
+        /// see `CoachJournal`. Notes are his free text: they go here and never to telemetry.
+        let rpe: Int?
+        let feel_tags: [String]?
+        let notes: String?
     }
     struct WeekCtx: Encodable {
         let week_of: String
@@ -935,7 +940,10 @@ extension RunStore {
                     pace_per_mile: $0.paceSecPerMile.map(PaceModel.format),
                     stopped_min: $0.clocks.hasMeaningfulStop ? $0.clocks.stoppedS / 60 : nil,
                     avg_hr: $0.avgHR,
-                    corrected: $0.corrected
+                    corrected: $0.corrected,
+                    rpe: CoachJournal($0.journal).rpe,
+                    feel_tags: CoachJournal($0.journal).feelTags,
+                    notes: CoachJournal($0.journal).notes
                 )
             },
             weekly_mileage: weeklySummaries(8).map {
