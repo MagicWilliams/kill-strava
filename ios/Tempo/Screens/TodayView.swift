@@ -111,6 +111,7 @@ struct TodayView: View {
             Text("Rest day").display(24)
             Text("Recovery is training. Tomorrow's session banks what today absorbs.")
                 .font(Tokens.Font.ui(13)).foregroundStyle(Tokens.Palette.textSecondary)
+            startButton(session: nil)
         }
     }
 
@@ -144,9 +145,59 @@ struct TodayView: View {
             } else if store.todayCheckIn?.feelsOk == false {
                 Text("You flagged something's off today — the coach knows. Adjust or skip guilt-free.")
                     .font(Tokens.Font.ui(12)).foregroundStyle(Tokens.Palette.warning)
+            } else if store.todayCheckIn?.feelsOk == true {
+                HStack(spacing: 6) {
+                    Image(systemName: "checkmark").font(.system(size: 11, weight: .bold))
+                    Text("Checked in — good to go").font(Tokens.Font.ui(12, .semibold))
+                }
+                .foregroundStyle(Tokens.Palette.success)
             }
+            startButton(session: s)
         }
         .motion(Motion.reveal, value: s.status)
+    }
+
+    // MARK: - Start (#126)
+
+    /// The plan-aware Start, inside the card it starts (frames 1a–1c). What it says and how
+    /// loudly is `PreRun.startButton`; pressing it opens the pre-run sheet.
+    @ViewBuilder private func startButton(session: SessionInfo?) -> some View {
+        let cta = PreRun.startButton(
+            mode: store.todayMode,
+            session: session.map { RecorderState.SessionTarget($0) },
+            status: session?.status,
+            units: units
+        )
+        switch cta.style {
+        case .primary:
+            PrimaryButton(title: cta.title, icon: "play.fill") { startRun(cta) }
+                .padding(.top, 2)
+        case .secondary:
+            SecondaryButton(title: cta.title, icon: "play.fill") { startRun(cta) }
+                .padding(.top, 2)
+        }
+    }
+
+    private func startRun(_ cta: PreRun.StartButton) {
+        let raceEligible = PreRun.raceEligible(
+            raceDay: store.goal?.raceDay,
+            blockClosed: store.goal?.completed_at != nil,
+            now: .now
+        )
+        router.startRun(PreRun.Request(target: cta.target, raceEligible: raceEligible))
+    }
+
+    /// Just running (#101): nothing to name, so "Start a run", always there (frame 1b).
+    private var freeRunCard: some View {
+        Card(well: .accent) {
+            SectionLabel("Just running", color: Tokens.Palette.accentText)
+            Text("Run when it feels right").display(24)
+            Text(store.todayMode == .racePassed
+                 ? "The block is done. Every run still lands in your history and gets the coach's read."
+                 : "No plan in Just running mode. Every run still lands in your history and gets the coach's read.")
+                .font(Tokens.Font.ui(13)).foregroundStyle(Tokens.Palette.textSecondary)
+            startButton(session: nil)
+        }
     }
 
     private func sessionTag(_ s: SessionInfo) -> Tag {
@@ -381,6 +432,7 @@ struct TodayView: View {
     /// "No plan yet" card. Newest first, the way a feed reads — the run you just did, what
     /// the coach made of it, where that leaves you, then the longer view.
     @ViewBuilder private var justRunning: some View {
+        freeRunCard
         lastRun
         coachRead
         FreshnessCard(metrics: store.fitness) { router.openReadiness() }
