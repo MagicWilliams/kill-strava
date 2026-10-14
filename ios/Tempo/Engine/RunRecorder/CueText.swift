@@ -68,6 +68,15 @@ enum CueText {
     /// Auto-pause saw him moving again and restarted the clock (#113).
     static let autoResumed = "Resumed."
 
+    /// The cue for an `AutoPause.Decision`, so the service speaks from the same value it
+    /// dispatches to the reducer and the two can't drift apart.
+    static func autoPause(_ decision: AutoPause.Decision) -> String {
+        switch decision {
+        case .pause: return autoPaused
+        case .resume: return autoResumed
+        }
+    }
+
     /// The race-distance cue (#117): "Twenty-six point two miles. Three hours, five minutes,
     /// forty-two seconds. Average six fifty-nine. GPS reads long, so the finish is still
     /// ahead. Keep going."
