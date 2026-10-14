@@ -4,7 +4,10 @@ import SwiftUI
 struct TempoApp: App {
     @StateObject private var runs: RunStore
     @StateObject private var router = TabRouter()
-    /// The one run recorder (#114), app-wide: a run outlives any screen it was started from.
+    /// The one recorder (#114), for the life of the app: a run outlives every screen, tab
+    /// switch and sheet. Built on the same store the save path writes into. The same
+    /// instance recovers a killed run at launch (#115) and drives the live screen, so a
+    /// recovered session is never adopted by a recorder the screens can't see.
     @State private var recorder: WorkoutRecorder
 
     init() {
@@ -14,7 +17,8 @@ struct TempoApp: App {
         _recorder = State(initialValue: recorder)
         // Kill recovery (#115) starts with the process, not with a view: when iOS relaunches
         // Tempo for a workout session it killed, there may be no scene on screen to run a
-        // `.task`, and the session is waiting to be picked back up either way.
+        // `.task`, and the session is waiting to be picked back up either way. What it finds
+        // is shown by `.runRecorder(...)`, the one place recorder screens are presented.
         Task { @MainActor in await recorder.recoverAtLaunch() }
     }
 
@@ -31,14 +35,6 @@ struct TempoApp: App {
                 // re-renders the whole tree in the new unit.
                 .environment(\.units, runs.units)
                 .task { await runs.start() }
-                // "We kept your run" (#115) — a placeholder until #128's prompt lands.
-                .sheet(isPresented: Binding(
-                    get: { recorder.recovered != nil },
-                    set: { if !$0 { recorder.acknowledgeRecovery() } }
-                )) {
-                    RecoveredRunSheet(recorder: recorder)
-                        .environment(\.units, runs.units)
-                }
                 // Widget taps (#76): Week opens Today, Coach opens the Coach tab.
                 .onOpenURL { url in
                     switch WidgetLink(url: url) {

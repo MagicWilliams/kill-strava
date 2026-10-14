@@ -1056,6 +1056,47 @@ final class WorkoutRecorderTests: XCTestCase {
         XCTAssertTrue(persisted.isEmpty)
     }
 
+    /// One recorder, not two (#126 and #115 both reach for it): the instance that recovers a
+    /// killed run at launch is the one the cover shows and the live screen's buttons drive.
+    /// A session adopted by a recorder the screens can't see would be a run nobody can end.
+    func testTheRecorderThatRecoversIsTheOneTheLiveScreenDrives() async throws {
+        let before = await started()
+        run(before, line(from: 0, seconds: 300, secPerKm: 300))
+        let killed = try lastSnapshot()
+        let (recovered, survivor) = survivor(of: killed, healthHas: session.distanceWritten)
+
+        now = t(360)
+        location = FakeLocation()
+        motion = FakeMotion()
+        cues = FakeCues()
+        let recorder = makeRecorder(recovery: RecoverySources(
+            loadSnapshot: { killed }, recoverSession: { recovered },
+            rescue: { _ in nil }, savedWorkout: { _ in nil }))
+        await recorder.recoverAtLaunch()
+
+        func screen() -> PreRun.Screen {
+            PreRun.screen(for: recorder.state.phase, recovered: recorder.recovered != nil)
+        }
+        XCTAssertEqual(screen(), .recovered, "the cover comes up with \"We kept your run\"")
+        recorder.acknowledgeRecovery()
+        XCTAssertEqual(screen(), .live, "Keep going: the same cover, now the live screen")
+
+        // The live screen's buttons and the GPS reach the recovered session through this
+        // same instance.
+        let atRecovery = recorder.snapshot.distanceM
+        run(recorder, line(from: 360, seconds: 120, secPerKm: 300, north0: 2000))
+        XCTAssertGreaterThan(recorder.snapshot.distanceM, atRecovery + 300)
+        now = t(481)
+        recorder.send(.pause(.manual(.liveScreen), at: now))
+        XCTAssertTrue(survivor.calls.contains(.pause(t(481))), "the pause button reaches the recovered session")
+        recorder.send(.endRequested(.liveScreen, at: now))
+        recorder.confirmSave()
+        await recorder.settled()
+        XCTAssertEqual(recorder.state.phase, .saved(workoutID: survivor.workoutID))
+        recorder.reset()
+        XCTAssertEqual(screen(), .none, "reset closes the cover")
+    }
+
     /// Nothing on disk outranks the run in front of him.
     func testAdoptNeverReplacesARunAlreadyUnderway() async throws {
         let recorder = await started()

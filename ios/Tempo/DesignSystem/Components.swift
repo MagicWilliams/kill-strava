@@ -155,6 +155,8 @@ struct Pressable: ButtonStyle {
 struct PrimaryButton: View {
     let title: String
     var loading = false
+    /// An SF Symbol before the label: `play.fill` on every Start (#126).
+    var icon: String? = nil
     var action: () -> Void = {}
 
     var body: some View {
@@ -162,6 +164,9 @@ struct PrimaryButton: View {
             HStack(spacing: 8) {
                 if loading {
                     ProgressView().controlSize(.small).tint(Tokens.Palette.onVolt)
+                } else if let icon {
+                    Image(systemName: icon).font(.system(size: 14, weight: .bold))
+                        .foregroundStyle(Tokens.Palette.onVolt)
                 }
                 Text(title)
                     .font(Tokens.Font.ui(16, .bold))
@@ -175,6 +180,50 @@ struct PrimaryButton: View {
         }
         .buttonStyle(Pressable())
         .disabled(loading)
+    }
+}
+
+/// `PrimaryButton`'s quieter sibling: same shape, an `elevated` fill, primary ink. For the
+/// action that should stay one tap away without asking for it — Start on a rest day (#126).
+struct SecondaryButton: View {
+    let title: String
+    var icon: String? = nil
+    var action: () -> Void = {}
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 8) {
+                if let icon {
+                    Image(systemName: icon).font(.system(size: 14, weight: .bold))
+                }
+                Text(title).font(Tokens.Font.ui(16, .bold))
+            }
+            .foregroundStyle(Tokens.Palette.textPrimary)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 16)
+            .background(Tokens.Palette.elevated)
+            .clipShape(RoundedRectangle(cornerRadius: Tokens.Radius.lg, style: .continuous))
+        }
+        .buttonStyle(Pressable())
+    }
+}
+
+/// A text-only button at the same size: the way out of a screen whose main action is a
+/// `PrimaryButton` above it (Cancel on the countdown, "Run on a treadmill instead").
+struct QuietButton: View {
+    let title: String
+    var action: () -> Void = {}
+
+    var body: some View {
+        Button(action: action) {
+            Text(title)
+                .font(Tokens.Font.ui(16, .bold))
+                .foregroundStyle(Tokens.Palette.textSecondary)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 16)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(Pressable())
     }
 }
 
