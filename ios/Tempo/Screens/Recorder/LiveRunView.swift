@@ -8,14 +8,12 @@ import SwiftUI
 /// through `send`: this view never decides anything about the run, it only shows it and
 /// passes his hands on.
 ///
-/// Opened by `TabRouter.openLiveRun(_:)`, which the Start flow (#126) calls once the
-/// recorder has a run; presented full-screen over the app so no swipe can leave a live run.
+/// The contract with the Start flow (#126, PR #169): `LiveRunView()` with no arguments,
+/// reading the app's one recorder from the environment. It is shown full-screen by
+/// `runRecorder(...)` whenever the recorder's phase calls for the live screen, so no swipe can
+/// leave a live run, and it goes away when the recorder is reset.
 struct LiveRunView: View {
-    let recorder: WorkoutRecorder
-
-    init(recorder: WorkoutRecorder) {
-        self.recorder = recorder
-    }
+    @Environment(WorkoutRecorder.self) private var recorder
 
     var body: some View {
         let snapshot = recorder.snapshot
@@ -33,7 +31,7 @@ struct LiveRunView: View {
                 LiveRunLayout(display: display, snapshot: snapshot, send: { recorder.send($0) })
             case .over:
                 // #129 replaces this with the save screen.
-                RunEndedHandOff(recorder: recorder)
+                RunEndedHandOff()
             }
         }
     }
@@ -275,8 +273,7 @@ struct LiveRunLayout: View {
 /// before #129 lands is never stranded: Save puts it in Health with no journal, which is what
 /// a race does anyway. #129 replaces this view wholesale.
 private struct RunEndedHandOff: View {
-    let recorder: WorkoutRecorder
-    @EnvironmentObject private var router: TabRouter
+    @Environment(WorkoutRecorder.self) private var recorder
 
     var body: some View {
         let snapshot = recorder.snapshot
@@ -301,7 +298,8 @@ private struct RunEndedHandOff: View {
                     .multilineTextAlignment(.center)
                 PrimaryButton(title: "Try again") { recorder.send(.endConfirmed) }
             default:
-                PrimaryButton(title: "Done") { router.closeLiveRun() }
+                // Back to idle closes the cover (#126's contract).
+                PrimaryButton(title: "Done") { recorder.reset() }
             }
         }
         .padding(Tokens.Space.xl2)

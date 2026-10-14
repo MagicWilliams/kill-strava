@@ -163,9 +163,14 @@ struct RootTabView: View {
         .environment(\.zoomNamespace, zoom)
         .trainingIntake(router: router, store: store)
         .fullScreenCover(item: $router.liveRun) { recorder in
-            LiveRunView(recorder: recorder)
+            LiveRunView()
+                .environment(recorder)
                 .environmentObject(router)
                 .environmentObject(store)
+                // Done on the live screen resets the recorder; back at idle, the cover goes.
+                .onChange(of: recorder.state.phase == .idle) { _, idle in
+                    if idle { router.liveRun = nil }
+                }
         }
     }
 
