@@ -91,12 +91,21 @@ export function resolveGoal(
   };
 }
 
-/// "Just finish" (#102 goal_type). The one goal type a plan may be built without a target
-/// time for: every other type is about a time, and a missing one there is a bad request,
-/// not a choice.
+/// "Just finish" (#102 goal_type).
 export function isFinishGoal(goalType: string | null | undefined): boolean {
   const t = (goalType ?? "").trim().toLowerCase().replace(/[^a-z]+/g, "_");
   return t === "finish" || t === "just_finish";
+}
+
+/// Whether a plan for this goal type needs a target time. Only a stated time goal does — and
+/// an absent type, which is how every goal before the intake arrives. "pr" and "unsure" ask
+/// the coach to propose a target, but right after a race there is often nothing honest to
+/// propose; paces then come from current fitness, as for "finish". Mirrors
+/// `IntakeAnswers.requiresTargetTime` in the app. Until 2026-10-14 only "finish" could go
+/// without a time, and an "unsure" intake could never be confirmed.
+export function requiresTargetTime(goalType: string | null | undefined): boolean {
+  const t = (goalType ?? "").trim().toLowerCase().replace(/[^a-z]+/g, "_");
+  return t === "" || t === "time";
 }
 
 /// The goals row to insert. `legacy` is the pre-0013 shape: the columns that existed before
