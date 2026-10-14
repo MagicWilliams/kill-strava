@@ -134,22 +134,37 @@ final class HealthService {
         // A recent run gets its heart rate in this same refresh, one update later —
         // a second the write no longer waits on.
         let inserts = kept.map { WorkoutRow.insert($0, userID: userID) }
-        try await Supa.client
+        // `.select()` is load-bearing, not decoration (#94). `ignoreDuplicates: true` drops
+        // a conflicting row server-side with no error and no row returned, so the response
+        // is the only thing that knows what was actually taken. Asking for `external_id`
+        // back turns that into an answer the report can be built from.
+        struct WrittenRow: Decodable { let external_id: String }
+        let returned: [WrittenRow] = try await Supa.client
             .from("runs")
             .upsert(inserts, onConflict: "user_id,source,external_id", ignoreDuplicates: true)
+            .select("external_id")
             .execute()
+            .value
 
         // Only reachable once the write has returned. #37 hid for weeks because the sole
         // number the app reported was computed before the upsert, so "kept 348" and "wrote
-        // 0" could disagree in silence. The date range is here because it settles what the
+        // 0" could disagree in silence. #51 moved this log below the upsert but kept
+        // computing the number from `kept`, so the disagreement simply moved down with it:
+        // six passes claimed 47 runs each while the table gained none. The number now comes
+        // from the server's answer. The date range is here because it settles what the
         // backlog actually is: one sync tells us whether those runs are the archive's
         // missing years or last week's.
-        let report = SyncPass.writeReport(for: kept)
+        let written = SyncPass.confirmedWrites(proposed: kept, writtenExternalIDs: returned.map(\.external_id))
+        let report = SyncPass.writeReport(for: written)
+        // `proposed` rides along so the two numbers disagreeing is visible in one row
+        // instead of inferred from the table's row count afterwards — that inference is
+        // what cost three days of triage on #94.
         Telemetry.info("sync.inserted", "runs written",
                        context: ["count": "\(report.count)",
+                                 "proposed": "\(kept.count)",
                                  "oldest": report.oldest ?? "-",
                                  "newest": report.newest ?? "-"])
-        return inserts.count
+        return written.count
     }
 
     /// The Garmin re-export signature — reported only when it is actually news.
