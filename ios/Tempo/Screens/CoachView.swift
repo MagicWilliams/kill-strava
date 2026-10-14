@@ -57,27 +57,40 @@ struct CoachView: View {
         return suggestions.filter { seen.insert($0).inserted }.prefix(3).map { $0 }
     }
 
+    /// Breathing room between the newest message and the composer, so the end of the
+    /// conversation reads as the end.
+    static let gapAboveComposer: CGFloat = 20
+    private static let bottomID = "coach.bottom"
+
     var body: some View {
         VStack(spacing: 0) {
             ScrollViewReader { proxy in
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 18) {
-                        header
-                        if !onboarding { changesRow }
-                        ForEach(Array(chat.messages.enumerated()), id: \.element.id) { index, msg in
-                            if index == 0 || !Calendar.current.isDate(msg.timestamp, inSameDayAs: chat.messages[index - 1].timestamp) {
-                                daySeparator(msg.timestamp)
+                    VStack(spacing: 0) {
+                        VStack(alignment: .leading, spacing: 18) {
+                            header
+                            if !onboarding { changesRow }
+                            ForEach(Array(chat.messages.enumerated()), id: \.element.id) { index, msg in
+                                if index == 0 || !Calendar.current.isDate(msg.timestamp, inSameDayAs: chat.messages[index - 1].timestamp) {
+                                    daySeparator(msg.timestamp)
+                                }
+                                messageRow(msg)
+                                    .id(msg.id)
                             }
-                            messageRow(msg)
-                                .id(msg.id)
+                            if chat.isThinking { thinking.id("thinking") }
                         }
-                        if chat.isThinking { thinking.id("thinking") }
+                        .padding(.horizontal, 20)
+                        .padding(.top, 8)
+                        .padding(.bottom, Self.gapAboveComposer)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        // Scroll target *below* the bottom padding. Scrolling to the last message
+                        // pinned that bubble's own bottom edge to the viewport and left the padding
+                        // off-screen, so the newest reply sat flush on the composer and read as if
+                        // more might be hidden beneath it (David, 2026-10-14).
+                        Color.clear.frame(height: 1).id(Self.bottomID)
                     }
-                    .padding(.horizontal, 20)
-                    .padding(.top, 8)
-                    .padding(.bottom, 16)
-                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
+                .defaultScrollAnchor(.bottom)
                 .scrollIndicators(.hidden)
                 .simultaneousGesture(
                     DragGesture(minimumDistance: 20)
@@ -91,14 +104,14 @@ struct CoachView: View {
                     // Arriving from What changed → "See in chat": land on that message, not
                     // the bottom.
                     if scrollToFocus(proxy) { return }
-                    if let last = msgs.last {
-                        withAnimation { proxy.scrollTo(last.id, anchor: .bottom) }
+                    if !msgs.isEmpty {
+                        withAnimation { proxy.scrollTo(Self.bottomID, anchor: .bottom) }
                     }
                 }
                 // The tab was already alive under the pushed ledger, so no reload will fire.
                 .onChange(of: router.coachFocus) { _, _ in _ = scrollToFocus(proxy) }
                 .onChange(of: chat.isThinking) { _, thinking in
-                    if thinking { withAnimation { proxy.scrollTo("thinking", anchor: .bottom) } }
+                    if thinking { withAnimation { proxy.scrollTo(Self.bottomID, anchor: .bottom) } }
                 }
             }
             if let error = chat.errorText {
