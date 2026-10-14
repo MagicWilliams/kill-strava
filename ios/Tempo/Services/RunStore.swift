@@ -273,6 +273,9 @@ final class RunStore: ObservableObject {
     struct OverlapDecisionRecord: Equatable {
         let resolution: RunDedupe.OverlapResolution
         let retiredRun: RunSummary?
+        /// What the ruling carried from the retired run's journal onto the kept one (#152),
+        /// so Undo can carry it back.
+        let journal: OverlapJournalMerge.Transfer
     }
 
     private func refreshOverlapReview() async {
@@ -294,17 +297,24 @@ final class RunStore: ObservableObject {
     ///
     /// On success the retired run leaves `runs` here and now, exactly as the next read would
     /// drop it (`superseded_by is not null`), so History's totals and records recompute
-    /// without a round trip through ~2,000 rows per tap.
+    /// without a round trip through ~2,000 rows per tap. Likewise the kept run takes on the
+    /// journal the ruling carried over to it (#152), so its shoe and notes show at once.
     func resolveOverlap(_ pair: RunDedupe.OverlapPair, _ verdict: RunDedupe.OverlapVerdict) async -> Bool {
         guard let resolution = RunDedupe.resolution(for: pair, verdict) else { return false }
-        guard await overlapService.record(resolution) else { return false }
+        guard let transfer = await overlapService.record(resolution) else { return false }
 
         overlapReview.reviewed.insert(resolution.key)
         var retiredRun: RunSummary?
         if let retire = resolution.retire, let i = runs.firstIndex(where: { $0.id == retire }) {
             retiredRun = runs.remove(at: i)
+            retiredRun?.journal = transfer.retired
         }
-        lastOverlapDecision = OverlapDecisionRecord(resolution: resolution, retiredRun: retiredRun)
+        if resolution.retire != nil, let kept = resolution.kept,
+           let i = runs.firstIndex(where: { $0.id == kept }) {
+            runs[i].journal = transfer.kept
+        }
+        lastOverlapDecision = OverlapDecisionRecord(resolution: resolution, retiredRun: retiredRun,
+                                                    journal: transfer)
         recomputeOverlaps()
         return true
     }
@@ -312,10 +322,17 @@ final class RunStore: ObservableObject {
     /// Take back the last ruling: the retired run returns and the pair is asked about again.
     func undoLastOverlapDecision() async -> Bool {
         guard let last = lastOverlapDecision else { return false }
-        guard await overlapService.undo(last.resolution) else { return false }
+        guard let journals = await overlapService.undo(last.resolution, journal: last.journal) else {
+            return false
+        }
 
         overlapReview.reviewed.remove(last.resolution.key)
-        if let run = last.retiredRun, !runs.contains(where: { $0.id == run.id }) {
+        if last.resolution.retire != nil, let kept = last.resolution.kept,
+           let i = runs.firstIndex(where: { $0.id == kept }) {
+            runs[i].journal = journals.kept
+        }
+        if var run = last.retiredRun, !runs.contains(where: { $0.id == run.id }) {
+            run.journal = journals.retired
             runs.append(run)
             runs.sort { $0.start > $1.start }
         }
