@@ -320,6 +320,49 @@ final class TrackMathTests: XCTestCase {
         XCTAssertNil(track.summary(unitMeters: km, now: start.addingTimeInterval(315)).currentPaceS)
     }
 
+    /// Pause after 1.1 km, walk 300 m to the next corner with the clock stopped, resume and
+    /// run another kilometre (#114). The walk is not running: with the track broken at
+    /// the resume it adds nothing, and the stop is a flat stretch of the curve rather than
+    /// a slow kilometre. Without the break the first fix after resuming is measured from the
+    /// last one before the pause, and 300 m of walking is credited as a straight line.
+    func testDistanceWhilePausedIsNotCredited() {
+        let pauseS = 180.0
+        let firstLeg = straightLine(meters: 1100, secPerKm: 300)
+        let pausedAt = firstLeg.last!.timestamp.timeIntervalSince(start)
+        let resumedAt = pausedAt + pauseS
+        let bearing = 37.0 * .pi / 180
+        // The corner he walked to: 300 m due east of where he stopped.
+        let corner = (east: 1100 * sin(bearing) + 300, north: 1100 * cos(bearing))
+        let secondLeg = stride(from: 0.0, through: 300, by: 1).map { s in
+            fix(t: resumedAt + s, east: corner.east + s * (1000.0 / 300), north: corner.north)
+        }
+
+        func run(breakingAtResume: Bool) -> TrackMath.Track {
+            var track = TrackMath.Track(start: start)
+            for f in firstLeg { track.ingest(f) }
+            if breakingAtResume { track.resumeAfterPause(at: start.addingTimeInterval(resumedAt)) }
+            for f in secondLeg { track.ingest(f) }
+            track.close()
+            return track
+        }
+
+        let broken = run(breakingAtResume: true)
+        let bridged = run(breakingAtResume: false)
+        print("[TrackMath] 300 m walked while paused: broken \(broken.distanceM) m, bridged \(bridged.distanceM) m")
+
+        XCTAssertEqual(broken.distanceM, 2100, accuracy: 20, "2.1 km run, nothing for the walk")
+        XCTAssertGreaterThan(bridged.distanceM, 2350, "the failure this guards: the walk credited as running")
+
+        // The metres still trailing behind the smoothing at the pause are credited at the
+        // pause, not after it; then one flat point carries the curve to the resume.
+        let atPause = TrackMath.meters(atTime: pausedAt, in: broken.timeline)
+        XCTAssertEqual(atPause, 1100, accuracy: 1, "everything up to the stop is credited by the stop")
+        XCTAssertEqual(TrackMath.meters(atTime: resumedAt, in: broken.timeline), atPause, accuracy: 0.001,
+                       "nothing accrues while paused")
+        let splits = TrackMath.splits(timeline: broken.timeline, splitMeters: km)
+        XCTAssertEqual(splits.first?.durationS ?? 0, 300, accuracy: 3, "the first km is untouched by the pause")
+    }
+
     func testNoPaceBeforeThereIsAWindow() {
         let track = record(straightLine(meters: 40, secPerKm: 300))
         let s = track.summary(unitMeters: km, now: start.addingTimeInterval(12))
