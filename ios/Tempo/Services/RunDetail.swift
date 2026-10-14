@@ -246,20 +246,11 @@ final class RunDetailLoader {
             d.avgSpeedMph = d.miles / hours
         }
 
-        // ── Best pace: fastest rolling window ≥30 s and ≥100 m ────────────────
-        if timeline.count > 2 {
-            var best = Double.infinity
-            var i = 0
-            for j in 1..<timeline.count {
-                while timeline[j].t - timeline[i].t > 45 { i += 1 }   // keep window ~30–45 s
-                let dt = timeline[j].t - timeline[i].t
-                let dm = timeline[j].m - timeline[i].m
-                if dt >= 25, dm >= 100 {
-                    best = min(best, dt / (dm / 1609.34))
-                }
-            }
-            if best.isFinite { d.bestPaceSec = Int(best) }
-        }
+        // ── Best pace: fastest rolling window (TrackMath) ─────────────────────
+        d.bestPaceSec = TrackMath.bestPace(
+            timeline: timeline.map { BestEfforts.Point(t: $0.t, m: $0.m) },
+            unitMeters: Units.mi.meters
+        ).map { Int($0) }
 
         // ── HR stats + zones (Garmin %max bands: 50/60/70/80/90) ─────────────
         let hrPoints: [(t: Double, bpm: Double)] = heart.map {
@@ -290,7 +281,11 @@ final class RunDetailLoader {
             }
         }
 
-        // ── Elevation from route altitudes (smoothed) ─────────────────────────
+        // ── Elevation from route altitudes ────────────────────────────────────
+        // The chart and split deltas read a ±5 centred mean (a finished run can look ahead).
+        // Gain and loss do not: they go through the recorder's trailing mean + 3 m hysteresis
+        // (#144), because summing every upward wiggle of this curve counted GPS altitude
+        // noise as climb, and a recorded run and an imported one should agree about a hill.
         let altitudes: [(t: Double, alt: Double)] = locations.map {
             ($0.timestamp.timeIntervalSince(start), $0.altitude)
         }
@@ -302,13 +297,9 @@ final class RunDetailLoader {
                 let mean = altitudes[lo...hi].map(\.alt).reduce(0, +) / Double(hi - lo + 1)
                 smoothAlt.append((altitudes[i].t, mean))
             }
-            var gain = 0.0, loss = 0.0
-            for i in 1..<smoothAlt.count {
-                let delta = smoothAlt[i].alt - smoothAlt[i - 1].alt
-                if delta > 0 { gain += delta } else { loss -= delta }
-            }
-            d.elevGainM = gain
-            d.elevLossM = loss
+            let climb = TrackMath.elevation(rawAltitudes: altitudes.map(\.alt))
+            d.elevGainM = climb.gainM
+            d.elevLossM = climb.lossM
         }
 
         // ── Cadence ───────────────────────────────────────────────────────────
