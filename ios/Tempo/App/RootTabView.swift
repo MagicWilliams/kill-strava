@@ -51,6 +51,10 @@ final class TabRouter: ObservableObject {
     @Published var coachDraft: String?
     /// The training intake (#102), presented over the whole app by `.trainingIntake(...)`.
     @Published var trainingIntakeShown = false
+    /// The run being recorded, full-screen over everything (#127). Not a `Route`: a pushed
+    /// screen can be swiped away, and a live run must not be one edge-swipe from vanishing
+    /// behind the tab bar with the clock still going.
+    @Published var liveRun: WorkoutRecorder?
 
     func openRun(_ run: RunSummary) { path.append(.run(run)) }
     func openReadiness() { path.append(.readiness) }
@@ -60,6 +64,19 @@ final class TabRouter: ObservableObject {
     func openChanges() { path.append(.changes) }
     func openOverlapReview() { path.append(.overlapReview) }
     func openBlockReview(_ goal: GoalInfo) { path.append(.blockReview(goal)) }
+
+    /// The one way onto the live run screen: the Start flow (#126) calls this once
+    /// `recorder` has been sent `.start`.
+    func openLiveRun(_ recorder: WorkoutRecorder) { liveRun = recorder }
+
+    /// Off the live run screen, once the run is over (saved or discarded). A run still being
+    /// recorded can't be closed away: only the athlete ends a run, and he does it with
+    /// hold-to-end, not by navigating.
+    func closeLiveRun() {
+        guard let recorder = liveRun, !recorder.state.isLive else { return }
+        recorder.reset()
+        liveRun = nil
+    }
 
     /// Land on the Coach tab scrolled to one message.
     func showCoachMessage(_ id: UUID) {
@@ -145,6 +162,11 @@ struct RootTabView: View {
         }
         .environment(\.zoomNamespace, zoom)
         .trainingIntake(router: router, store: store)
+        .fullScreenCover(item: $router.liveRun) { recorder in
+            LiveRunView(recorder: recorder)
+                .environmentObject(router)
+                .environmentObject(store)
+        }
     }
 
     @ViewBuilder private var content: some View {
@@ -157,6 +179,9 @@ struct RootTabView: View {
         }
     }
 }
+
+/// One recorder is one cover: `fullScreenCover(item:)` keys on the instance.
+extension WorkoutRecorder: Identifiable {}
 
 struct TempoTabBar: View {
     @Binding var selection: Tab
