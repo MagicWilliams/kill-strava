@@ -364,8 +364,10 @@ struct InProgressRun: Codable, Equatable {
         guard let reported = session.distanceM, reported.isFinite else {
             return Resumption(curve: curve, inHealth: carriedEnd)
         }
-        let m = min(max(0, reported), end.m)
-        let t = TrackMath.time(atMeters: m, in: points) ?? end.t
+        // The curve is rounded to 0.1 m and the samples are not: a statistic within that of
+        // the end is the end, not a sliver of a metre still to write.
+        let m = end.m - reported < 0.1 ? end.m : max(0, reported)
+        let t = m == end.m ? end.t : TrackMath.time(atMeters: m, in: points) ?? end.t
         return Resumption(curve: curve, inHealth: BestEfforts.Point(t: t, m: m))
     }
 

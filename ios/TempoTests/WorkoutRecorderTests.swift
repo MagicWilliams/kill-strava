@@ -129,6 +129,11 @@ final class WorkoutRecorderTests: XCTestCase {
     private let runID = UUID()
     private var autoPauses: [AutoPause.Decision] = []
     private var kindsMade: [RecorderState.RunKind] = []
+    /// Kill recovery (#115): the workout "save what we have" rebuilds into (nil: none can be
+    /// made), the states it was asked for, and what Health says a recording already became.
+    private var rescue: FakeSession?
+    private var rescuedFor: [RecorderState] = []
+    private var inHealth: FinishedWorkout?
 
     private let tempo = RecorderState.SessionTarget(sessionID: UUID(), type: "tempo", title: "6 mi tempo",
                                                     distanceM: 9656, paceSecPerMile: 450)
@@ -146,9 +151,13 @@ final class WorkoutRecorderTests: XCTestCase {
         tempoAnswers = []
         autoPauses = []
         kindsMade = []
+        rescue = nil
+        rescuedFor = []
+        inHealth = nil
     }
 
-    private func makeRecorder(units: @escaping () -> Units = { .km }) -> WorkoutRecorder {
+    private func makeRecorder(units: @escaping () -> Units = { .km },
+                              recovery: RecoverySources = .none()) -> WorkoutRecorder {
         let recorder = WorkoutRecorder(
             makeSession: { [unowned self] kind in kindsMade.append(kind); return session! },
             location: location,
@@ -163,7 +172,8 @@ final class WorkoutRecorderTests: XCTestCase {
             tickInterval: nil,
             report: { [unowned self] in lines += $0; logged += $0.map(\.event.rawValue) },
             log: { [unowned self] event, _ in logged.append(event) },
-            persist: { [unowned self] in persisted.append($0) }
+            persist: { [unowned self] in persisted.append($0) },
+            recovery: recovery
         )
         recorder.onAutoPause = { [unowned self] in autoPauses.append($0) }
         return recorder
@@ -727,5 +737,333 @@ final class WorkoutRecorderTests: XCTestCase {
         recorder.send(.pause(.manual(.liveScreen), at: now))
         recorder.send(.discard(.liveScreen))
         XCTAssertEqual(cues.stops, 1)
+    }
+
+    // MARK: - Kill recovery at launch (#115)
+
+    /// iOS killed Tempo. A new process, a new recorder, fresh GPS and voice — everything the
+    /// old process held in memory is gone, and the telemetry starts from the relaunch.
+    private func relaunched(units: Units = .km) -> WorkoutRecorder {
+        location = FakeLocation()
+        motion = FakeMotion()
+        cues = FakeCues()
+        lines = []
+        logged = []
+        persisted = []
+        saved = []
+        return makeRecorder(units: { units }, recovery: RecoverySources(
+            loadSnapshot: { nil },
+            recoverSession: { nil },
+            rescue: { [unowned self] state in rescuedFor.append(state); return rescue },
+            savedWorkout: { [unowned self] _ in inHealth }
+        ))
+    }
+
+    /// What `recoverActiveWorkoutSession` hands back for this snapshot's run.
+    private func survivor(of snapshot: InProgressRun, paused: Bool = false,
+                          healthHas meters: Double?) -> (RecoveredSession, FakeSession) {
+        let fake = FakeSession()
+        let info = InProgressRun.SessionRecovery(id: snapshot.workoutSessionID, isPaused: paused, distanceM: meters)
+        return (RecoveredSession(driver: fake, recordingID: snapshot.workoutSessionID, info: info), fake)
+    }
+
+    private func lastSnapshot() throws -> InProgressRun {
+        try XCTUnwrap(persisted.last ?? nil, "the recorder wrote the run down")
+    }
+
+    /// The case #115 exists for: killed 2 km in, he runs on for two minutes with nothing
+    /// listening, and Tempo comes back to the same run — same recording, same clock, the
+    /// live screen up again — and Health ends up with every metre on screen exactly once.
+    func testAKilledRunWhoseSessionSurvivedPicksUpWhereItWas() async throws {
+        let before = await started()
+        run(before, line(from: 0, seconds: 600, secPerKm: 300))
+        let killed = try lastSnapshot()
+        XCTAssertEqual(killed.savedAt, t(600))
+        let inHealthBefore = session.distanceWritten
+        let recordingID = before.recordingID
+
+        now = t(720)
+        let recorder = relaunched()
+        let (recovered, survivor) = survivor(of: killed, healthHas: inHealthBefore)
+        await recorder.adopt(snapshot: killed, session: recovered)
+        await recorder.settled()
+
+        XCTAssertEqual(recorder.state.phase, .running)
+        XCTAssertEqual(recorder.recovered, .resume(recorder.state),
+                       "the state the recorder reached is the one the decision table decided")
+        XCTAssertEqual(recorder.recordingID, recordingID)
+        XCTAssertEqual(recorder.state.startedAt, t(0), "the run's clock, not the relaunch's")
+        XCTAssertEqual(recorder.snapshot.elapsedS, 720, "wall time kept counting while Tempo was dead")
+        XCTAssertEqual(recorder.snapshot.movingS, 720, "the session was running, so the gap was running")
+        XCTAssertEqual(recorder.snapshot.distanceM, killed.distanceM, accuracy: 0.2)
+        XCTAssertTrue(location.isOn, "GPS is back on")
+        XCTAssertEqual(survivor.calls, [], "the session is adopted as it is: nothing prepared, begun or resumed")
+        XCTAssertEqual(lines.first { $0.event == .recovered }?.context["outcome"], "resumed")
+        XCTAssertEqual(lines.first { $0.event == .interrupted }?.context["reason"], "app_terminated")
+        XCTAssertEqual((persisted.last ?? nil)?.savedAt, t(720), "rewritten at once: a second kill costs no more")
+
+        // He is 400 m further up the road by now. The next kilometre is measured from there.
+        run(recorder, line(from: 720, seconds: 300, secPerKm: 300, north0: 720 * 1000 / 300))
+        now = t(1021)
+        recorder.send(.endRequested(.liveScreen, at: now))
+        recorder.confirmSave()
+        await recorder.settled()
+
+        XCTAssertEqual(recorder.state.phase, .saved(workoutID: survivor.workoutID))
+        XCTAssertEqual(survivor.finishes, 1)
+        let shown = recorder.snapshot.distanceM
+        XCTAssertEqual(shown, killed.distanceM + 1000, accuracy: 20)
+        XCTAssertEqual(inHealthBefore + survivor.distanceWritten, shown, accuracy: 0.5,
+                       "Health gets every metre on screen, and none of them twice")
+        XCTAssertEqual(saved.first?.workout.uuid, survivor.workoutID)
+        XCTAssertEqual(persisted.last, .some(nil), "in Health: the snapshot is gone")
+    }
+
+    /// The session was paused when Tempo died, so the gap was a stop — and only he lifts it.
+    func testASessionPausedThroughTheGapComesBackPausedUntilHeResumes() async throws {
+        let before = await started()
+        run(before, line(from: 0, seconds: 300, secPerKm: 300))
+        let killed = try lastSnapshot()
+
+        now = t(900)
+        let recorder = relaunched()
+        let (recovered, survivor) = survivor(of: killed, paused: true, healthHas: nil)
+        await recorder.adopt(snapshot: killed, session: recovered)
+
+        XCTAssertEqual(recorder.state.phase, .paused)
+        XCTAssertEqual(recorder.state.openPause?.reason, .recoveryGap)
+        XCTAssertEqual(recorder.state.openPause?.start, t(300))
+        XCTAssertEqual(recorder.snapshot.movingS, 300, "the session says he stopped; the clock agrees")
+
+        run(recorder, line(from: 900, seconds: 30, secPerKm: 300, north0: 1000))
+        XCTAssertEqual(recorder.state.phase, .paused, "moving again doesn't lift it; we didn't see him start")
+        now = t(931)
+        recorder.send(.resume(.manual(.liveScreen), at: now))
+        await recorder.settled()
+        XCTAssertEqual(survivor.calls, [.resume(t(931))])
+    }
+
+    /// No session survived. The run waits on "Save what we have", and saving it rebuilds the
+    /// workout in Health from the snapshot: from the start, to the last instant Tempo knew
+    /// it was recording, with every metre on the curve and the stop at the fountain.
+    func testWhenNoSessionSurvivedSaveWhatWeHaveRebuildsTheRunInHealth() async throws {
+        let before = await started()
+        run(before, line(from: 0, seconds: 300, secPerKm: 300))
+        now = t(301)
+        before.send(.pause(.manual(.liveScreen), at: now))
+        now = t(361)
+        before.send(.resume(.manual(.liveScreen), at: now))
+        run(before, line(from: 361, seconds: 300, secPerKm: 300, north0: 1000))
+        let killed = try lastSnapshot()
+
+        rescue = FakeSession()
+        now = t(4000)
+        let recorder = relaunched()
+        await recorder.adopt(snapshot: killed, session: nil)
+        await recorder.settled()
+        let rescued = try XCTUnwrap(rescue)
+
+        XCTAssertEqual(recorder.state.phase, .recovering(since: killed.savedAt))
+        XCTAssertEqual(recorder.recovered, .rescue(recorder.state))
+        XCTAssertEqual(rescued.calls, [.begin(t(0))], "the rebuilt workout starts when the run did")
+        XCTAssertEqual(rescued.beginMetadata[RecordingMetadata.recordingIDKey] as? String,
+                       killed.workoutSessionID?.uuidString)
+        XCTAssertEqual(rescuedFor.first?.pauses.count, 1, "the stop goes into the workout as a pause")
+        XCTAssertFalse(location.isOn, "nothing is recording until he says what to do with it")
+        XCTAssertEqual(lines.first { $0.event == .recoveryFailed }?.context["outcome"], "rescue_offered")
+
+        recorder.send(.endRequested(.liveScreen, at: now))
+        recorder.confirmSave()
+        await recorder.settled()
+
+        XCTAssertEqual(recorder.state.endedAt, killed.savedAt, "ended where our knowledge does, not at the relaunch")
+        XCTAssertEqual(recorder.state.phase, .saved(workoutID: rescued.workoutID))
+        XCTAssertEqual(rescued.distanceWritten, killed.distanceM, accuracy: 0.01, "every metre he watched")
+        let samples = rescued.calls.filter { if case .distance = $0 { true } else { false } }
+        XCTAssertGreaterThan(samples.count, 30, "in ten-second stretches, so Health's splits are his")
+        XCTAssertEqual(rescued.calls.last { if case .stop = $0 { true } else { false } }, .stop(killed.savedAt))
+        XCTAssertEqual(saved.first?.workout.uuid, rescued.workoutID, "and on into Tempo, like any run")
+        XCTAssertEqual(persisted.last, .some(nil))
+    }
+
+    func testDiscardingARescueThrowsAwayTheRebuiltWorkoutAndTheSnapshot() async throws {
+        let before = await started()
+        run(before, line(from: 0, seconds: 120, secPerKm: 300))
+        let killed = try lastSnapshot()
+        rescue = FakeSession()
+        now = t(600)
+        let recorder = relaunched()
+        await recorder.adopt(snapshot: killed, session: nil)
+        recorder.send(.discard(.liveScreen))
+        await recorder.settled()
+
+        XCTAssertEqual(recorder.state.phase, .discarded)
+        XCTAssertEqual(rescue?.calls.last, .discard)
+        XCTAssertFalse(rescue?.calls.contains(.finish) ?? true)
+        XCTAssertTrue(saved.isEmpty)
+        XCTAssertEqual(persisted.last, .some(nil), "asked and answered: never offered again")
+    }
+
+    /// No session and no way to make a workout: Save says so and keeps the run, rather
+    /// than sit on "saving" forever.
+    func testSaveWhatWeHaveWithNoWayIntoHealthSaysSoAndKeepsTheRun() async throws {
+        let before = await started()
+        run(before, line(from: 0, seconds: 120, secPerKm: 300))
+        let killed = try lastSnapshot()
+        now = t(600)
+        let recorder = relaunched()
+        await recorder.adopt(snapshot: killed, session: nil)
+        recorder.send(.endRequested(.liveScreen, at: now))
+        recorder.confirmSave()
+        await recorder.settled()
+
+        guard case .ending(.failed) = recorder.state.phase else {
+            return XCTFail("expected Retry, got \(recorder.state.phase)")
+        }
+        XCTAssertNotNil(persisted.last ?? nil, "still written down for the next launch")
+    }
+
+    /// Killed on the save screen: the session comes back stopped, the run comes back whole
+    /// on the save screen, and Save finishes the workout once.
+    func testKilledOnTheSaveScreenComesBackToSaveWithTheRunWhole() async throws {
+        let before = await started()
+        run(before, line(from: 0, seconds: 300, secPerKm: 300))
+        now = t(301)
+        before.send(.endRequested(.liveScreen, at: now))
+        await before.settled()
+        let killed = try lastSnapshot()
+        XCTAssertEqual(killed.state.phase, .ending(.review))
+
+        now = t(500)
+        let recorder = relaunched()
+        let (recovered, survivor) = survivor(of: killed, healthHas: session.distanceWritten)
+        await recorder.adopt(snapshot: killed, session: recovered)
+        await recorder.settled()
+
+        XCTAssertEqual(recorder.state.phase, .ending(.review))
+        XCTAssertEqual(recorder.recovered, .unfinished(recorder.state))
+        XCTAssertEqual(survivor.calls, [.stop(t(301))], "collection made sure of; nothing written twice")
+        XCTAssertFalse(location.isOn)
+
+        recorder.confirmSave()
+        await recorder.settled()
+        XCTAssertEqual(recorder.state.phase, .saved(workoutID: survivor.workoutID))
+        XCTAssertEqual(survivor.finishes, 1)
+        XCTAssertTrue(rescuedFor.isEmpty)
+    }
+
+    /// Killed between Health saving the workout and Tempo clearing its snapshot. No session
+    /// survives a finished workout, so the one place to learn it was saved is Health itself:
+    /// Retry is Tempo's half only, and the run is never in Health twice.
+    func testKilledAfterHealthHadTheRunRetryNeverSavesItTwice() async throws {
+        let before = await started()
+        run(before, line(from: 0, seconds: 200, secPerKm: 300))
+        now = t(201)
+        before.send(.endRequested(.liveScreen, at: now))
+        before.confirmSave()
+        let killed = try XCTUnwrap(persisted.compactMap { $0 }.last { $0.state.phase == .ending(.saving) })
+        await before.settled()
+        let row = try XCTUnwrap(saved.first?.workout)
+        inHealth = FinishedWorkout(id: session.workoutID, row: row)
+
+        now = t(400)
+        let recorder = relaunched()
+        await recorder.adopt(snapshot: killed, session: nil)
+        XCTAssertEqual(recorder.state.phase, .ending(.failed(reason: "Tempo closed while saving")))
+        XCTAssertEqual(recorder.recovered, .unfinished(recorder.state))
+        XCTAssertTrue(rescuedFor.isEmpty, "no workout is rebuilt for a run Health already has")
+
+        recorder.confirmSave()
+        await recorder.settled()
+        XCTAssertEqual(recorder.state.phase, .saved(workoutID: session.workoutID))
+        XCTAssertEqual(session.finishes, 1, "one workout in Health")
+        XCTAssertEqual(saved.map(\.workout.uuid), [session.workoutID], "Tempo's half, with the workout Health had")
+    }
+
+    /// HealthKit's own distance on a treadmill counted the belt while Tempo was dead; the
+    /// run comes back with it, and carries on reading it.
+    func testATreadmillRunComesBackWithTheSessionsOwnDistance() async throws {
+        let before = await started(.treadmill)
+        for s in stride(from: 10.0, through: 300, by: 10) {
+            now = t(s)
+            session.onSignal?(.distance(totalMeters: s * 1000 / 320, at: now))
+            before.tick()
+        }
+        let killed = try lastSnapshot()
+
+        now = t(420)
+        let recorder = relaunched()
+        let (recovered, survivor) = survivor(of: killed, healthHas: 420 * 1000 / 320)
+        await recorder.adopt(snapshot: killed, session: recovered)
+        XCTAssertEqual(recorder.snapshot.distanceM, 420 * 1000 / 320, accuracy: 0.2,
+                       "the belt kept turning and HealthKit kept counting")
+        XCTAssertEqual(location.starts, 0, "a treadmill never asks for location, recovered or not")
+
+        now = t(430)
+        survivor.onSignal?(.distance(totalMeters: 430 * 1000 / 320, at: now))
+        recorder.tick()
+        XCTAssertEqual(recorder.snapshot.distanceM, 430 * 1000 / 320, accuracy: 0.2)
+
+        recorder.send(.endRequested(.liveScreen, at: now))
+        recorder.confirmSave()
+        await recorder.settled()
+        XCTAssertEqual(survivor.distanceWritten, 0, "HealthKit already has a treadmill's distance")
+        XCTAssertEqual(recorder.state.phase, .saved(workoutID: survivor.workoutID))
+    }
+
+    /// A session with no run of ours behind it — the snapshot was already cleared for a run
+    /// he saved or discarded — is ended, not saved, and there is nothing to show him.
+    func testASessionWithNoRunBehindItIsEndedNotSaved() async {
+        let recorder = relaunched()
+        let stray = FakeSession()
+        await recorder.adopt(snapshot: nil, session: RecoveredSession(
+            driver: stray, recordingID: UUID(), info: .init(isPaused: false)))
+        XCTAssertEqual(stray.calls, [.discard])
+        XCTAssertNil(recorder.recovered)
+        XCTAssertEqual(recorder.state, RecorderState())
+        XCTAssertEqual(lines.map { $0.context["outcome"] }, ["orphan_session"])
+    }
+
+    /// A session that is some other recording's never has its distance spliced onto this run.
+    func testASessionFromAnotherRecordingIsNeverSplicedOntoThisRun() async throws {
+        let before = await started()
+        run(before, line(from: 0, seconds: 120, secPerKm: 300))
+        let killed = try lastSnapshot()
+        rescue = FakeSession()
+        now = t(600)
+        let recorder = relaunched()
+        let other = FakeSession()
+        await recorder.adopt(snapshot: killed, session: RecoveredSession(
+            driver: other, recordingID: UUID(), info: .init(isPaused: false, distanceM: 10_000)))
+
+        XCTAssertEqual(recorder.state.phase, .recovering(since: killed.savedAt), "offered as a rescue, alone")
+        XCTAssertEqual(recorder.snapshot.distanceM, killed.distanceM, accuracy: 0.2, "none of the other run's 10 km")
+        XCTAssertEqual(other.calls, [.discard])
+        XCTAssertTrue(logged.contains("recorder.recovery_failed"))
+    }
+
+    /// A clean launch: nothing read, nothing written, nothing said, and only once.
+    func testACleanLaunchDoesNothingAndRecoveryRunsOnce() async {
+        var loads = 0
+        let recorder = makeRecorder(recovery: RecoverySources(
+            loadSnapshot: { loads += 1; return nil },
+            recoverSession: { nil }, rescue: { _ in nil }, savedWorkout: { _ in nil }))
+        await recorder.recoverAtLaunch()
+        await recorder.recoverAtLaunch()
+        XCTAssertEqual(loads, 1)
+        XCTAssertNil(recorder.recovered)
+        XCTAssertTrue(lines.isEmpty)
+        XCTAssertTrue(persisted.isEmpty)
+    }
+
+    /// Nothing on disk outranks the run in front of him.
+    func testAdoptNeverReplacesARunAlreadyUnderway() async throws {
+        let recorder = await started()
+        run(recorder, line(from: 0, seconds: 60, secPerKm: 300))
+        let stale = try lastSnapshot()
+        let before = recorder.state
+        await recorder.adopt(snapshot: stale, session: nil)
+        XCTAssertEqual(recorder.state, before)
+        XCTAssertNil(recorder.recovered)
     }
 }

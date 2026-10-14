@@ -405,6 +405,55 @@ final class InProgressRunTests: XCTestCase {
         XCTAssertEqual(Snapshot.gapMeters(carried: carried, session: Session(isPaused: false)), 0)
     }
 
+    // MARK: - Picking the run back up
+
+    /// A session that survived the kill: the curve carries on from the snapshot, the
+    /// two minutes nobody measured are credited from the session's own distance at the
+    /// moment recording came back, and Health's bookmark sits at what the session holds —
+    /// which, outdoors, is exactly the distance Tempo had written into it.
+    func testAResumedRunCarriesTheSessionsGapAndWritesOnlyWhatHealthLacks() throws {
+        let live = snapshot(savedAtS: 600)
+        // The last ten seconds of chunks landed after the last snapshot; then he ran on for
+        // two minutes with nothing listening.
+        let session = Session(isPaused: false, distanceM: mps * 610)
+        let seed = Snapshot.resumption(snapshot: live, session: session, resumedAt: t(720))
+
+        XCTAssertEqual(Array(seed.curve.points.prefix(live.curve.t.count)), live.curve.points, "history intact")
+        XCTAssertEqual(seed.curve.t.last, 720, "the curve reaches the instant recording came back")
+        XCTAssertEqual(seed.curve.lastMeters, mps * 610, accuracy: 0.2,
+                       "Health had ten seconds more than the snapshot: that is real running, credited")
+        XCTAssertEqual(seed.inHealth.m, seed.curve.lastMeters, accuracy: 0.2, "and it is already in Health")
+    }
+
+    func testARescuedRunHasEverythingStillToWriteAndGainsNothing() {
+        let live = snapshot(savedAtS: 600)
+        let seed = Snapshot.resumption(snapshot: live, session: nil, resumedAt: nil)
+        XCTAssertEqual(seed.curve, live.curve, "no session, no gap: the run ends where our knowledge does")
+        XCTAssertEqual(seed.inHealth, BestEfforts.Point(t: 0, m: 0), "the live builder died with the session")
+    }
+
+    /// A session that came back without a distance statistic: we cannot tell what Health
+    /// holds. Writing the whole run again would double it; the bookmark goes at the end of
+    /// what we carried, and the worst case is ten seconds short.
+    func testASessionWithNoDistanceStatisticIsNeverWrittenTwice() {
+        let live = snapshot(savedAtS: 600)
+        let seed = Snapshot.resumption(snapshot: live, session: Session(isPaused: true), resumedAt: t(700))
+        XCTAssertEqual(seed.inHealth.m, live.distanceM, accuracy: 0.001)
+        XCTAssertEqual(seed.curve.lastMeters, live.distanceM, accuracy: 0.001, "paused through the gap: flat")
+        XCTAssertEqual(seed.curve.t.last, 700)
+    }
+
+    func testOnlyASessionFromAnotherRecordingIsAMismatch() {
+        let live = snapshot()
+        XCTAssertTrue(Snapshot.matches(snapshot: live, sessionRecordingID: live.workoutSessionID))
+        XCTAssertTrue(Snapshot.matches(snapshot: live, sessionRecordingID: nil),
+                      "killed before the metadata landed: still ours")
+        XCTAssertFalse(Snapshot.matches(snapshot: live, sessionRecordingID: UUID()), "another run: never spliced on")
+        var anonymous = live
+        anonymous.workoutSessionID = nil
+        XCTAssertTrue(Snapshot.matches(snapshot: anonymous, sessionRecordingID: UUID()))
+    }
+
     // MARK: - Telemetry
 
     func testRecoveryReportsItselfWithoutLeakingHealthData() {

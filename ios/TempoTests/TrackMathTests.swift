@@ -363,6 +363,42 @@ final class TrackMathTests: XCTestCase {
         XCTAssertEqual(splits.first?.durationS ?? 0, 300, accuracy: 3, "the first km is untouched by the pause")
     }
 
+    /// Kill recovery (#115): iOS killed the app 1.1 km in, he ran on for two minutes with
+    /// nothing listening, and the app came back. The track picks up from the carried curve —
+    /// history intact, splits unchanged — and credits nothing for the straight line between
+    /// where it last saw him and where it sees him now. Those metres are the session's to
+    /// report (`InProgressRun.gapMeters`), not a guess drawn across the city.
+    func testAResumedTrackCarriesOnFromTheSnapshotAndCreditsNothingAcrossTheGap() throws {
+        let before = record(straightLine(meters: 1100, secPerKm: 300))
+        let killedAt = before.timeline.last!.t
+        let resumedAt = killedAt + 120
+        let carried = before.timeline + [BestEfforts.Point(t: resumedAt, m: before.distanceM)]
+
+        var after = TrackMath.Track(start: start, resuming: carried, movingS: before.movingS,
+                                    elevationGainM: 12, elevationLossM: 4)
+        XCTAssertEqual(after.timeline, carried, "the run so far is the track's history, exactly")
+        XCTAssertFalse(after.isLocked, "no position is trusted from before the gap")
+        XCTAssertEqual(after.elevationGainM, 12)
+        XCTAssertEqual(after.elevationLossM, 4)
+
+        // 400 m further on at the same pace and bearing, then another kilometre.
+        let bearing = 37.0 * .pi / 180
+        let speed = 1000.0 / 300
+        for s in stride(from: 0.0, through: 300, by: 1) {
+            let d = 1100 + 400 + s * speed
+            after.ingest(fix(t: resumedAt + s, east: d * sin(bearing), north: d * cos(bearing)))
+        }
+        after.close()
+
+        XCTAssertEqual(after.distanceM, before.distanceM + 1000, accuracy: 20,
+                       "the kilometre after the gap, and nothing for the 400 m nobody measured")
+        XCTAssertEqual(Array(after.timeline.prefix(carried.count)), carried, "history never rewritten")
+        XCTAssertGreaterThan(after.movingS, before.movingS, "moving time carries on from the snapshot's")
+        XCTAssertEqual(after.elevationGainM, 12, "no altitude since: the carried climb stands")
+        let splits = TrackMath.splits(timeline: after.timeline, splitMeters: km)
+        XCTAssertEqual(splits.first?.durationS ?? 0, 300, accuracy: 3, "the first km is the one he ran before the kill")
+    }
+
     func testNoPaceBeforeThereIsAWindow() {
         let track = record(straightLine(meters: 40, secPerKm: 300))
         let s = track.summary(unitMeters: km, now: start.addingTimeInterval(12))
