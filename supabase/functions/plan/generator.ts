@@ -78,7 +78,7 @@ export function paceBasis(goalTimeS: number | null, raceMi: number, currentRaceS
     const seconds = Math.round(currentRaceS * FITNESS_MARGIN);
     return {
       seconds, source: "fitness",
-      note: `No target time: this block is about getting to the finish strong. Training paces come from your current fitness — your best recent run projects about ${fmtClock(currentRaceS)} for this distance — eased a few percent to stay conservative.`,
+      note: `No target time yet. Training paces come from your current fitness — your best recent run projects about ${fmtClock(currentRaceS)} for this distance — eased a few percent to stay conservative.`,
     };
   }
   const seconds = Math.round(equivalentTime(DEFAULT_BASIS_MARATHON_S, MARATHON_MI, raceMi));

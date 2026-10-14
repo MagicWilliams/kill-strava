@@ -364,13 +364,34 @@ final class TrainingIntakeTests: XCTestCase {
         XCTAssertTrue(json["goal_time_s"] is NSNull, "sent as null, not left out")
     }
 
-    func testEveryOtherGoalTypeStillNeedsATime() throws {
-        for type in [IntakeAnswers.GoalType.time, .pr, .unsure] {
+    /// Only a stated time goal needs a time on the card. "A PR" and "Not sure" ask the coach
+    /// to propose one, but it may honestly have nothing to propose; the plan then paces from
+    /// current fitness.
+    func testOnlyATimeGoalNeedsATime() throws {
+        var timed = fiveK()
+        timed.goalType = .time
+        timed.goalTimeSeconds = 1_170
+        XCTAssertFalse(try XCTUnwrap(stamp(timed)).accepts(goalTimeS: nil))
+        XCTAssertTrue(try XCTUnwrap(stamp(timed)).accepts(goalTimeS: 1_170))
+        for type in [IntakeAnswers.GoalType.pr, .unsure, .finish] {
             var a = fiveK()
             a.goalType = type
-            a.goalTimeSeconds = 1_170
-            XCTAssertFalse(try XCTUnwrap(stamp(a)).accepts(goalTimeS: nil), "\(type)")
+            XCTAssertTrue(try XCTUnwrap(stamp(a)).accepts(goalTimeS: nil), "\(type)")
         }
+    }
+
+    /// The card David couldn't confirm on 2026-10-13: a 5K intake, goal "Not sure", weekly
+    /// targets, and a coach that (rightly, days after Chicago) proposed no time. Confirm
+    /// failed on the phone and `/plan` was never called.
+    func testAnUnsureIntakeWithNoTimeCanBeConfirmed() throws {
+        var a = fiveK()
+        a.goalType = .unsure
+        a.planStyle = .weekly
+        let intake = try XCTUnwrap(stamp(a))
+        XCTAssertTrue(intake.accepts(goalTimeS: nil))
+        let body = PlanRequest.fromIntake(intake, goalTimeS: nil, raceName: "Turkey Trot 2026", raceDate: "2026-11-05")
+        XCTAssertNil(body.goal_time_s)
+        XCTAssertEqual(body.goal_type, "unsure")
     }
 
     /// "Just finish" agreed in chat, not through the intake: the card has `goal_type` and no
@@ -405,11 +426,13 @@ final class TrainingIntakeTests: XCTestCase {
         XCTAssertNil(body.goal_time_s)
     }
 
-    /// Anything other than "finish" with no time is refused before the call, as before.
-    func testATimelessCardThatIsntFinishIsRefused() {
+    /// A timeless card is refused before the call only when it is a time goal (or untyped).
+    func testATimelessTimeGoalIsRefused() {
         let bare = PlanRequest(goal_time_s: nil, race_name: nil, race_date: "2026-11-26")
         XCTAssertNil(PlanRequest.fromChatProposal(bare, goalType: nil))
-        XCTAssertNil(PlanRequest.fromChatProposal(bare, goalType: "pr"))
+        XCTAssertNil(PlanRequest.fromChatProposal(bare, goalType: "time"))
+        XCTAssertNotNil(PlanRequest.fromChatProposal(bare, goalType: "pr"))
+        XCTAssertNotNil(PlanRequest.fromChatProposal(bare, goalType: "unsure"))
         XCTAssertNotNil(PlanRequest.fromChatProposal(
             PlanRequest(goal_time_s: 11_700, race_name: nil, race_date: "2026-11-26"), goalType: nil))
     }
@@ -427,8 +450,10 @@ final class TrainingIntakeTests: XCTestCase {
         let g = GoalInfo(id: UUID(), race_name: "Turkey Trot", race_date: "2026-11-26", goal_time_seconds: nil,
                          distance: "5k", goal_type: "finish")
         XCTAssertTrue(PlanRequest.canRegenerate(g))
-        let timeless = GoalInfo(id: UUID(), race_name: nil, race_date: "2026-11-26", goal_time_seconds: nil, goal_type: "pr")
-        XCTAssertFalse(PlanRequest.canRegenerate(timeless))
+        let timelessPR = GoalInfo(id: UUID(), race_name: nil, race_date: "2026-11-26", goal_time_seconds: nil, goal_type: "pr")
+        XCTAssertTrue(PlanRequest.canRegenerate(timelessPR))
+        let timelessTime = GoalInfo(id: UUID(), race_name: nil, race_date: "2026-11-26", goal_time_seconds: nil, goal_type: "time")
+        XCTAssertFalse(PlanRequest.canRegenerate(timelessTime))
         let dateless = GoalInfo(id: UUID(), race_name: nil, race_date: nil, goal_time_seconds: 1_170)
         XCTAssertFalse(PlanRequest.canRegenerate(dateless))
     }

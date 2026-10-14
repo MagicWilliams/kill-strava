@@ -302,7 +302,8 @@ final class ChatStore: ObservableObject {
         } catch {
             messages[idx].actionState = .failed
             persist(.failed, for: messageID)
-            errorText = "That change didn't go through — Confirm to retry."
+            Telemetry.error("coach.action_failed", error, context: ["type": action.type])
+            errorText = (error as? ActionError)?.message ?? "That change didn't go through — Confirm to retry."
             // No acknowledgement on a failure: the retry card is the response.
             return false
         }
@@ -653,7 +654,16 @@ final class ChatStore: ObservableObject {
         await runStore.markOnboarded()
     }
 
-    private enum ActionError: Error { case badParams }
+    /// `message` is what the athlete reads under a card that didn't go through. A bare
+    /// "didn't go through" left David tapping Confirm on a card that could never succeed.
+    private enum ActionError: Error {
+        case badParams
+        var message: String {
+            switch self {
+            case .badParams: return "That card is missing something the plan needs. Ask the coach to propose it again."
+            }
+        }
+    }
 
     // MARK: - Plumbing
 
