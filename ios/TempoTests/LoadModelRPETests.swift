@@ -126,7 +126,9 @@ final class LoadModelRPETests: XCTestCase {
         // the same either way, so the two scores can share one fitness curve.
         let byPace = try XCTUnwrap(LoadModel.load(of: run(miles: 5, paceSecPerMile: 540), baseline: baseline))
         let byRPE = try XCTUnwrap(LoadModel.load(of: run(miles: 5, paceSecPerMile: 540, rpe: 4), baseline: baseline))
-        XCTAssertEqual(byRPE, byPace, accuracy: 0.01)
+        // Within 1 %, not exactly: pace is whole seconds per mile (truncated), so a "9:00"
+        // run built from rounded meters scores at 8:59 by pace, and RPE uses the clock.
+        XCTAssertEqual(byRPE, byPace, accuracy: byPace * 0.01)
     }
 
     func testAnEasyPaceThatFeltHardCountsAsHard() throws {
