@@ -64,6 +64,15 @@ final class RunStore: ObservableObject {
     /// redo; once a card exists, the card itself carries the intake (`ProposedAction.intake`).
     @Published private(set) var intakeHandoff: IntakeHandoff?
 
+    /// Onboarding step 1's answer (#167). Kept apart from `intakeHandoff`, which is cleared
+    /// once a plan card is confirmed, while the interview still needs to know where the athlete
+    /// started. In memory only: a relaunch restarts onboarding at Welcome, so it is re-asked.
+    private(set) var startingPoint: OnboardingFacts.StartingPoint?
+
+    /// Settings the athlete has actually given since launch, as opposed to the column defaults
+    /// `loadProfile` reads back for a profile nobody has filled in (#167).
+    private var settingsGiven: Set<OnboardingFacts.Setting> = []
+
     /// Closed blocks, newest first (#100) — what You lists under "Past blocks". Empty, and the
     /// list hidden, until migration 0013 is applied: `BlockReviewService.pastBlocks` reports
     /// an unreadable column as nil rather than as "no blocks".
@@ -702,6 +711,7 @@ final class RunStore: ObservableObject {
     /// The form was sent. Replaces any earlier intake: the latest answers are what the athlete
     /// wants now.
     func beginIntake(_ answers: IntakeAnswers) {
+        startingPoint = OnboardingFacts.StartingPoint(answers.situation)
         intakeHandoff = IntakeHandoff(
             answers: answers,
             stamp: answers.stamp(today: .now, calendar: Self.cal)
@@ -714,12 +724,13 @@ final class RunStore: ObservableObject {
     func finishIntake() { intakeHandoff = nil }
 
     func setPlanSettings(daysPerWeek: Int?, longRunDay: Int?) {
-        if let daysPerWeek { self.daysPerWeek = daysPerWeek }
-        if let longRunDay { self.longRunDay = longRunDay }
+        if let daysPerWeek { self.daysPerWeek = daysPerWeek; settingsGiven.insert(.daysPerWeek) }
+        if let longRunDay { self.longRunDay = longRunDay; settingsGiven.insert(.longRunDay) }
     }
 
     func setRiskTolerance(_ level: String) {
         riskTolerance = level
+        settingsGiven.insert(.riskTolerance)
     }
 
     func setMaxHR(_ bpm: Int) {
@@ -847,6 +858,8 @@ struct CoachContext: Encodable {
     struct OnboardingCtx: Encodable {
         let active: Bool
         let runs_found: Int
+        /// `racing_now` | `want_to_train` | `just_running` — see `OnboardingFacts.StartingPoint`.
+        let starting_point: String?
         let known: [String: String]   // facts already on file — confirm, don't re-ask
     }
 
@@ -1007,21 +1020,28 @@ extension RunStore {
         )
     }
 
-    /// Facts already on file, so the interview confirms instead of re-asking.
+    /// Facts the athlete has given, so the interview confirms instead of re-asking — and
+    /// nothing they haven't. See `OnboardingFacts.known`.
     private func onboardingContext() -> CoachContext.OnboardingCtx {
-        var known: [String: String] = [
-            "days_per_week": "\(daysPerWeek)",
-            "long_run_day": Calendar.current.weekdaySymbols[longRunDay],
-            "risk_tolerance": riskTolerance,
-        ]
-        if let maxHR { known["max_hr_measured"] = "\(maxHR)" }
-        if let birthdate { known["birthdate"] = birthdate }
-        if intakeHandoff?.answers.situation == .justRunning {
-            known["situation"] = "just_running — chose no race for now; the plan question is settled as no plan"
-        }
-        if let goal, let t = goal.goalTimeSeconds {
-            known["active_plan"] = "\(goal.raceName ?? "race") on \(goal.raceDate), goal \(PaceModel.formatFinish(t)) — keep unless the goal changes"
-        }
-        return CoachContext.OnboardingCtx(active: true, runs_found: runs.count, known: known)
+        let known = OnboardingFacts.known(
+            daysPerWeek: daysPerWeek,
+            longRunDay: longRunDay,
+            riskTolerance: riskTolerance,
+            given: settingsGiven,
+            planOnFile: goal != nil,
+            maxHR: maxHR,
+            birthdate: birthdate,
+            activePlan: goal.flatMap { goal in
+                goal.goalTimeSeconds.map {
+                    "\(goal.raceName ?? "race") on \(goal.raceDate), goal \(PaceModel.formatFinish($0)) — keep unless the goal changes"
+                }
+            }
+        )
+        return CoachContext.OnboardingCtx(
+            active: true,
+            runs_found: runs.count,
+            starting_point: startingPoint?.rawValue,
+            known: known
+        )
     }
 }
