@@ -13,7 +13,10 @@ concurrency:
 jobs:
   ios:
     name: iOS build + engine tests
-    runs-on: macos-15
+    # macos-26, like testflight.yml: Tempo's minimum is iOS 26 (#145), and the run recorder
+    # (#114) uses APIs the macos-15 image's iOS 18.5 SDK marks unavailable on iPhone
+    # (HKLiveWorkoutBuilder, HKLiveWorkoutDataSource). The older image can't compile the app.
+    runs-on: macos-26
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4

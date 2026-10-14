@@ -48,6 +48,9 @@ targets:
         # the foreground, and CLLocationManager.allowsBackgroundLocationUpdates then keeps
         # updates flowing after the screen locks (blue pill). Smaller ask, easier review.
         NSLocationWhenInUseUsageDescription: "Tempo uses your location during a run you start, to map your route and measure distance and pace. It stops when the run ends."
+        # Auto-pause (#113, #114) reads step speed from CMPedometer, which crashes without
+        # this key. Only asked for at the first run with auto-pause on.
+        NSMotionUsageDescription: "With auto-pause on, Tempo uses your steps to tell when you've stopped running and when you've started again."
         # location: allowsBackgroundLocationUpdates = true without this key is a fatal error,
         #   not a silent no-op (CLLocationManager docs).
         # audio: spoken split cues (#118) with the phone locked in a pocket. Without it,
