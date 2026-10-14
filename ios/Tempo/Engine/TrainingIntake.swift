@@ -236,6 +236,14 @@ struct IntakeAnswers: Equatable {
                 return "Under two weeks out is too close to build a plan — choose No plan, just coaching."
             }
         }
+
+        /// `message` in the athlete's unit (#109). Only the weekly-volume bound names a
+        /// length; it is checked in miles (the answer is stored in miles) and said in km.
+        func message(_ units: Units) -> String {
+            guard self == .weeklyMilesOutOfRange, units != .mi else { return message }
+            let top = Int(units.distance(miles: IntakeAnswers.weeklyMilesRange.upperBound).rounded(.down))
+            return "Weekly \(units.abbreviation) should be between 0 and \(top)."
+        }
     }
 
     static let customMetersRange = 800...50_000
@@ -574,7 +582,10 @@ extension IntakeAnswers {
     /// Visible rather than a hidden kickoff, so the coach's reflect-back answers a message
     /// that is actually in the history — and so a relaunch, or David scrolling back a month
     /// later, shows what was asked for beside what was proposed.
-    func transcriptLine(calendar: Calendar) -> String {
+    ///
+    /// Written in the athlete's unit, since it is their turn in the chat. The answers
+    /// themselves stay in miles (`currentWeeklyMiles`, the 20/12-mile bar).
+    func transcriptLine(calendar: Calendar, units: Units = .mi) -> String {
         var lines: [String] = []
 
         let distanceText = distance == .custom
@@ -597,13 +608,13 @@ extension IntakeAnswers {
 
         if situation == .midBlock, let week = startedWeek {
             var mid = "Already mid-block: week \(week)"
-            if let miles = currentWeeklyMiles { mid += ", ~\(Int(miles.rounded())) mi a week" }
+            if let miles = currentWeeklyMiles { mid += ", ~\(Int(units.distance(miles: miles).rounded())) \(units.abbreviation) a week" }
             lines.append(mid)
         }
 
         var plan = "Plan: \(planStyle.label.lowercased()), \(daysPerWeek) days a week, long run \(Self.weekday(longRunDay))"
         if asksLongRunCount, let threshold = distance.longRunThresholdMiles {
-            plan += ", \(longRunCount)× \(threshold)+ mi"
+            plan += ", \(longRunCount)× \(units.longRunThresholdLabel(miles: threshold))"
         }
         lines.append(plan)
 

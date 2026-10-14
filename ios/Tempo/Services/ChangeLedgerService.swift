@@ -25,7 +25,7 @@ enum ChangeLedgerService {
     /// Every applied change, newest first. Throws rather than returning `[]` on a failed
     /// read: "the coach has never changed anything" and "couldn't ask" are different
     /// screens.
-    static func load() async throws -> [ChangeLedger.Entry] {
+    static func load(units: Units = .mi) async throws -> [ChangeLedger.Entry] {
         let records = try await appliedRecords()
         let runIDs = Set(records.compactMap { record -> UUID? in
             guard record.action.type == "amend_run" else { return nil }
@@ -34,7 +34,7 @@ enum ChangeLedgerService {
         // The snapshots only add a "before" to a run's first amendment. Losing them costs a
         // number, not the ledger — so a failure here degrades instead of throwing.
         let recorded = (try? await recordedSnapshots(for: Array(runIDs))) ?? [:]
-        return ChangeLedger.entries(from: records, recorded: recorded)
+        return ChangeLedger.entries(from: records, recorded: recorded, units: units)
     }
 
     /// All applied rows, a page at a time — the same 1,000-row PostgREST cap that hid

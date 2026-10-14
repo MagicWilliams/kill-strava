@@ -33,11 +33,13 @@ enum PlanNarration {
     /// No week count means the engine came back without a plan to announce; a half-sentence
     /// about volume with no plan behind it is worse than saying nothing, and the athlete
     /// already has the card's own state to read.
-    static func planIsLive(_ result: PlanResult) -> String? {
+    ///
+    /// The volume is said in the athlete's unit (#109); the engine reports it in miles.
+    static func planIsLive(_ result: PlanResult, units: Units = .mi) -> String? {
         guard let weeks = result.weeks else { return nil }
         var lines = ["Plan is live: \(weeks) weeks (\((result.archetype ?? "custom").replacingOccurrences(of: "_", with: " ")))."]
         if let start = result.startWeeklyMiles, let peak = result.peakWeeklyMiles {
-            lines.append("Volume runs \(String(format: "%.0f", start)) → \(String(format: "%.0f", peak)) mi/wk.")
+            lines.append("Volume runs \(units.number(miles: start, decimals: 0)) → \(units.number(miles: peak, decimals: 0)) \(units.abbreviation)/wk.")
         }
         if let projection = result.projectedFinishSeconds {
             lines.append("Projection today: \(PaceModel.formatFinish(projection)).")

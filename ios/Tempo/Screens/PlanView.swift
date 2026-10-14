@@ -6,6 +6,7 @@ import SwiftUI
 struct PlanView: View {
     @EnvironmentObject private var store: RunStore
     @EnvironmentObject private var router: TabRouter
+    @Environment(\.units) private var units
 
     var body: some View {
         Screen(title: title, subtitle: subtitle) {
@@ -125,7 +126,7 @@ struct PlanView: View {
                 }
                 Spacer()
                 if let target = week.target_mileage {
-                    Text(String(format: "%.0f mi", target)).font(Tokens.Font.mono(13)).foregroundStyle(Tokens.Palette.accentText)
+                    Text(units.formatDistance(miles: target, decimals: 0)).font(Tokens.Font.mono(13)).foregroundStyle(Tokens.Palette.accentText)
                 }
             }
             Rectangle().fill(Tokens.Palette.divider).frame(height: 1)
@@ -195,7 +196,7 @@ struct PlanView: View {
                 }
                 Spacer()
                 if let target = week.target_mileage {
-                    Text(String(format: "%.0f mi", target)).font(Tokens.Font.mono(13)).foregroundStyle(Tokens.Palette.textSecondary)
+                    Text(units.formatDistance(miles: target, decimals: 0)).font(Tokens.Font.mono(13)).foregroundStyle(Tokens.Palette.textSecondary)
                 }
             }
         }

@@ -18,6 +18,7 @@ struct TrainingIntakeView: View {
     /// Nil when the athlete closed the form without sending it.
     let onFinish: (IntakeAnswers?) -> Void
 
+    @Environment(\.units) private var units
     @State private var answers: IntakeAnswers
     @State private var step: IntakeAnswers.Step = .situation
     /// Issues are shown only after a Next tap that hit them — not while the athlete is
@@ -120,7 +121,7 @@ struct TrainingIntakeView: View {
     private var footer: some View {
         VStack(alignment: .leading, spacing: 10) {
             if showIssues, let first = issues.first {
-                Text(first.message)
+                Text(first.message(units))
                     .font(Tokens.Font.ui(13))
                     .foregroundStyle(Tokens.Palette.danger)
                     .transition(.opacity)
@@ -244,7 +245,12 @@ struct TrainingIntakeView: View {
                             .font(Tokens.Font.ui(15, .medium))
                             .foregroundStyle(Tokens.Palette.textPrimary)
                     }
-                    TextField("Miles in a typical week right now (optional)", value: $answers.currentWeeklyMiles, format: .number)
+                    // Typed in the athlete's unit, kept in miles: the plan generator and the
+                    // coach read `current_weekly_miles`.
+                    TextField("\(units.name(plural: true).capitalized) in a typical week right now (optional)", value: Binding(
+                        get: { answers.currentWeeklyMiles.map { units.distance(miles: $0) } },
+                        set: { answers.currentWeeklyMiles = $0.map { units.meters(distance: $0) / Units.metersPerMile } }
+                    ), format: .number)
                         .keyboardType(.decimalPad)
                         .modifier(InputStyle())
                 }
@@ -309,7 +315,7 @@ struct TrainingIntakeView: View {
             }
 
             if answers.asksLongRunCount, let threshold = answers.distance.longRunThresholdMiles {
-                field("Long runs of \(threshold)+ mi in the block") {
+                field("Long runs of \(units.longRunThresholdLabel(miles: threshold)) in the block") {
                     Stepper(value: $answers.longRunCount, in: IntakeAnswers.longRunCountRange) {
                         Text("\(answers.longRunCount)")
                             .font(Tokens.Font.display(22))

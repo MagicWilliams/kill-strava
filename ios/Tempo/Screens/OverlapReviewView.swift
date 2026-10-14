@@ -12,6 +12,7 @@ import SwiftUI
 struct OverlapReviewView: View {
     @EnvironmentObject private var store: RunStore
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.units) private var units
 
     @State private var working = false
     @State private var failed = false
@@ -95,11 +96,11 @@ struct OverlapReviewView: View {
     private func column(_ side: String, _ run: RunSummary) -> some View {
         InsetWell {
             SectionLabel(side)
-            Text(String(format: "%.2f mi", run.miles)).display(20)
+            Text(units.formatDistance(meters: Double(run.distanceM))).display(20)
             stat("Start", run.start.formatted(date: .omitted, time: .shortened))
             stat("Moving", BestEfforts.formatTime(run.durationS))
             stat("Elapsed", run.elapsedS.map(BestEfforts.formatTime) ?? "—")
-            stat("Pace", run.paceSecPerMile.map { PaceModel.format($0) + " /mi" } ?? "—")
+            stat("Pace", units.formatRunPace(movingSeconds: run.durationS, meters: run.distanceM))
             stat("Avg HR", run.avgHR.map { "\($0) bpm" } ?? "—")
             stat("Source", run.source)
             if run.corrected {

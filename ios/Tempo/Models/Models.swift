@@ -78,11 +78,11 @@ struct RunSummary: Identifiable, Hashable {
         TimeAccounting.resolve(movingS: durationS, elapsedS: elapsedS)
     }
 
-    /// "5.1 mi · 9:10 /mi · 138 bpm" (drops what's unknown).
+    /// "5.1 mi · 9:10 /mi · 138 bpm" / "8.2 km · 5:42 /km · 138 bpm" (drops what's unknown).
     /// The pace here is deliberately the moving pace — see `paceSecPerMile`.
-    var metricsLine: String {
-        var parts = [String(format: "%.1f mi", miles)]
-        if let pace = paceSecPerMile { parts.append(PaceModel.format(pace) + " /mi") }
+    func metricsLine(_ units: Units) -> String {
+        var parts = [units.formatDistance(meters: Double(distanceM), decimals: 1)]
+        if let pace = units.runPace(movingSeconds: durationS, meters: distanceM) { parts.append(units.formatPace(pace)) }
         if let hr = avgHR { parts.append("\(hr) bpm") }
         return parts.joined(separator: " · ")
     }

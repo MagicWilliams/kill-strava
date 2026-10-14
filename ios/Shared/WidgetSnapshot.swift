@@ -51,8 +51,16 @@ struct WidgetSnapshot: Codable, Equatable {
     /// one, so the widget can step past today's session at midnight without the app.
     let upcoming: [Session]
     let coach: CoachLine?
+    /// The athlete's mi/km preference as stored (`Units.rawValue`), so the widget prints the
+    /// unit the app does (#109). Every figure above stays in miles; only the printing
+    /// converts. A string read leniently rather than a `Units`, and optional, because a
+    /// snapshot written before this field existed, or by a build that knows a unit this one
+    /// doesn't, must still decode: a decode failure is "Open Tempo" forever.
+    var units: String? = nil
 
     var weekMiles: Double { dayMiles.reduce(0, +) }
+    /// `units`, resolved: miles for anything missing or unknown.
+    var displayUnits: Units { Units(stored: units) }
 }
 
 // MARK: - Shared constants
@@ -124,6 +132,7 @@ extension WidgetSnapshot {
         nextWeekTargetMiles: Double?,
         coachLine: CoachLine?,
         previous: WidgetSnapshot?,
+        units: Units = .fallback,
         calendar: Calendar = weekCalendar
     ) -> WidgetSnapshot {
         let week = calendar.dateInterval(of: .weekOfYear, for: now)
@@ -164,7 +173,8 @@ extension WidgetSnapshot {
             weekTargetMiles: weekTargetMiles,
             nextWeekTargetMiles: nextWeekTargetMiles,
             upcoming: Array(upcoming),
-            coach: coach
+            coach: coach,
+            units: units.rawValue
         )
     }
 
@@ -229,6 +239,8 @@ extension WidgetSnapshot {
         let gaugeBasis: GaugeBasis?
         let nextSession: Session?
         let coach: CoachLine?
+        /// The unit every number above is printed in. The numbers themselves are miles.
+        let units: Units
 
         /// 0…1 for the Lock Screen gauge.
         var gaugeFraction: Double {
@@ -292,7 +304,8 @@ extension WidgetSnapshot {
             gaugeTarget: gaugeTarget,
             gaugeBasis: basis,
             nextSession: snapshot.upcoming.first { $0.day >= today },
-            coach: snapshot.coach
+            coach: snapshot.coach,
+            units: snapshot.displayUnits
         ))
     }
 
