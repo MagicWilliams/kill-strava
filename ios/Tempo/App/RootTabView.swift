@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 enum Tab: String, CaseIterable, Identifiable {
     case today, plan, progress, coach, you
@@ -120,6 +121,9 @@ struct RootTabView: View {
     /// Published down the tree as `\.zoomNamespace`.
     @Namespace private var zoom
 
+    /// Whether the software keyboard is on screen. The tab bar steps aside while it is (#186).
+    @State private var keyboardUp = false
+
     var body: some View {
         switch store.launch {
         case .loading:
@@ -151,9 +155,17 @@ struct RootTabView: View {
                 Tokens.Palette.canvas.ignoresSafeArea()
                 content
                     .safeAreaInset(edge: .bottom, spacing: 0) {
-                        TempoTabBar(selection: $router.selection)
+                        // A bottom inset respects the keyboard, so a bar left here while typing
+                        // rode up on top of the keyboard and put five tab buttons between the
+                        // Coach composer and the keys (David, 2026-10-15). Gone while the keyboard
+                        // is up, the chat-app layout: the composer sits on the keys, and the bar
+                        // is back at the bottom as the keyboard leaves.
+                        if !keyboardUp {
+                            TempoTabBar(selection: $router.selection)
+                        }
                     }
             }
+            .trackingKeyboard($keyboardUp)
             .toolbar(.hidden, for: .navigationBar)
             .navigationDestination(for: Route.self) { route in
                 switch route {
@@ -237,6 +249,38 @@ struct TempoTabBar: View {
         .overlay(alignment: .top) {
             Rectangle().fill(Tokens.Palette.divider).frame(height: 0.5)
         }
+    }
+}
+
+/// Keeps `isUp` in step with the software keyboard, on the keyboard's own clock.
+///
+/// Notifications rather than focus, because "the keyboard is up" is what the tab bar has to
+/// get out of the way of, whichever field raised it. The animation takes the keyboard's
+/// duration instead of going through `motion(_:value:)`: it is not decoration, it keeps the
+/// composer moving with the keys, and the keys move under Reduce Motion too.
+private struct KeyboardTracking: ViewModifier {
+    @Binding var isUp: Bool
+
+    func body(content: Content) -> some View {
+        content
+            .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) {
+                set(true, $0)
+            }
+            .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) {
+                set(false, $0)
+            }
+    }
+
+    private func set(_ up: Bool, _ note: Notification) {
+        guard up != isUp else { return }
+        let duration = note.userInfo?[UIResponder.keyboardAnimationDurationUserInfoKey] as? Double ?? 0.25
+        withAnimation(.easeOut(duration: duration)) { isUp = up }
+    }
+}
+
+private extension View {
+    func trackingKeyboard(_ isUp: Binding<Bool>) -> some View {
+        modifier(KeyboardTracking(isUp: isUp))
     }
 }
 
