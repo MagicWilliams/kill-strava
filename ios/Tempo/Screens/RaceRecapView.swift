@@ -3,8 +3,8 @@ import Charts
 import CoreLocation
 
 /// The goal race, read back. Pushed from the "Race recap" card on `RunDetailView`, which only
-/// appears on the run `RaceRecap.isRace` picks out. All arithmetic is in `RaceRecap`; this
-/// view draws it.
+/// appears on the goal's race run (`RunStore.raceGoal(for:)`), and straight after a Race-mode
+/// save (#117, `RaceFinish.destination`). All arithmetic is in `RaceRecap`; this view draws it.
 ///
 /// Times here are **elapsed** (the race clock), not moving time. Everywhere else in the app
 /// the default is moving time, but a race result is the chip clock: standing at an aid
@@ -26,7 +26,7 @@ struct RaceRecapView: View {
     /// is closed `store.goal` is the *next* goal (or nothing), and reading it would grade
     /// Chicago against a race that hasn't happened.
     private var goal: GoalInfo? { store.raceGoal(for: run) ?? store.goal }
-    private var raceMeters: Double { RaceRecap.raceMeters(goalDistance: goal?.distance) }
+    private var raceMeters: Double { RaceRecap.raceMeters(goal: goal) }
     private var raceName: String {
         goal?.raceName.flatMap { $0.isEmpty ? nil : $0 } ?? RaceCountdown.unnamedRace
     }

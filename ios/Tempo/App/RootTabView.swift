@@ -90,6 +90,14 @@ final class TabRouter: ObservableObject {
         preRun = request
     }
 
+    /// Where the app goes once a recorded run is saved (`RaceFinish.destination`): a race
+    /// lands on its recap (#117, Figma frame 9b), on Today's stack so Back goes home.
+    func land(after destination: RaceFinish.Destination) {
+        guard case .raceRecap(let run) = destination else { return }
+        selection = .today
+        path = [.raceRecap(run)]
+    }
+
     /// Pop everything and land on a tab (e.g. "Discuss with Coach").
     func showCoach() {
         path.removeAll()
@@ -163,6 +171,14 @@ struct RootTabView: View {
         .environment(\.zoomNamespace, zoom)
         .trainingIntake(router: router, store: store)
         .runRecorder(router: router, recorder: recorder)
+        // The moment a save lands, while the recorder's cover is still up: the recap is
+        // pushed underneath it, so the cover closes onto the race and not onto a frame of
+        // Today. Here rather than on the save screen (#129), so the landing is the same
+        // whichever screen ended the run (the live one, or "We kept your run").
+        .onChange(of: recorder.lastSaved) { _, saved in
+            guard let saved else { return }
+            router.land(after: RaceFinish.destination(saved, runs: store.runs))
+        }
     }
 
     @ViewBuilder private var content: some View {
