@@ -26,9 +26,9 @@ competitors do poorly:
 |------|----------|
 | Platform | **iOS native (SwiftUI)** — Apple Watch + HealthKit, App Store target |
 | Plan engine | **AI-adaptive** (LLM + rules) over a proven training-science backbone |
-| Recording | **Sync-first** — import from Apple Health / Garmin / Strava. In-app run recording comes later. |
+| Recording | **Sync-first** — any app that writes runs to Apple Health (Garmin, Coros, Strava, Runna, Apple Watch), plus native in-app recording. |
 | Coach voice | **Calm expert** — measured, knowledgeable, no hype |
-| Data sources | Apple Health (HealthKit), Garmin Connect, Strava import |
+| Data sources | **Apple Health (HealthKit) only.** No Strava API, whose terms restrict AI use of its data. Garmin and Strava runs arrive through Health. See [PRD-02](docs/prd-02-drift-detector.md). |
 
 ### Reference athlete (drives sample data + tone)
 Goal: **sub-3:15 at Chicago (Oct)**. Currently rebuilding from a small base (~0–20 mi/wk) after an
@@ -79,9 +79,9 @@ Radius scale: `sm 6 · md 10 · lg 14 · xl 20 · 2xl 28 · full 999`
 
 **Onboarding**
 1. **Welcome** — brand-first intro
-2. **Connect your runs** — sync-first (Apple Health / Garmin / Strava)
+2. **Connect your runs** — Apple Health (Garmin, Strava and others reach Tempo through it)
 3. **Goal Setup** — pick race, goal finish time, run days/week, current volume
-4. **Paywall** — Tempo Pro: features, Annual/Monthly pricing, free trial
+4. ~~**Paywall**~~ — dropped for now: Tempo is free with full access ([decision log](docs/decision-log.md))
 
 **Core app (tab bar: Today · Plan · Progress · Coach · You)**
 5. **Today** — daily home: readiness ring, session card, workout structure, coach cue, week, last run
