@@ -8,6 +8,8 @@
 // returned to the app, which renders a confirm card and executes the write
 // client-side under RLS after the athlete confirms.
 
+import { sanitizeHistory, type WireMessage } from "./history.ts";
+
 const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
 const MODEL = "claude-sonnet-5";
 
@@ -237,11 +239,6 @@ const TOOLS = [
   },
 ];
 
-interface WireMessage {
-  role: string;
-  content: string;
-}
-
 Deno.serve(async (req) => {
   if (req.method !== "POST") {
     return Response.json({ error: "POST only" }, { status: 405 });
@@ -275,6 +272,15 @@ Deno.serve(async (req) => {
       wireMessages = [{ role: "user", content: BLOCK_REVIEW_INSTRUCTIONS }];
     }
 
+    // #193: Anthropic rejects the request outright if the array ends in an assistant turn,
+    // and the client can only report that as an opaque 502. Done once, here, because all
+    // three calls below (first round, tool continuation, empty-reply retry) rebuild the same
+    // array — the continuation round appends its own assistant+user pair on top of it.
+    const anthropicMessages = sanitizeHistory(wireMessages);
+    if (anthropicMessages.length === 0) {
+      return Response.json({ error: "history must end with a user turn" }, { status: 400 });
+    }
+
     const resp = await fetch(ANTHROPIC_URL, {
       method: "POST",
       headers: {
@@ -287,10 +293,7 @@ Deno.serve(async (req) => {
         ...SAMPLING,
         system,
         ...(oneShot ? {} : { tools: TOOLS }),
-        messages: wireMessages.map((m) => ({
-          role: m.role === "assistant" ? "assistant" : "user",
-          content: String(m.content),
-        })),
+        messages: anthropicMessages,
       }),
     });
 
@@ -330,7 +333,7 @@ Deno.serve(async (req) => {
           system,
           tools: TOOLS,
           messages: [
-            ...wireMessages.map((m) => ({ role: m.role === "assistant" ? "assistant" : "user", content: String(m.content) })),
+            ...anthropicMessages,
             { role: "assistant", content: data.content },
             { role: "user", content: toolResults },
           ],
@@ -356,10 +359,7 @@ Deno.serve(async (req) => {
           ...SAMPLING,
           system,
           ...(oneShot ? {} : { tools: TOOLS }),
-          messages: wireMessages.map((m) => ({
-            role: m.role === "assistant" ? "assistant" : "user",
-            content: String(m.content),
-          })),
+          messages: anthropicMessages,
         }),
       });
       if (retry.ok) {
