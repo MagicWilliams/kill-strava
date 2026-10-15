@@ -2,10 +2,15 @@ import SwiftUI
 import Charts
 import MapKit
 import Supabase
+import UIKit
 
 /// Per-run deep dive: pace-colored route map, the coach's cached read, Garmin-style
 /// stats, scrubbable pace+HR chart, time-in-zone, elevation, and mile splits.
 /// Spec: progress.md → "Run Detail spec".
+///
+/// And the journal (#124): his photo as the hero, his title as the heading, effort and
+/// shoes as tiles, feel and notes — all editable after the fact. What shows and what an
+/// edit writes is `RunDetailJournal`.
 struct RunDetailView: View {
     let run: RunSummary
 
@@ -14,8 +19,24 @@ struct RunDetailView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.units) private var units
     @StateObject private var model = RunDetailStore()
+    @StateObject private var shoes = ShoeStore()
     @State private var showFullMap = false
+    @State private var editingJournal = false
     @State private var scrub: RunDetail.SeriesPoint?
+
+    /// The journal as the store holds it now, so an edit shows the moment it lands. `run` is
+    /// the copy the page was opened with.
+    private var journal: RunJournalEntry {
+        store.runs.first(where: { $0.id == run.id })?.journal ?? run.journal
+    }
+
+    private var photoKey: String? {
+        RunDetailJournal.photoObjectKey(journal.photoPath, userID: Supa.userID)
+    }
+
+    /// Only a run with a row, on a database with the journal columns: a run shown from the
+    /// offline HealthKit copy has no row to write to.
+    private var canEditJournal: Bool { store.journalAvailable && model.rowExists }
 
     var body: some View {
         ZStack(alignment: .topLeading) {
@@ -26,6 +47,7 @@ struct RunDetailView: View {
                         titleRow
                         raceRecapCard
                         heroStats
+                        journalCard
                         coachRead
                         timeAccounting
                         statsGrid
@@ -63,13 +85,26 @@ struct RunDetailView: View {
         .background(Tokens.Palette.canvas)
         .toolbar(.hidden, for: .navigationBar)
         .task { await model.load(run: run, runStore: store) }
+        .task { await shoes.load() }
+        .task(id: photoKey) { await model.loadPhoto(key: photoKey) }
         .fullScreenCover(isPresented: $showFullMap) { fullMap }
+        .sheet(isPresented: $editingJournal) {
+            RunJournalEditSheet(runID: run.id, journal: journal, fallbackHeading: dateHeading,
+                                initialPhoto: model.photo, shoes: shoes) { landed, image in
+                model.adoptPhoto(image, key: RunDetailJournal.photoObjectKey(landed.photoPath, userID: Supa.userID))
+                store.applyJournal(landed, toRun: run.id)
+            }
+        }
     }
 
     // MARK: - Hero
 
     @ViewBuilder private var hero: some View {
-        if let detail = model.detail, detail.hasRoute {
+        let hero = RunDetailJournal.hero(hasPhoto: photoKey != nil, photoFailed: model.photoFailed,
+                                         hasRoute: model.detail?.hasRoute == true)
+        if case .photo(let routeButton) = hero {
+            photoHero(routeButton: routeButton)
+        } else if let detail = model.detail, detail.hasRoute {
             routeMap(detail, interactive: false)
                 .frame(height: 280)
                 .overlay(alignment: .bottomTrailing) {
@@ -104,6 +139,38 @@ struct RunDetailView: View {
                 .padding(.top, 24)   // clear the status bar under the sheet overlap
             }
             .frame(height: 190)
+        }
+    }
+
+    /// His photo in the map's place. The route is one tap away on it, into the same full
+    /// map the route hero opens.
+    private func photoHero(routeButton: Bool) -> some View {
+        ZStack {
+            Tokens.Palette.inset
+            if let photo = model.photo {
+                Image(uiImage: photo).resizable().scaledToFill()
+            } else {
+                ProgressView().tint(Tokens.Palette.textTertiary)
+            }
+        }
+        .frame(height: 340)
+        .frame(maxWidth: .infinity)
+        .clipped()
+        .accessibilityLabel("Run photo")
+        .overlay(alignment: .bottomTrailing) {
+            if routeButton {
+                Button { showFullMap = true } label: {
+                    Label("Route", systemImage: "map")
+                        .font(Tokens.Font.ui(13, .semibold))
+                        .foregroundStyle(Tokens.Palette.textPrimary)
+                        .padding(.horizontal, 12).padding(.vertical, 8)
+                        .background(.ultraThinMaterial, in: Capsule())
+                }
+                .buttonStyle(Pressable())
+                .padding(.trailing, 16)
+                .padding(.bottom, 34)   // clear the content sheet's 22 pt overlap
+                .accessibilityLabel("Show route map")
+            }
         }
     }
 
@@ -160,19 +227,90 @@ struct RunDetailView: View {
 
     // MARK: - Title + coach read
 
+    private var dateHeading: String {
+        run.start.formatted(.dateTime.weekday(.wide).month(.wide).day())
+    }
+
+    /// His title when he gave one, else the date. With a title, the date moves down a line
+    /// beside the time, so the page still says when.
     private var titleRow: some View {
-        VStack(alignment: .leading, spacing: 3) {
+        let title = RunDetailJournal.heading(journal.title)
+        let time = run.start.formatted(date: .omitted, time: .shortened)
+        return VStack(alignment: .leading, spacing: 3) {
             HStack(spacing: 8) {
-                Text(run.start.formatted(.dateTime.weekday(.wide).month(.wide).day()))
+                Text(title ?? dateHeading)
                     .font(Tokens.Font.display(24)).foregroundStyle(Tokens.Palette.textPrimary)
                 if run.corrected {
                     Tag(text: "edited", fg: Tokens.Palette.info, bg: Tokens.Palette.inset)
                 }
             }
-            Text(run.start.formatted(date: .omitted, time: .shortened) + (run.source == "manual" ? " · logged manually" : ""))
+            Text((title == nil ? time : dateHeading + " · " + time) + (run.source == "manual" ? " · logged manually" : ""))
                 .font(Tokens.Font.ui(13)).foregroundStyle(Tokens.Palette.textSecondary)
         }
         .padding(.top, 14)
+    }
+
+    // MARK: - Journal
+
+    /// Effort and shoes as tiles, then feel and notes, with Edit. A run with nothing logged
+    /// gets a single "add" row instead of an empty card — and nothing at all when it can't be
+    /// edited, which is every run on the offline copy.
+    @ViewBuilder private var journalCard: some View {
+        let entry = journal
+        if RunDetailJournal.hasContent(entry, shoes: shoes.shoes) {
+            let tiles = RunDetailJournal.tiles(entry, shoes: shoes.shoes)
+            let feel = RunDetailJournal.feelLabels(entry)
+            Card {
+                HStack {
+                    SectionLabel("Your notes")
+                    Spacer()
+                    if canEditJournal {
+                        Button("Edit") { editingJournal = true }
+                            .font(Tokens.Font.ui(13, .semibold))
+                            .foregroundStyle(Tokens.Palette.accentText)
+                            .buttonStyle(.plain)
+                    }
+                }
+                if !tiles.isEmpty {
+                    HStack(spacing: 10) {
+                        ForEach(tiles, id: \.label) { tile in
+                            StatTile(value: tile.value, label: tile.label)
+                        }
+                    }
+                }
+                if !feel.isEmpty {
+                    FlowLayout(spacing: Tokens.Space.sm) {
+                        ForEach(feel, id: \.self) { label in
+                            Tag(text: label, fg: Tokens.Palette.textPrimary, bg: Tokens.Palette.inset)
+                        }
+                    }
+                }
+                if let notes = RunDetailJournal.notes(entry) {
+                    Text(notes)
+                        .font(Tokens.Font.ui(14)).foregroundStyle(Tokens.Palette.textPrimary)
+                        .lineSpacing(3)
+                        .textSelection(.enabled)
+                }
+            }
+        } else if canEditJournal {
+            Button { editingJournal = true } label: {
+                HStack(spacing: 10) {
+                    Image(systemName: "square.and.pencil")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(Tokens.Palette.accentText)
+                    Text(photoKey == nil ? "Add effort, notes or a photo" : "Add effort or notes")
+                        .font(Tokens.Font.ui(14, .semibold)).foregroundStyle(Tokens.Palette.textPrimary)
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundStyle(Tokens.Palette.textTertiary)
+                }
+                .padding(16)
+                .background(Tokens.Well.neutral.fill)
+                .clipShape(RoundedRectangle(cornerRadius: Tokens.Radius.xl, style: .continuous))
+            }
+            .buttonStyle(Pressable())
+        }
     }
 
     /// The door to the race recap. Only on the run that *is* the goal race — see
@@ -631,8 +769,36 @@ final class RunDetailStore: ObservableObject {
     /// This run's sub-distance efforts (#25). Empty until the archive scan has reached this
     /// run — and empty is also the right answer for a run too short to hold any.
     @Published var efforts: [BestEfforts.Effort] = []
+    /// The run has a `runs` row this page could read — so a journal edit has somewhere to go.
+    @Published var rowExists = false
+    /// The journal photo (#124), and the object key it is the photo for.
+    @Published var photo: UIImage?
+    @Published var photoFailed = false
+    private var photoKey: String?
 
     private var started = false
+
+    /// Fetch the photo for `key`, unless it is already the one held. Nil clears it.
+    func loadPhoto(key: String?) async {
+        guard key != photoKey || (photo == nil && !photoFailed) else { return }
+        photoKey = key
+        photo = nil
+        photoFailed = false
+        guard let key else { return }
+        let image = await RunJournal.loadPhoto(objectKey: key)
+        // A newer key may have arrived while this one downloaded (an edit replaced it).
+        guard key == photoKey else { return }
+        photo = image
+        photoFailed = image == nil
+    }
+
+    /// An edit just landed this photo (or took it away): show the image already in hand
+    /// rather than signing and downloading what was just uploaded.
+    func adoptPhoto(_ image: UIImage?, key: String?) {
+        photoKey = key
+        photo = key == nil ? nil : image
+        photoFailed = key != nil && image == nil
+    }
 
     func load(run: RunSummary, runStore: RunStore) async {
         guard !started else { return }
@@ -651,6 +817,7 @@ final class RunDetailStore: ObservableObject {
 
         detail = await hkDetail
         loading = false
+        rowExists = extras != nil
         correctionNote = extras?.correction_note
         if runStore.bestEfforts.available {
             efforts = await BestEffortsService().efforts(for: run.id)

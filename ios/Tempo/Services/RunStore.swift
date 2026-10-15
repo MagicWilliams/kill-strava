@@ -255,6 +255,22 @@ final class RunStore: ObservableObject {
         }
     }
 
+    // MARK: - The journal, edited on Run Detail (#124)
+
+    /// Whether this database has the journal columns (migration 0016). Before it does, every
+    /// journal write fails, so Run Detail doesn't offer an edit it cannot save.
+    var journalAvailable: Bool { !journalColumnsMissing }
+
+    /// A journal edit that landed: show it now rather than at the next refresh. Load is
+    /// recomputed because RPE feeds it (#161) — rating a run after the fact moves the numbers
+    /// on Today, and they should move when he taps Save, not when he next pulls to refresh.
+    func applyJournal(_ entry: RunJournalEntry, toRun runID: UUID) {
+        guard let i = runs.firstIndex(where: { $0.id == runID }), runs[i].journal != entry else { return }
+        let rpeChanged = runs[i].journal.rpe != entry.rpe
+        runs[i].journal = entry
+        if rpeChanged { fitness = LoadModel.compute(runs: runs, checkInOK: todayCheckIn?.feelsOk) }
+    }
+
     // MARK: - Training blocks (#100)
 
     /// Where the active block is — nil with no goal. Today's "review your block" card keys
