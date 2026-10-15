@@ -370,9 +370,15 @@ enum RaceRecap {
         let miles: Double
         let runCount: Int
         let longest: RunSummary?
-        /// What the finish projection read on race morning. Nil for non-marathon races — the
-        /// projection only ever extrapolates to 26.2 — or when nothing qualified.
+        /// What the finish projection read on race morning, projected to this race's own
+        /// distance (#185: it used to be marathon-only). Nil when nothing qualified.
         let projectedFinishS: Int?
+
+        /// Finish minus race morning's projection, in the engine's sign convention: negative
+        /// means faster than the projection said. Nil with no projection.
+        func finishVersusProjectionS(_ finishS: Double) -> Double? {
+            projectedFinishS.map { finishS - Double($0) }
+        }
     }
 
     /// The sixteen weeks before race day, race day itself excluded — the race is the result

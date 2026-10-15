@@ -90,7 +90,7 @@ enum BlockReview {
         let long: Adherence
         let taper: Taper?
         /// What the finish projection read the morning the block began, and on race morning.
-        /// Marathon only — see `raceMorningProjection`.
+        /// Projected to the race's own distance — see `projection(_:morningOf:raceMeters:)`.
         let projectedAtStartS: Int?
         let projectedRaceMorningS: Int?
 
@@ -162,17 +162,17 @@ enum BlockReview {
     /// Progress uses (`ProjectionHistory`), so it is the number the app was showing that
     /// morning rather than one that has since seen later runs.
     ///
-    /// Marathon only. The projection only ever extrapolates to 26.2; quoting it next to a
-    /// 10K result would be comparing two different races.
+    /// Projected to the race's own `raceMeters`. This used to be gated to the marathon,
+    /// because the projection could only extrapolate to 26.2; since #185 it answers for any
+    /// distance, so a 10K block gets a 10K projection to set beside its 10K result.
     static func projection(
         _ runs: [RunSummary],
         morningOf day: Date,
         raceMeters: Double,
         calendar: Calendar = .current
     ) -> Int? {
-        guard raceMeters == RaceRecap.marathonMeters else { return nil }
         let asOf = calendar.startOfDay(for: day).addingTimeInterval(-1)
-        return ProjectionHistory.projection(runs, asOf: asOf)?.finishS
+        return ProjectionHistory.projection(runs, asOf: asOf, raceMeters: raceMeters)?.finishS
     }
 
     // MARK: - The review

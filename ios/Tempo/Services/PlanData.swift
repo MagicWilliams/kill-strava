@@ -398,11 +398,19 @@ extension RunStore {
     /// The rule itself lives in `Engine/ProjectionHistory.swift` so the detail chart can
     /// replay it over past dates. Kept in one place deliberately: two copies would drift,
     /// and the chart would start disagreeing with the card it was opened from.
+    ///
+    /// Projected to the plan's goal distance (#185). It used to be 26.2 whatever the goal,
+    /// so every refresh overwrote the `plan` function's 5K number with a marathon one.
     func recomputeProjection() async {
         guard var plan else { return }
-        guard let projected = ProjectionHistory.projection(runs, asOf: .now, calendar: Self.cal)?.finishS else { return }
-        // 30-second deadband: a write per refresh for a sub-minute wobble is noise, not news.
-        guard abs((plan.projected_finish_s ?? 0) - projected) > 30 else { return }
+        guard let projected = ProjectionHistory.rewrite(
+            storedFinishS: plan.projected_finish_s,
+            planGoalID: plan.goal_id,
+            goal: goal,
+            runs: runs,
+            asOf: .now,
+            calendar: Self.cal
+        ) else { return }
         plan.projected_finish_s = projected
         self.plan = plan
         struct Patch: Encodable { let projected_finish_s: Int }
