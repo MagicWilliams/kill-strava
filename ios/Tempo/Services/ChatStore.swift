@@ -132,27 +132,34 @@ final class ChatStore: ObservableObject {
 
     /// Load persisted history; on a fresh account, open with a data-grounded status read.
     /// In onboarding mode, always (re)open the interview — resuming where it left off.
+    ///
+    /// The page is the *newest* `ChatHistory.pageSize` messages, so the ordering lives in
+    /// two halves that have to agree: descending here, flipped back in `ChatHistory`. See
+    /// that file for why — ascending plus a limit loaded the oldest 200 (#93).
     func load(context: CoachContext) async {
         guard !loaded else { return }
         loaded = true
         if let rows: [HistoryRow] = try? await Supa.client
             .from("coach_messages")
             .select()
-            .order("created_at")
-            .limit(200)
+            .order("created_at", ascending: false)
+            .order("id", ascending: false)   // a stable tie order, so the page edge can't skip one
+            .limit(ChatHistory.pageSize)
             .execute()
             .value {
-            messages = rows.map { row in
-                ChatMessage(
-                    id: row.id,
-                    role: ChatMessage.Role(rawValue: row.role) ?? .coach,
-                    text: row.content,
-                    timestamp: row.created_at,
-                    action: row.proposed_action,
-                    actionState: row.action_state
-                        .flatMap(ChatMessage.ActionState.init(rawValue:))?.durable ?? .pending
-                )
-            }
+            messages = ChatHistory
+                .inReadingOrder(newestFirst: rows, by: { $0.created_at })
+                .map { row in
+                    ChatMessage(
+                        id: row.id,
+                        role: ChatMessage.Role(rawValue: row.role) ?? .coach,
+                        text: row.content,
+                        timestamp: row.created_at,
+                        action: row.proposed_action,
+                        actionState: row.action_state
+                            .flatMap(ChatMessage.ActionState.init(rawValue:))?.durable ?? .pending
+                    )
+                }
         }
         // A freshly sent intake is the turn to answer, onboarding or not — it replaces the
         // generic opener rather than queueing behind it.
