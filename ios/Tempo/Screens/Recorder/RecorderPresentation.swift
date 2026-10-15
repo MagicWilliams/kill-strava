@@ -6,9 +6,9 @@ extension View {
     ///
     /// - the pre-run sheet, whenever `TabRouter.startRun(_:)` is called;
     /// - one full-screen cover over everything while a run exists, its content chosen by
-    ///   `PreRun.screen(for:)` from the recorder's phase. Countdown, live run (#127) and,
-    ///   when it lands, post-run (#128) all hang off that one switch, so no screen decides
-    ///   on its own that a run is over.
+    ///   `PreRun.screen(for:recovered:)` from the recorder's phase. Countdown, live run
+    ///   (#127), a run recovered after a kill (#115) and, when it lands, post-run (#128) all
+    ///   hang off that one switch, so no screen decides on its own that a run is over.
     ///
     /// Start is handed over in two steps on purpose. The sheet sets `router.pendingStart` and
     /// closes; `.start` is sent from the sheet's `onDismiss`, once it is gone. Sent while the
@@ -18,7 +18,7 @@ extension View {
     func runRecorder(router: TabRouter, recorder: WorkoutRecorder) -> some View {
         // Read here, in the caller's `body`, where Observation tracks it — not inside the
         // binding's getter, which SwiftUI may call outside any tracking scope.
-        let covered = PreRun.screen(for: recorder.state.phase) != .none
+        let covered = PreRun.screen(for: recorder.state.phase, recovered: recorder.recovered != nil) != .none
         return sheet(
             item: Binding(get: { router.preRun }, set: { router.preRun = $0 }),
             onDismiss: {
@@ -61,7 +61,7 @@ private struct RecorderScreen: View {
     @Environment(WorkoutRecorder.self) private var recorder
 
     var body: some View {
-        switch (PreRun.screen(for: recorder.state.phase), recorder.state.phase) {
+        switch (PreRun.screen(for: recorder.state.phase, recovered: recorder.recovered != nil), recorder.state.phase) {
         case (.countdown, .countdown(let startedAt)):
             CountdownView(startedAt: startedAt) {
                 router.reopenPreRun = true
@@ -69,6 +69,10 @@ private struct RecorderScreen: View {
             }
         case (.live, _):
             LiveRunView()
+        case (.recovered, _):
+            // A run launch picked back up after a kill (#115). Same cover, so it can never
+            // be on screen alongside the live screen.
+            RecoveredRunView()
         default:
             // Idle, for the instant the cover takes to leave.
             Tokens.Palette.canvas.ignoresSafeArea()
