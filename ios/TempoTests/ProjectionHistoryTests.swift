@@ -21,6 +21,9 @@ final class ProjectionHistoryTests: XCTestCase {
 
     private var now: Date { date("2026-08-27") }
 
+    private let marathon = RaceRecap.marathonMeters
+    private let fiveK = 5_000.0
+
     private func date(_ iso: String) -> Date {
         let f = DateFormatter()
         f.calendar = cal
@@ -103,7 +106,7 @@ final class ProjectionHistoryTests: XCTestCase {
 
     func testNothingQualifyingMeansNoProjectionRatherThanZero() {
         let onlyStrides = [run("2026-08-24", miles: 1.2, paceSec: 300)]
-        XCTAssertNil(ProjectionHistory.projection(onlyStrides, asOf: now, calendar: cal))
+        XCTAssertNil(ProjectionHistory.projection(onlyStrides, asOf: now, raceMeters: marathon, calendar: cal))
     }
 
     // MARK: - The extrapolation
@@ -112,7 +115,7 @@ final class ProjectionHistoryTests: XCTestCase {
     /// solid tempo — Riegels out to just under 3:15, which is why David's goal is 3:15.
     func testKnownEffortExtrapolatesToKnownMarathonTime() {
         let tempo = run("2026-08-24", miles: 10, paceSec: 420)
-        let projected = ProjectionHistory.projection([tempo], asOf: now, calendar: cal)?.finishS
+        let projected = ProjectionHistory.projection([tempo], asOf: now, raceMeters: marathon, calendar: cal)?.finishS
 
         XCTAssertNotNil(projected)
         XCTAssertEqual(projected ?? 0, 11_667, accuracy: 2, "3:14:27")
@@ -149,7 +152,7 @@ final class ProjectionHistoryTests: XCTestCase {
             run(iso(weeksBefore: week), miles: 6, paceSec: 470 + week)
         }
         let points = ProjectionHistory.series(
-            runs: runs, from: date("2026-06-01"), to: now, calendar: cal
+            runs: runs, from: date("2026-06-01"), to: now, raceMeters: marathon, calendar: cal
         )
 
         XCTAssertEqual(points.last?.date, now, "the right edge has to be the moment asked for")
@@ -161,7 +164,7 @@ final class ProjectionHistoryTests: XCTestCase {
     func testAnEmptyWindowProducesNoPointRatherThanAFabricatedOne() {
         let single = run("2026-06-01", miles: 6, paceSec: 420)
         let points = ProjectionHistory.series(
-            runs: [single], from: date("2026-06-01"), to: now, calendar: cal
+            runs: [single], from: date("2026-06-01"), to: now, raceMeters: marathon, calendar: cal
         )
 
         XCTAssertFalse(points.isEmpty)
@@ -174,14 +177,14 @@ final class ProjectionHistoryTests: XCTestCase {
 
     func testAnArchiveWithNoRunsPlotsNothing() {
         XCTAssertTrue(
-            ProjectionHistory.series(runs: [], from: date("2020-01-01"), to: now, calendar: cal).isEmpty
+            ProjectionHistory.series(runs: [], from: date("2020-01-01"), to: now, raceMeters: marathon, calendar: cal).isEmpty
         )
         XCTAssertNil(ProjectionHistory.settingRun([], asOf: now, calendar: cal))
     }
 
     func testDistantPastClampsToTheOldestRun() {
         let runs = [run("2026-06-01", miles: 6, paceSec: 420)]
-        let points = ProjectionHistory.series(runs: runs, from: .distantPast, to: now, calendar: cal)
+        let points = ProjectionHistory.series(runs: runs, from: .distantPast, to: now, raceMeters: marathon, calendar: cal)
 
         XCTAssertFalse(points.isEmpty, "an unbounded start is the 'All' range, not an error")
         XCTAssertGreaterThanOrEqual(points[0].date, date("2026-06-01"))
@@ -195,7 +198,7 @@ final class ProjectionHistoryTests: XCTestCase {
             run("2026-06-01", miles: 6, paceSec: 430),
         ]
         let points = ProjectionHistory.series(
-            runs: runs, from: date("2026-01-05"), to: now, calendar: cal
+            runs: runs, from: date("2026-01-05"), to: now, raceMeters: marathon, calendar: cal
         )
         let stretches = ProjectionHistory.segments(points, calendar: cal)
 
@@ -207,7 +210,7 @@ final class ProjectionHistoryTests: XCTestCase {
     func testAContinuousSeriesIsOneSegment() {
         let runs = (0..<10).map { run(iso(weeksBefore: $0), miles: 6, paceSec: 470) }
         let points = ProjectionHistory.series(
-            runs: runs, from: date("2026-07-01"), to: now, calendar: cal
+            runs: runs, from: date("2026-07-01"), to: now, raceMeters: marathon, calendar: cal
         )
         XCTAssertEqual(ProjectionHistory.segments(points, calendar: cal).count, 1)
     }
@@ -226,15 +229,121 @@ final class ProjectionHistoryTests: XCTestCase {
         let parkrun = run("2026-06-15", miles: 3.2, paceSec: 380)
         runs.append(parkrun)
 
-        let during = ProjectionHistory.projection(runs, asOf: date("2026-06-22"), calendar: cal)
-        let after = ProjectionHistory.projection(runs, asOf: date("2026-08-03"), calendar: cal)
-        let before = ProjectionHistory.projection(runs, asOf: date("2026-06-08"), calendar: cal)
+        let during = ProjectionHistory.projection(runs, asOf: date("2026-06-22"), raceMeters: marathon, calendar: cal)
+        let after = ProjectionHistory.projection(runs, asOf: date("2026-08-03"), raceMeters: marathon, calendar: cal)
+        let before = ProjectionHistory.projection(runs, asOf: date("2026-06-08"), raceMeters: marathon, calendar: cal)
 
         XCTAssertEqual(during?.run.id, parkrun.id)
         XCTAssertLessThan(during?.finishS ?? 0, before?.finishS ?? 0, "the parkrun drops it")
         XCTAssertNotEqual(after?.run.id, parkrun.id, "42 days later it has aged out")
         XCTAssertEqual(after?.finishS, before?.finishS,
                        "and the number is exactly back where it was — the step was the window, not fitness")
+    }
+
+    // MARK: - The goal's own distance (#185)
+
+    private func goal(distance: String?, distanceM: Int? = nil, id: UUID = UUID()) -> GoalInfo {
+        GoalInfo(id: id, race_name: "Turkey Trot 2026", race_date: "2026-11-05", goal_time_seconds: nil,
+                 distance: distance, distance_m: distanceM)
+    }
+
+    /// 15 Oct 2026: with a 5K goal on file, Progress quoted a projected finish of 4:18:04 —
+    /// the projection was hardcoded to 26.2. Six miles at 9:00/mi is a 4:17:48 marathon and
+    /// a 26:52 5K; asked about a 5K, it has to say the 5K.
+    func testAFiveKGoalProjectsToFiveKNotToAMarathon() {
+        let effort = run("2026-08-24", miles: 6, paceSec: 540)
+
+        let fiveKFinish = ProjectionHistory.projection([effort], asOf: now, raceMeters: fiveK, calendar: cal)?.finishS
+        let marathonFinish = ProjectionHistory.projection([effort], asOf: now, raceMeters: marathon, calendar: cal)?.finishS
+
+        XCTAssertEqual(fiveKFinish ?? 0, 1_612, accuracy: 2, "26:52 — the Riegel 5K equivalent")
+        XCTAssertEqual(marathonFinish ?? 0, 15_468, accuracy: 2, "4:17:48 — the number #185 was showing against a 5K")
+    }
+
+    /// `distance_m` first, the label after, the marathon only with no goal at all — the same
+    /// reading race-day detection uses, so the projection and the recap agree on the race.
+    func testTheRaceIsReadOffTheGoalAndOnlyNoGoalMeansMarathon() {
+        XCTAssertEqual(ProjectionHistory.raceMeters(goal: goal(distance: "5k")), 5_000)
+        XCTAssertEqual(ProjectionHistory.raceMeters(goal: goal(distance: "custom", distanceM: 30_000)), 30_000)
+        XCTAssertEqual(ProjectionHistory.raceMeters(goal: goal(distance: "marathon", distanceM: 5_000)), 5_000,
+                       "distance_m is the number the math reads")
+        XCTAssertEqual(ProjectionHistory.raceMeters(goal: nil), marathon,
+                       "just-running mode: no race named, so the projection answers for the marathon")
+
+        let tempo = run("2026-08-24", miles: 10, paceSec: 420)
+        XCTAssertEqual(
+            ProjectionHistory.projection([tempo], asOf: now, raceMeters: ProjectionHistory.raceMeters(goal: nil), calendar: cal)?.finishS ?? 0,
+            11_667, accuracy: 2, "and with no goal it is the same 3:14:27 it always was"
+        )
+    }
+
+    /// The chart replays every week against the distance passed in, so a 5K goal's chart is
+    /// a line of 5K times and agrees, point for point, with the single-moment rule.
+    func testReplayedPointsUseThePassedDistance() {
+        let runs = (0..<10).map { run(iso(weeksBefore: $0), miles: 6, paceSec: 500 + 3 * $0) }
+        let points = ProjectionHistory.series(
+            runs: runs, from: date("2026-07-01"), to: now, raceMeters: fiveK, calendar: cal
+        )
+
+        XCTAssertFalse(points.isEmpty)
+        for point in points {
+            XCTAssertEqual(
+                point.projectedFinishS,
+                ProjectionHistory.projection(runs, asOf: point.date, raceMeters: fiveK, calendar: cal)?.finishS
+            )
+            XCTAssertLessThan(point.projectedFinishS, 3_600, "a 5K reading, not a 4-hour one")
+        }
+    }
+
+    /// The device check on #185: with the stored value still the 4:18:04 marathon number, a
+    /// refresh rewrites it to the 5K — and the next refresh leaves it there instead of
+    /// flipping back.
+    func testRefreshRewritesAMarathonNumberToTheFiveKAndThenHoldsIt() {
+        let planGoal = UUID()
+        let trot = goal(distance: "5k", distanceM: 5_000, id: planGoal)
+        let runs = [run("2026-08-24", miles: 6, paceSec: 540)]
+
+        let first = ProjectionHistory.rewrite(storedFinishS: 15_484, planGoalID: planGoal, goal: trot,
+                                              runs: runs, asOf: now, calendar: cal)
+        XCTAssertEqual(first ?? 0, 1_612, accuracy: 2)
+
+        let second = ProjectionHistory.rewrite(storedFinishS: first, planGoalID: planGoal, goal: trot,
+                                               runs: runs, asOf: now, calendar: cal)
+        XCTAssertNil(second, "inside the deadband: no write, and certainly not back to 4:18")
+    }
+
+    /// `loadPlan` keeps the previous goal when the new one fails to load. Projecting to that
+    /// stale goal's distance would overwrite a correct number with another race's.
+    func testRefreshWritesNothingWhenTheGoalIsNotThePlansGoal() {
+        let runs = [run("2026-08-24", miles: 6, paceSec: 540)]
+        let stale = goal(distance: "marathon", distanceM: 42_195)
+
+        XCTAssertNil(ProjectionHistory.rewrite(storedFinishS: 1_612, planGoalID: UUID(), goal: stale,
+                                               runs: runs, asOf: now, calendar: cal))
+        XCTAssertNil(ProjectionHistory.rewrite(storedFinishS: 1_612, planGoalID: UUID(), goal: nil,
+                                               runs: runs, asOf: now, calendar: cal))
+    }
+
+    func testRefreshKeepsTheThirtySecondDeadband() {
+        let planGoal = UUID()
+        let chicago = goal(distance: "marathon", distanceM: 42_195, id: planGoal)
+        let runs = [run("2026-08-24", miles: 10, paceSec: 420)]       // 11,667
+
+        XCTAssertNil(ProjectionHistory.rewrite(storedFinishS: 11_697, planGoalID: planGoal, goal: chicago,
+                                               runs: runs, asOf: now, calendar: cal), "30 s off: noise")
+        XCTAssertEqual(ProjectionHistory.rewrite(storedFinishS: 11_698, planGoalID: planGoal, goal: chicago,
+                                                 runs: runs, asOf: now, calendar: cal), 11_667, "31 s off: news")
+    }
+
+    /// The detail page names the race from the same metres the number was projected to, so
+    /// the copy cannot say "the marathon" over a 5K number.
+    func testTheDistanceIsNamedFromTheMetresTheMathUsed() {
+        XCTAssertEqual(ProjectionHistory.distanceName(raceMeters: 5_000, units: .mi), "5K")
+        XCTAssertEqual(ProjectionHistory.distanceName(raceMeters: marathon, units: .km), "the marathon")
+        XCTAssertEqual(ProjectionHistory.distanceName(raceMeters: 21_097, units: .mi), "the half",
+                       "distance_m is whole metres")
+        XCTAssertEqual(ProjectionHistory.distanceName(raceMeters: 1_609, units: .mi), "the mile")
+        XCTAssertEqual(ProjectionHistory.distanceName(raceMeters: 30_000, units: .km), "30.0 km")
     }
 
     // MARK: - Helpers

@@ -347,13 +347,10 @@ struct RaceRecapView: View {
                 blockTile(units.formatDistance(miles: block.miles, decimals: 0), "\(RaceRecap.blockWeeks) weeks · \(block.runCount) runs")
                 blockTile(block.longest.map { units.formatDistance(meters: Double($0.distanceM), decimals: 1) } ?? "—",
                           "Longest" + (block.longest.map { " · " + $0.start.formatted(.dateTime.month(.abbreviated).day()) } ?? ""))
-                if raceMeters == RaceRecap.marathonMeters {
-                    blockTile(block.projectedFinishS.map(PaceModel.formatFinish) ?? GoalLine.unknownFinish, "Projected that morning")
-                    blockTile(RaceRecap.formatClock(finishS), "Actual")
-                }
+                blockTile(block.projectedFinishS.map(PaceModel.formatFinish) ?? GoalLine.unknownFinish, "Projected that morning")
+                blockTile(RaceRecap.formatClock(finishS), "Actual")
             }
-            if let projected = block.projectedFinishS, raceMeters == RaceRecap.marathonMeters {
-                let diff = finishS - Double(projected)
+            if let diff = block.finishVersusProjectionS(finishS) {
                 Text(diff <= 0
                      ? "\(RaceRecap.formatClock(-diff)) faster than the projection said you were ready for."
                      : "\(RaceRecap.formatClock(diff)) slower than the projection on race morning.")

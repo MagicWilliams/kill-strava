@@ -3,10 +3,15 @@ import Foundation
 /// The finish projection, replayed over time — pure, no I/O.
 ///
 /// `RunStore.recomputeProjection()` keeps no state between calls. It is a function of
-/// exactly two things, the runs on file and the moment you ask:
+/// exactly three things, the runs on file, the moment you ask, and the race it is asked about:
 ///
 ///     fastest run of >= 2.5 mi inside the trailing 42 days
-///       → Riegel-extrapolated (`PaceModel.equivalentTime`) to marathon distance
+///       → Riegel-extrapolated (`PaceModel.equivalentTime`) to the goal's own distance
+///
+/// The distance is an argument, never a constant. Until #185 it was hardcoded to 26.2, and
+/// with a 5K goal the app quoted a ~4:18 "projected finish" against a 5K on Progress, You
+/// and Coach — and every refresh wrote that marathon number back over the 5K one the `plan`
+/// function had stored. No default here on purpose: every caller has to say which race.
 ///
 /// Because of that, the whole history of what the projection *would have been* is
 /// reconstructible right now from the archive already in memory — no new table, no waiting
@@ -49,6 +54,9 @@ enum ProjectionHistory {
     /// The one effort the projection rests on as of `asOf` — fastest average pace among
     /// qualifying runs in the trailing window. Nil when nothing qualifies.
     ///
+    /// Takes no race distance, because the choice cannot depend on one: Riegel scales every
+    /// candidate by the same `d₂^1.06`, so whichever run wins for a marathon wins for a 5K.
+    ///
     /// Ties break to the more recent run, matching `min(by:)` over `RunStore.runs` (which
     /// is newest-first), so this names the same run the Progress card is quoting.
     ///
@@ -72,12 +80,19 @@ enum ProjectionHistory {
             }
     }
 
-    /// Projected marathon finish in seconds as of `asOf`, plus the run it came from.
+    /// Projected finish over `raceMeters`, in seconds, as of `asOf`, plus the run it came from.
+    ///
+    /// Same rule at every distance, the 2.5 mi floor included. Riegel is at its weakest
+    /// extrapolating *down* (a 6 mi effort read as a 5K says nothing about top-end speed),
+    /// and that is accepted: a rough 5K number is still a 5K number, which a marathon time
+    /// quoted against a 5K goal never was.
     static func projection(
         _ runs: [RunSummary],
         asOf: Date,
+        raceMeters: Double,
         calendar: Calendar = ProjectionHistory.calendar
     ) -> (run: RunSummary, finishS: Int)? {
+        guard raceMeters > 0 else { return nil }
         guard let best = settingRun(runs, asOf: asOf, calendar: calendar),
               let pace = best.paceSecPerMile else { return nil }
         // Effort time is rebuilt from the rounded pace rather than read off `durationS`.
@@ -86,9 +101,68 @@ enum ProjectionHistory {
         let finish = PaceModel.equivalentTime(
             seconds: Double(pace) * best.miles,
             from: best.miles,
-            to: RaceDistance.marathon.miles
+            to: raceMeters / Units.metersPerMile
         )
         return (best, Int(finish))
+    }
+
+    // MARK: - Which race
+
+    /// The distance the projection is asked about: the goal's `distance_m`, then its
+    /// `distance` label, then the marathon — and the marathon only when there is no goal at
+    /// all (just-running mode, where the number answers "what could I run a marathon in").
+    ///
+    /// Deliberately `RaceRecap.raceMeters(goal:)` and not a second reading of the goal: the
+    /// projection, race-day detection and the recap all have to agree on what race this is.
+    static func raceMeters(goal: GoalInfo?) -> Double {
+        RaceRecap.raceMeters(goal: goal)
+    }
+
+    /// The race distance as the detail page says it: "5K", "the half", "the marathon".
+    ///
+    /// Read off the same metres the math used rather than off the goal's label, so the copy
+    /// can never name one race while the number answers for another. A distance that is none
+    /// of the standard ones (a custom 30K) is spelled out in the athlete's unit.
+    static func distanceName(raceMeters: Double, units: Units) -> String {
+        let named: [(meters: Double, name: String)] = [
+            (Units.metersPerMile, "the mile"),
+            (5_000, "5K"),
+            (10_000, "10K"),
+            (15_000, "15K"),
+            (10 * Units.metersPerMile, "10 miles"),
+            (RaceRecap.raceMeters(goalDistance: "half"), "the half"),
+            (RaceRecap.marathonMeters, "the marathon"),
+        ]
+        // `distance_m` is whole metres, so a half arrives as 21,097 or 21,098, a mile as 1,609.
+        if let hit = named.first(where: { abs($0.meters - raceMeters) <= 2 }) { return hit.name }
+        return units.formatDistance(meters: raceMeters, decimals: 1)
+    }
+
+    // MARK: - The stored value
+
+    /// A rewrite smaller than this is a sub-minute wobble, not news, and not worth a write.
+    static let rewriteDeadbandS = 30
+
+    /// What `recomputeProjection` should write to `plans.projected_finish_s`, or nil to leave
+    /// the stored value alone.
+    ///
+    /// The goal has to be the plan's own goal. `loadPlan` keeps the previous goal when the
+    /// goal read fails, and projecting to *that* race's distance would overwrite a correct
+    /// number with one for a different race — #185 again, by another road. With no matching
+    /// goal the stored value (written by the `plan` function, at the goal's distance) stands.
+    static func rewrite(
+        storedFinishS: Int?,
+        planGoalID: UUID,
+        goal: GoalInfo?,
+        runs: [RunSummary],
+        asOf: Date,
+        calendar: Calendar = ProjectionHistory.calendar
+    ) -> Int? {
+        guard let goal, goal.id == planGoalID else { return nil }
+        guard let projected = projection(runs, asOf: asOf, raceMeters: raceMeters(goal: goal), calendar: calendar)?.finishS
+        else { return nil }
+        guard abs((storedFinishS ?? 0) - projected) > rewriteDeadbandS else { return nil }
+        return projected
     }
 
     // MARK: - The replay
@@ -107,10 +181,14 @@ enum ProjectionHistory {
     ///
     /// `from` may safely be `.distantPast` — it clamps to the oldest run, since no window
     /// ending before that can contain anything.
+    ///
+    /// Every point is projected to the one `raceMeters` passed in — the race being asked
+    /// about now, not whatever the goal was on that date.
     static func series(
         runs: [RunSummary],
         from: Date,
         to: Date,
+        raceMeters: Double,
         stepDays: Int = 7,
         calendar: Calendar = ProjectionHistory.calendar
     ) -> [Point] {
@@ -121,7 +199,7 @@ enum ProjectionHistory {
         var points: [Point] = []
         var cursor = to
         while cursor >= start {
-            if let p = projection(runs, asOf: cursor, calendar: calendar) {
+            if let p = projection(runs, asOf: cursor, raceMeters: raceMeters, calendar: calendar) {
                 points.append(Point(date: cursor, projectedFinishS: p.finishS, runID: p.run.id))
             }
             guard let previous = calendar.date(byAdding: .day, value: -stepDays, to: cursor) else { break }
