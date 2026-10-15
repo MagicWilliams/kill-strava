@@ -733,8 +733,17 @@ final class WorkoutRecorder {
             }
 
         case .save:
-            // A treadmill run's console reading is settled at the first Save, before a metre
-            // of it is in Health (#116).
+            let journal = journal, photo = photo
+            let session = session
+            // A run recovered after a kill can reach Save with nothing to save into: no
+            // session survived and no rescue workout could be made. Say so and keep the
+            // run, rather than sit on "saving" forever.
+            guard session != nil || finished != nil else {
+                send(.saveFailed(reason: "Couldn't reach Apple Health"))
+                return
+            }
+            // A treadmill run's console reading is settled at the first Save that can reach
+            // Health, before a metre of it is there (#116).
             if state.kind == .treadmill, finished == nil, !treadmillSettled {
                 treadmillCorrection = TreadmillDistance.correction(
                     consoleM: consoleM, estimateM: timeline.last?.m ?? 0, units: units)
@@ -745,15 +754,6 @@ final class WorkoutRecorder {
                                              endedAt: state.endedAt, pauses: state.pauses)
                 : nil
             let metadata = RecordingMetadata.atSave(state: state, correction: treadmillCorrection, units: units)
-            let journal = journal, photo = photo
-            let session = session
-            // A run recovered after a kill can reach Save with nothing to save into: no
-            // session survived and no rescue workout could be made. Say so and keep the
-            // run, rather than sit on "saving" forever.
-            guard session != nil || finished != nil else {
-                send(.saveFailed(reason: "Couldn't reach Apple Health"))
-                return
-            }
             enqueueWork { [weak self] in
                 guard let self else { return }
                 // Health first, and only once: a retry after this point is Tempo's half.
