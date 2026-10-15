@@ -121,4 +121,55 @@ final class GoalLineTests: XCTestCase {
         XCTAssertEqual(s.finishTime, "—:—:—")
         XCTAssertFalse(s.coachLine.contains("Chicago"))
     }
+
+    // MARK: - The goal card's TARGET (#188)
+
+    /// Found while building #185: the You tab read every goal time as a marathon time.
+    /// TARGET was `PaceModel.paces(for: .marathon, goalSeconds:).marathon`, so a 25:00 5K
+    /// goal was divided over 26.2 miles and the card asked for 0:57 /mi.
+    private func goal(seconds: Int?, distance: String, meters: Int? = nil) -> GoalInfo {
+        GoalInfo(id: UUID(), race_name: "Race", race_date: "2026-11-26", goal_time_seconds: seconds,
+                 distance: distance, distance_m: meters)
+    }
+
+    func testAFiveKGoalTargetsFiveKRacePace() {
+        let fiveK = goal(seconds: 25 * 60, distance: "5k", meters: 5_000)
+        XCTAssertEqual(GoalLine.targetPace(goal: fiveK, units: .mi), "8:03 /mi")
+        XCTAssertEqual(GoalLine.targetPace(goal: fiveK, units: .km), "5:00 /km")
+    }
+
+    /// The exact number the old code put on screen for that goal, pinned so it can't return.
+    func testAFiveKGoalIsNoLongerReadAsAMarathon() {
+        let fiveK = goal(seconds: 25 * 60, distance: "5k", meters: 5_000)
+        let old = Units.mi.formatPace(secondsPerMile: PaceModel.paces(for: .marathon, goalSeconds: 1_500).marathon)
+        XCTAssertEqual(old, "0:57 /mi")
+        XCTAssertNotEqual(GoalLine.targetPace(goal: fiveK, units: .mi), old)
+    }
+
+    /// The marathon was the one case the old formula got right; the fix must not move it.
+    /// 3:15:00 still reads 7:26 /mi.
+    func testAMarathonGoalReadsExactlyWhatItAlwaysDid() {
+        let chicago = goal(seconds: 11_700, distance: "marathon")
+        XCTAssertEqual(GoalLine.targetPace(goal: chicago, units: .mi), "7:26 /mi")
+        XCTAssertEqual(GoalLine.targetPace(goal: chicago, units: .mi),
+                       Units.mi.formatPace(secondsPerMile: PaceModel.paces(for: .marathon, goalSeconds: 11_700).marathon))
+        XCTAssertEqual(GoalLine.targetPace(goal: chicago, units: .km), "4:37 /km")
+    }
+
+    /// The distance is read the way the projection reads it: `distance_m` first (a custom
+    /// 30K is labelled `custom`, which alone would read as a marathon), the label when a goal
+    /// predates `distance_m`.
+    func testTheDistanceComesFromTheSameReadingAsTheProjection() {
+        let thirtyK = goal(seconds: 9_000, distance: "custom", meters: 30_000)
+        XCTAssertEqual(GoalLine.targetPace(goal: thirtyK, units: .km), "5:00 /km")
+
+        let labelOnly = goal(seconds: 25 * 60, distance: "5k")
+        XCTAssertEqual(GoalLine.targetPace(goal: labelOnly, units: .km), "5:00 /km")
+    }
+
+    func testAGoalWithNoTargetTimeHasNoTargetPace() {
+        XCTAssertEqual(GoalLine.targetPace(goal: goal(seconds: nil, distance: "5k", meters: 5_000), units: .mi), "—")
+        XCTAssertEqual(GoalLine.targetPace(goal: goal(seconds: 0, distance: "5k", meters: 5_000), units: .mi), "—")
+        XCTAssertEqual(GoalLine.targetPace(goal: nil, units: .mi), "—")
+    }
 }
