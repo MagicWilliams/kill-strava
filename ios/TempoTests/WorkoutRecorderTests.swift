@@ -143,6 +143,8 @@ final class WorkoutRecorderTests: XCTestCase {
     private var persisted: [InProgressRun?] = []
     /// What reached `RecordedRunSaver.save` (#122), and what it answers, in turn.
     private var saved: [(workout: WorkoutRow.Workout, journal: RunJournalEntry)] = []
+    /// The kind and race goal each save carried into the retry queue (#178).
+    private var filedAs: [(kind: RecorderState.RunKind, goalID: UUID?)] = []
     private var tempoAnswers: [RecordedRunSaver.Outcome] = []
     private let runID = UUID()
     private var autoPauses: [AutoPause.Decision] = []
@@ -173,6 +175,7 @@ final class WorkoutRecorderTests: XCTestCase {
         lines = []
         persisted = []
         saved = []
+        filedAs = []
         tempoAnswers = []
         autoPauses = []
         kindsMade = []
@@ -193,8 +196,9 @@ final class WorkoutRecorderTests: XCTestCase {
             steps: steps,
             cues: { [unowned self] in cues! },
             units: units,
-            saveToTempo: { [unowned self] workout, journal, _ in
+            saveToTempo: { [unowned self] workout, journal, _, kind, goalID in
                 saved.append((workout, journal))
+                filedAs.append((kind, goalID))
                 return tempoAnswers.isEmpty ? .saved(runID: runID) : tempoAnswers.removeFirst()
             },
             goal: { [unowned self] in goal },
@@ -449,7 +453,9 @@ final class WorkoutRecorderTests: XCTestCase {
         for c in cases {
             session = FakeSession()
             links = []
-            goal = raceGoal(closed: c.closed)
+            filedAs = []
+            let goal = raceGoal(closed: c.closed)
+            self.goal = goal
             tempoAnswers = [c.answer]
             let recorder = await started(c.kind)
             run(recorder, line(from: 0, seconds: 60, secPerKm: 240))
@@ -460,6 +466,10 @@ final class WorkoutRecorderTests: XCTestCase {
             XCTAssertEqual(recorder.state.phase, .saved(workoutID: session.workoutID), c.label)
             XCTAssertTrue(links.isEmpty, c.label)
             XCTAssertEqual(recorder.lastSaved?.kind, c.kind, c.label)
+            // What the queue keeps for the retry to link by (#178): a race carries its goal,
+            // an ordinary run carries none.
+            XCTAssertEqual(filedAs.map(\.kind), [c.kind], c.label)
+            XCTAssertEqual(filedAs.first?.goalID, c.kind == .race ? goal.id : nil, c.label)
         }
     }
 

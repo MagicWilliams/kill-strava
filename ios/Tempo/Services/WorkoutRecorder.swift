@@ -327,7 +327,9 @@ final class WorkoutRecorder {
     private let log: (String, [String: String]) -> Void
     private let persist: (InProgressRun?) -> Void
     private let recovery: RecoverySources
-    private let saveToTempo: (WorkoutRow.Workout, RunJournalEntry, UIImage?) async -> RecordedRunSaver.Outcome
+    /// The kind and, for a race, the goal ride along so a race queued offline can still be
+    /// linked when its row lands (#178).
+    private let saveToTempo: (WorkoutRow.Workout, RunJournalEntry, UIImage?, RecorderState.RunKind, UUID?) async -> RecordedRunSaver.Outcome
 
     // One recording's working state
     @ObservationIgnored private var session: WorkoutSessionDriving?
@@ -380,7 +382,8 @@ final class WorkoutRecorder {
     ///   - makeSession: builds the session for a run of the given kind, at the countdown.
     ///   - steps: a treadmill run's distance. Nil counts nothing.
     ///   - units: read once per run, at the countdown.
-    ///   - saveToTempo: writes the saved workout into Tempo — `RecordedRunSaver.save`.
+    ///   - saveToTempo: writes the saved workout into Tempo — `RecordedRunSaver.save` — with
+    ///     its kind and, for a race, the goal id the retry queue links it by (#178).
     ///   - goal: the active goal, read when a race needs it (#117).
     ///   - linkRace: files a saved race against its goal — `RaceLinker.link`.
     ///   - tickInterval: how often the snapshot refreshes; nil for none (tests drive it).
@@ -391,7 +394,7 @@ final class WorkoutRecorder {
         steps: RunStepDistanceStreaming? = nil,
         cues: @escaping () -> RunCueSpeaking,
         units: @escaping () -> Units,
-        saveToTempo: @escaping (WorkoutRow.Workout, RunJournalEntry, UIImage?) async -> RecordedRunSaver.Outcome,
+        saveToTempo: @escaping (WorkoutRow.Workout, RunJournalEntry, UIImage?, RecorderState.RunKind, UUID?) async -> RecordedRunSaver.Outcome,
         goal: @escaping () -> GoalInfo? = { nil },
         linkRace: @escaping (RaceFinish.Link) async -> Void = { _ in },
         clock: @escaping () -> Date = Date.init,
@@ -432,10 +435,11 @@ final class WorkoutRecorder {
             steps: RunStepDistanceStream(),
             cues: { CueSpeaker() },
             units: { [weak store] in store?.units ?? .fallback },
-            saveToTempo: { [weak store] workout, journal, photo in
+            saveToTempo: { [weak store] workout, journal, photo, kind, goalID in
                 // No store means no app to show it in; the sync ingests it from Health.
                 guard let store else { return .queued }
-                return await RecordedRunSaver.save(workout, journal: journal, photo: photo, store: store)
+                return await RecordedRunSaver.save(workout, journal: journal, photo: photo,
+                                                   kind: kind, goalID: goalID, store: store)
             },
             goal: { [weak store] in store?.goal },
             linkRace: { [weak store] link in
@@ -811,7 +815,8 @@ final class WorkoutRecorder {
                 } else {
                     return
                 }
-                let outcome = await saveToTempo(workout.row, journal, photo)
+                let raceGoalID = state.kind == .race ? goalSource()?.id : nil
+                let outcome = await saveToTempo(workout.row, journal, photo, state.kind, raceGoalID)
                 saveOutcome = outcome
                 // A race files itself as the block's result (#117) before the save is
                 // reported, so the recap it lands on and the close-out both see the link.

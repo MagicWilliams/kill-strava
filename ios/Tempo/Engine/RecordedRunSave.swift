@@ -114,6 +114,33 @@ enum RecordedRunSave {
         /// The photo, already resized for upload — a `UIImage` does not survive a relaunch.
         var photoJPEG: Data?
         var queuedAt: Date
+        /// How it was recorded (#178). A race saved in a dead spot has no row to link when the
+        /// recorder asks, so the queue remembers that it was a race and links it the moment
+        /// the retry lands the row. Optional so a run queued by an older build — whose JSON has
+        /// neither key — still decodes and retries; it just never links, which is what it did
+        /// before.
+        var kind: RecorderState.RunKind? = nil
+        /// The goal the race was run for, read at the save. The retry links only while that
+        /// goal is still the active one: a block replaced while the run sat queued does not
+        /// get someone else's race filed under it.
+        var goalID: UUID? = nil
+    }
+
+    /// The link to write once a queued run's row lands on a retry, or nil for none (#178).
+    ///
+    /// The same rule as the live save — `RaceFinish.link`, eligibility checked against when
+    /// the race started — plus one guard only the queue needs: the goal it was saved against
+    /// is still the active one. Nothing about a queued outdoor run, or a pre-#178 entry with no
+    /// kind, ever links.
+    static func raceLink(
+        for pending: Pending,
+        savedRunID: UUID,
+        goal: GoalInfo?,
+        calendar: Calendar = RaceCountdown.calendar
+    ) -> RaceFinish.Link? {
+        guard let kind = pending.kind, let goal, pending.goalID == goal.id else { return nil }
+        return RaceFinish.link(kind: kind, savedRunID: savedRunID, goal: goal,
+                               startedAt: pending.workout.start, calendar: calendar)
     }
 
     /// Add or replace. One entry per workout: saving the same workout twice (a retry tap, a
