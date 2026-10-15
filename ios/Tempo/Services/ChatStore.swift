@@ -10,7 +10,7 @@ struct ProposedAction: Codable, Equatable {
     // amend_run / add_run
     let run_id: String?
     let start_time: String?     // ISO 8601, passed straight through to Postgres
-    let distance_m: Int?
+    let distance_m: Int?        // the run's metres; on create_plan, the race's (#184)
     let duration_s: Int?
     let avg_hr: Int?
     let note: String?
@@ -33,6 +33,11 @@ struct ProposedAction: Codable, Equatable {
     let rationale: String?
     /// "finish" means no target time, and `goal_time_s` is absent on purpose (#102/#104).
     var goal_type: String? = nil
+    /// The race distance the coach means (#184), a `plan` distance key or "custom". Custom
+    /// metres ride in `distance_m` above: same name and meaning as the `plan` request field.
+    /// Before #184 the tool had no distance at all, and a card whose summary said "5K" was
+    /// saved as a marathon.
+    var distance: String? = nil
 
     // update_plan_settings
     let days_per_week: Int?
@@ -296,13 +301,16 @@ final class ChatStore: ObservableObject {
             default:
                 messages[idx].actionState = .failed
                 persist(.failed, for: messageID)
+                // Every card that ends `failed` says why in app_events (#184): the 13 Oct
+                // intake card failed with no row anywhere explaining it.
+                Telemetry.warn("coach.action_failed", "unknown action type", context: ["type": action.type])
                 errorText = "Unknown action type “\(action.type)”."
                 return false
             }
         } catch {
             messages[idx].actionState = .failed
             persist(.failed, for: messageID)
-            Telemetry.error("coach.action_failed", error, context: ["type": action.type])
+            Telemetry.error("coach.action_failed", error, context: Self.failureContext(type: action.type, error: error))
             errorText = (error as? ActionError)?.message ?? "That change didn't go through — Confirm to retry."
             // No acknowledgement on a failure: the retry card is the response.
             return false
@@ -504,28 +512,32 @@ final class ChatStore: ObservableObject {
 
     /// Returns the line to narrate, for the caller to place — see `PlanNarration`.
     private func applyCreatePlan(_ action: ProposedAction, runStore: RunStore) async throws -> String? {
-        guard let raceDate = action.race_date else { throw ActionError.badParams }
+        guard let request = planRequest(for: action, runStore: runStore) else { throw ActionError.badParams }
         guard let intake = action.intake else {
-            guard let request = PlanRequest.fromChatProposal(
-                regenerating(goalTimeS: action.goal_time_s, raceName: action.race_name, raceDate: raceDate, runStore: runStore),
-                goalType: action.goal_type
-            ) else { throw ActionError.badParams }
             return try await invokePlanEngine(request, runStore: runStore)
         }
         // The intake's profile half lands first: `plan` reads days, long-run day, strength
         // and risk from the profile, not from the request. Only here, on Confirm — writing it
         // at form submit would let a dismissed card reshape the plan the athlete is still on.
-        guard let uid = Supa.userID?.uuidString,
-              intake.accepts(goalTimeS: action.goal_time_s) else { throw ActionError.badParams }
+        guard let uid = Supa.userID?.uuidString else { throw ActionError.badParams }
         try await Supa.client.from("profiles").update(intake.profilePatch).eq("id", value: uid).execute()
         runStore.setPlanSettings(daysPerWeek: intake.days_per_week, longRunDay: intake.long_run_day)
         runStore.setRiskTolerance(intake.risk_tolerance)
-        let narration = try await invokePlanEngine(
-            .fromIntake(intake, goalTimeS: action.goal_time_s, raceName: action.race_name, raceDate: raceDate),
-            runStore: runStore
-        )
+        let narration = try await invokePlanEngine(request, runStore: runStore)
         runStore.finishIntake()
         return narration
+    }
+
+    /// What Confirm on this create_plan card would send to `plan`, or nil when it can't be
+    /// built. The card's distance line reads this too, so it shows what Confirm sends (#184).
+    func planRequest(for action: ProposedAction, runStore: RunStore) -> PlanRequest? {
+        .forCreatePlanCard(
+            action,
+            goal: runStore.goal,
+            planStartDate: runStore.plan?.start_date,
+            today: .now,
+            calendar: RunStore.cal
+        )
     }
 
     /// The `plan` request for anything that isn't an intake card. See
@@ -609,10 +621,17 @@ final class ChatStore: ObservableObject {
             let start_weekly_mi: Double?
             let peak_weekly_mi: Double?
         }
-        let rep: Rep = try await Supa.client.functions.invoke(
-            "plan",
-            options: FunctionInvokeOptions(body: request)
-        )
+        let rep: Rep
+        do {
+            rep = try await Supa.client.functions.invoke(
+                "plan",
+                options: FunctionInvokeOptions(body: request)
+            )
+        } catch FunctionsError.httpError(400, let body)
+            where PlanRequest.refusal(inErrorBody: body) == PlanRequest.distanceRequired {
+            // A new race with no distance (#184). Nothing was written; the card needs re-proposing.
+            throw ActionError.planRefused(PlanRequest.distanceRequired)
+        }
         await runStore.loadPlan()
         return PlanNarration.planIsLive(PlanNarration.PlanResult(
             weeks: rep.weeks,
@@ -658,11 +677,30 @@ final class ChatStore: ObservableObject {
     /// "didn't go through" left David tapping Confirm on a card that could never succeed.
     private enum ActionError: Error {
         case badParams
+        /// `plan` turned the card away for something on it (#184: `distance_required`). Same
+        /// words as `badParams` for the athlete; the reason is for `coach.action_failed`.
+        case planRefused(String)
         var message: String {
             switch self {
-            case .badParams: return "That card is missing something the plan needs. Ask the coach to propose it again."
+            case .badParams, .planRefused:
+                return "That card is missing something the plan needs. Ask the coach to propose it again."
             }
         }
+    }
+
+    /// `coach.action_failed` context beyond the action type. A function's HTTP error used to
+    /// log only "httpError(code: 400, data: 27 bytes)", which is not a reason. A 4xx body is
+    /// one of the function's own fixed strings, so it is safe to record; a 5xx body can echo a
+    /// database row, so only its status goes in.
+    private static func failureContext(type: String, error: Error) -> [String: String] {
+        var context = ["type": type]
+        if case let FunctionsError.httpError(code, body) = error {
+            context["status"] = String(code)
+            if (400..<500).contains(code), let reason = PlanRequest.refusal(inErrorBody: body) {
+                context["reason"] = String(reason.prefix(80))
+            }
+        }
+        return context
     }
 
     // MARK: - Plumbing

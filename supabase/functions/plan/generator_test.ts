@@ -23,6 +23,7 @@ import {
   MARATHON_MI,
   MI,
   mondayOf,
+  namedDistance,
   planWrites,
   type Preferences,
   racePlacement,
@@ -469,6 +470,20 @@ Deno.test("#104: distance_m outranks the label; neither means marathon, as befor
   assertEquals(odd.profile.meters, 8000, "the race session is the race they entered");
   assertEquals(resolveDistance("ultra", undefined).label, "marathon", "unknown label");
   assertEquals(resolveDistance(undefined, -3).label, "marathon", "nonsense metres");
+});
+
+// resolveDistance's marathon is for reading pre-#102 rows. What a NEW goal is gets decided
+// by namedDistance, which says "nothing" instead (#184: a 5K card saved as a marathon).
+Deno.test("#184: namedDistance names nothing rather than a marathon", () => {
+  assertEquals(namedDistance(undefined, undefined), null);
+  assertEquals(namedDistance(null, null), null);
+  assertEquals(namedDistance("ultra", undefined), null, "unknown label");
+  assertEquals(namedDistance("custom", undefined), null, "custom with no metres");
+  assertEquals(namedDistance(undefined, -3), null, "nonsense metres");
+  assertEquals(namedDistance("5k", undefined)?.meters, 5000);
+  assertEquals(namedDistance(undefined, 10000)?.label, "10k");
+  // Every non-null answer is exactly what resolveDistance gives.
+  assertEquals(namedDistance("custom", 8000), resolveDistance("custom", 8000));
 });
 
 Deno.test("#104: preferences tolerate a missing column, null, and junk", () => {

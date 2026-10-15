@@ -261,6 +261,25 @@ struct CoachView: View {
         }
     }
 
+    /// The race a create_plan card will save, read from the request Confirm sends rather than
+    /// from the coach's summary (#184). On 15 Oct the summary said "5K" and the payload named
+    /// no distance; the goal was saved as a marathon, and nothing on screen disagreed.
+    @ViewBuilder
+    private func planGoalLine(for action: ProposedAction, state: ChatMessage.ActionState) -> some View {
+        if let request = chat.planRequest(for: action, runStore: store) {
+            let line = request.cardLine(calendar: RunStore.cal)
+            if !line.isEmpty {
+                Text(line)
+                    .font(Tokens.Font.ui(13, .semibold))
+                    .foregroundStyle(state == .dismissed ? Tokens.Palette.textTertiary : Tokens.Palette.textSecondary)
+            }
+            if request.distanceLabel == nil, state == .pending || state == .failed {
+                Text("No race distance on this card. Ask the coach to name it before you confirm.")
+                    .font(Tokens.Font.ui(12)).foregroundStyle(Tokens.Palette.danger)
+            }
+        }
+    }
+
     /// Confirm card for a coach-proposed change. Walks pending → applying → applied/failed,
     /// and stays on screen after resolving as evidence the change actually landed.
     private func actionCard(for messageID: UUID, action: ProposedAction, state: ChatMessage.ActionState) -> some View {
@@ -269,6 +288,9 @@ struct CoachView: View {
             Text(action.displaySummary)
                 .font(Tokens.Font.ui(14, .medium))
                 .foregroundStyle(state == .dismissed ? Tokens.Palette.textTertiary : Tokens.Palette.textPrimary)
+            if action.type == "create_plan" {
+                planGoalLine(for: action, state: state)
+            }
 
             switch state {
             case .pending, .failed:
