@@ -235,6 +235,10 @@ final class WorkoutRecorder {
     /// race-distance cue (#117) hangs off this: `CueText.crossed(raceM, …)` then
     /// `cues?.speakRaceDistance`.
     @ObservationIgnored var onDistanceAdvanced: ((Double, Double) -> Void)?
+    /// Every refresh — each event, and once a second while recording — with the state, the
+    /// snapshot just built from it, and the recording's id. The Live Activity (#119) hangs
+    /// off this, so the Lock Screen reads the very numbers the live screen does.
+    @ObservationIgnored var onRefresh: ((RecorderState, RecorderSnapshot, UUID?) -> Void)?
     /// This run's voice. Made at the countdown and kept after the run ends, until the next
     /// run replaces it: a speaker let go mid-cue would never hand the audio back, and the
     /// music would stay ducked.
@@ -422,6 +426,7 @@ final class WorkoutRecorder {
             state: state, at: clock(), timeline: timeline, units: units,
             heartRate: heartRate, gpsLocked: track?.isLocked ?? false
         )
+        onRefresh?(state, snapshot, recordingID)
     }
 
     /// Waits for every queued HealthKit call, including any queued by the ones before it.
