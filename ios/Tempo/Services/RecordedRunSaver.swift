@@ -95,7 +95,10 @@ enum RecordedRunSaver {
                 PendingQueue.update { RecordedRunSave.removing(uuid, from: $0) }
                 Telemetry.info("recorder.run_too_short", context: ["meters": "\(Int(pending.workout.distanceM ?? 0))"])
                 return .tooShort
-            case .alreadyStored(let id), .sameRunAs(let id):
+            case .alreadyStored(let id):
+                runID = id
+                await markCorrected(id, pending.workout)
+            case .sameRunAs(let id):
                 runID = id
             case .insert(let row):
                 runID = try await write(row)
@@ -173,6 +176,24 @@ enum RecordedRunSaver {
             .value
         guard let id = found.first?.id else { throw RowMissingAfterWrite() }
         return id
+    }
+
+    /// A console correction onto a row the sync wrote first — see
+    /// `RecordedRunSave.correctionPatch`. Best effort: the run and its distance are already
+    /// right, and a failure here costs the "corrected" mark, not the journal, so it is
+    /// reported and the save goes on.
+    private static func markCorrected(_ rowID: UUID, _ workout: WorkoutRow.Workout) async {
+        guard let patch = RecordedRunSave.correctionPatch(for: workout) else { return }
+        do {
+            try await Supa.client
+                .from("runs")
+                .update(patch)
+                .eq("id", value: rowID)
+                .eq("corrected", value: false)
+                .execute()
+        } catch {
+            Telemetry.error("recorder.correction_patch_failed", error)
+        }
     }
 
     /// The journal, if the athlete said anything. The original image when this is the save

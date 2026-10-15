@@ -49,8 +49,9 @@ targets:
         # updates flowing after the screen locks (blue pill). Smaller ask, easier review.
         NSLocationWhenInUseUsageDescription: "Tempo uses your location during a run you start, to map your route and measure distance and pace. It stops when the run ends."
         # Auto-pause (#113, #114) reads step speed from CMPedometer, which crashes without
-        # this key. Only asked for at the first run with auto-pause on.
-        NSMotionUsageDescription: "With auto-pause on, Tempo uses your steps to tell when you've stopped running and when you've started again."
+        # this key; a treadmill run (#116) reads its distance from it. Asked for at the first
+        # treadmill run or the first run with auto-pause on, whichever comes first.
+        NSMotionUsageDescription: "Tempo uses your steps to measure distance on a treadmill and, with auto-pause on, to tell when you've stopped running and when you've started again."
         # The save screen (#129) offers a photo taken there and then. Library picks go through
         # PhotosPicker, which runs out of process and needs no permission at all.
         NSCameraUsageDescription: "Take a photo on the save screen to keep with your run."

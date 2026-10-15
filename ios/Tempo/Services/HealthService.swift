@@ -279,7 +279,8 @@ extension WorkoutRow.Workout {
             movingS: workout.duration,
             avgHR: workout.statistics(for: HKQuantityType(.heartRate))?
                 .averageQuantity()?.doubleValue(for: bpm),
-            indoor: (workout.metadata?[HKMetadataKeyIndoorWorkout] as? Bool) ?? false
+            indoor: (workout.metadata?[HKMetadataKeyIndoorWorkout] as? Bool) ?? false,
+            correction: RecordingMetadata.correction(from: workout.metadata)
         )
     }
 }

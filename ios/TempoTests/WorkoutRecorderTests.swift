@@ -61,9 +61,11 @@ final class WorkoutRecorderTests: XCTestCase {
             if failFinishes > 0 { failFinishes -= 1; throw Refused() }
             finishMetadata = metadata
             let start = began ?? .distantPast, end = stopped ?? start
+            // Read back the way `WorkoutRow.Workout(_ hkWorkout:)` reads a real one.
             return FinishedWorkout(id: workoutID, row: WorkoutRow.Workout(
                 uuid: workoutID, start: start, end: end, distanceM: distanceWritten,
-                movingS: end.timeIntervalSince(start), avgHR: nil))
+                movingS: end.timeIntervalSince(start), avgHR: nil,
+                correction: RecordingMetadata.correction(from: metadata)))
         }
         func discard() async { calls.append(.discard) }
 
@@ -80,6 +82,17 @@ final class WorkoutRecorderTests: XCTestCase {
         func start(from date: Date) { isOn = true }
         func stop() { isOn = false }
         func step(at: Date, speed: Double) { onSample?(AutoPause.Sample(at: at, speed: speed, source: .pedometer)) }
+    }
+
+    /// Core Motion's step distance on a treadmill (#116): a cumulative total since `start`.
+    @MainActor
+    final class FakeSteps: RunStepDistanceStreaming {
+        var onDistance: ((Double, Date) -> Void)?
+        var startedFrom: [Date] = []
+        var isOn = false
+        func start(from date: Date) { isOn = true; startedFrom.append(date) }
+        func stop() { isOn = false }
+        func total(_ meters: Double, at: Date) { onDistance?(meters, at) }
     }
 
     @MainActor
@@ -117,6 +130,7 @@ final class WorkoutRecorderTests: XCTestCase {
     private var session: FakeSession!
     private var location: FakeLocation!
     private var motion: FakeMotion!
+    private var steps: FakeSteps!
     private var cues: FakeCues!
     /// Every telemetry event name, #131 lines and diagnostics alike, in order.
     private var logged: [String] = []
@@ -143,6 +157,7 @@ final class WorkoutRecorderTests: XCTestCase {
         session = FakeSession()
         location = FakeLocation()
         motion = FakeMotion()
+        steps = FakeSteps()
         cues = FakeCues()
         logged = []
         lines = []
@@ -162,6 +177,7 @@ final class WorkoutRecorderTests: XCTestCase {
             makeSession: { [unowned self] kind in kindsMade.append(kind); return session! },
             location: location,
             motion: motion,
+            steps: steps,
             cues: { [unowned self] in cues! },
             units: units,
             saveToTempo: { [unowned self] workout, journal, _ in
@@ -447,29 +463,156 @@ final class WorkoutRecorderTests: XCTestCase {
 
     // MARK: - Treadmill and heart rate
 
-    /// No GPS on a treadmill: the distance is HealthKit's, nothing is written on top of it,
-    /// and there is no route.
-    func testATreadmillRunUsesHealthKitsDistanceAndNoGPS() async throws {
-        let recorder = await started(.treadmill)
-        XCTAssertEqual(location.starts, 0, "a treadmill never asks for location")
-        XCTAssertEqual(session.beginMetadata[HKMetadataKeyIndoorWorkout] as? Bool, true)
-
-        for s in stride(from: 10.0, through: 400, by: 10) {
+    /// A treadmill at 5:20 /km for 400 s: Core Motion's step total, 10 s at a time.
+    private func belt(_ recorder: WorkoutRecorder, from s0: Double = 10, through s1: Double = 400,
+                      baseS: Double = 0) {
+        for s in stride(from: s0, through: s1, by: 10) {
             now = t(s)
-            session.onSignal?(.distance(totalMeters: s * 1000 / 320, at: now))
+            steps.total((s - baseS) * 1000 / 320, at: now)
             recorder.tick()
         }
+    }
+
+    private func endTreadmill(_ recorder: WorkoutRecorder, at s: Double = 401) {
+        now = t(s)
+        recorder.send(.endRequested(.liveScreen, at: now))
+    }
+
+    /// No GPS on a treadmill: the distance is his step count, there is no route, and not a
+    /// metre goes into the workout until Save — a sample in Health can't be taken back if the
+    /// console disagrees (#116). Skipped, the workout gets the step count exactly.
+    func testATreadmillRunCountsStepsAndWritesThemOnlyAtSave() async throws {
+        let recorder = await started(.treadmill)
+        XCTAssertEqual(location.starts, 0, "a treadmill never asks for location")
+        XCTAssertEqual(steps.startedFrom, [t(0)], "counting from the start of the clock")
+        XCTAssertEqual(session.beginMetadata[HKMetadataKeyIndoorWorkout] as? Bool, true)
+
+        belt(recorder)
         XCTAssertEqual(recorder.snapshot.distanceM, 1250, accuracy: 0.001)
         XCTAssertEqual(try XCTUnwrap(recorder.snapshot.currentPaceS), 320, accuracy: 1)
         XCTAssertEqual(recorder.snapshot.completedSplits, 1)
 
-        now = t(401)
-        recorder.send(.endRequested(.liveScreen, at: now))
-        recorder.send(.endConfirmed)
+        endTreadmill(recorder)
         await recorder.settled()
-        XCTAssertEqual(session.distanceWritten, 0, "HealthKit already has the treadmill's distance")
+        XCTAssertFalse(steps.isOn, "the pedometer stops with the clock")
+        XCTAssertEqual(session.distanceWritten, 0, "nothing in Health before Save")
+
+        recorder.confirmSave()
+        await recorder.settled()
+        XCTAssertEqual(session.distanceWritten, 1250, accuracy: 1e-9, "the step count, untouched")
         XCTAssertTrue(session.route.isEmpty)
+        XCTAssertNil(session.finishMetadata[RecordingMetadata.consoleDistanceMKey])
+        XCTAssertNil(saved.first?.workout.correction)
         XCTAssertEqual(saved.first?.workout.uuid, session.workoutID)
+        let distanceCalls = session.calls.filter { if case .distance = $0 { true } else { false } }
+        XCTAssertGreaterThan(distanceCalls.count, 30, "short samples, so splits read back out of Health")
+        XCTAssertLessThan(try XCTUnwrap(session.calls.lastIndex { if case .distance = $0 { true } else { false } }),
+                          try XCTUnwrap(session.calls.firstIndex(of: .finish)), "every sample before the finish")
+    }
+
+    /// The console said 1.40 km where the phone counted 1.25: Health gets 1.40 km, the
+    /// workout says so in its metadata, and the row Tempo writes is marked corrected.
+    func testTheConsoleDistanceIsWhatGoesIntoHealth() async throws {
+        let recorder = await started(.treadmill, units: .km)
+        belt(recorder)
+        endTreadmill(recorder)
+        recorder.confirmSave(treadmillConsoleM: 1_400)
+        await recorder.settled()
+
+        XCTAssertEqual(session.distanceWritten, 1_400, accuracy: 1e-9)
+        XCTAssertEqual(session.finishMetadata[RecordingMetadata.consoleDistanceMKey] as? Double, 1_400)
+        XCTAssertEqual(session.finishMetadata[RecordingMetadata.stepEstimateMKey] as? Double, 1_250)
+        let workout = try XCTUnwrap(saved.first?.workout)
+        XCTAssertEqual(workout.correction?.note, "Treadmill console: 1.40 km (phone estimated 1.25 km)")
+        guard case .insert(let row) = RecordedRunSave.decide(workout, nearby: [], userID: "u") else {
+            return XCTFail("a new run must be written")
+        }
+        XCTAssertEqual(row.distance_m, 1_400)
+        XCTAssertEqual(row.corrected, true)
+        XCTAssertEqual(row.original?.distance_m, 1_250)
+        XCTAssertEqual(recorder.state.phase, .saved(workoutID: session.workoutID))
+    }
+
+    /// The phone over-counted. The case HealthKit's own treadmill collection could never
+    /// have fixed: its samples were already saved.
+    func testAConsoleBelowThePhoneIsWhatGoesIntoHealthToo() async {
+        let recorder = await started(.treadmill)
+        belt(recorder)
+        endTreadmill(recorder)
+        recorder.confirmSave(treadmillConsoleM: 1_100)
+        await recorder.settled()
+        XCTAssertEqual(session.distanceWritten, 1_100, accuracy: 1e-9)
+    }
+
+    /// Save on a stepper he never touched hands back the estimate rounded to a hundredth.
+    /// That is not a correction, and the run is not marked as one.
+    func testAnUntouchedStepperIsNotACorrection() async {
+        let recorder = await started(.treadmill, units: .mi)
+        belt(recorder)
+        endTreadmill(recorder)
+        let shown = Units.mi.meters(distance: (Units.mi.distance(meters: 1_250) * 100).rounded() / 100)
+        recorder.confirmSave(treadmillConsoleM: shown)
+        await recorder.settled()
+        XCTAssertEqual(session.distanceWritten, 1_250, accuracy: 1e-9)
+        XCTAssertNil(saved.first?.workout.correction)
+    }
+
+    /// Steps taken while paused — the walk to the water fountain — are not distance.
+    func testStepsWhilePausedAreNotDistance() async {
+        let recorder = await started(.treadmill)
+        belt(recorder, through: 200)
+        now = t(205)
+        recorder.send(.pause(.manual(.liveScreen), at: now))
+        now = t(260)
+        steps.total(625 + 40, at: now)   // 40 m to the fountain and back
+        recorder.tick()
+        now = t(265)
+        recorder.send(.resume(.manual(.liveScreen), at: now))
+        now = t(275)
+        steps.total(625 + 40 + 30, at: now)
+        recorder.tick()
+        XCTAssertEqual(recorder.snapshot.distanceM, 625 + 30, accuracy: 0.001)
+    }
+
+    /// Health refused the finish after the samples went in. Retry finishes the same run: the
+    /// console reading is settled at the first Save, and no metre is written twice.
+    func testARetryAfterAHealthFailureWritesNothingTwice() async {
+        let recorder = await started(.treadmill)
+        belt(recorder)
+        endTreadmill(recorder)
+        session.failFinishes = 1
+        recorder.confirmSave(treadmillConsoleM: 1_400)
+        await recorder.settled()
+        XCTAssertEqual(recorder.state.phase, .ending(.failed(reason: "Couldn't save to Apple Health")))
+        XCTAssertEqual(session.distanceWritten, 1_400, accuracy: 1e-9)
+
+        recorder.confirmSave(treadmillConsoleM: 1_500)
+        await recorder.settled()
+        XCTAssertEqual(session.distanceWritten, 1_400, accuracy: 1e-9, "the samples already in Health stand")
+        XCTAssertEqual(session.finishMetadata[RecordingMetadata.consoleDistanceMKey] as? Double, 1_400)
+        XCTAssertEqual(recorder.state.phase, .saved(workoutID: session.workoutID))
+    }
+
+    /// A correction never outlives its run.
+    func testTheNextRunStartsWithNoCorrection() async {
+        let recorder = await started(.treadmill)
+        belt(recorder)
+        endTreadmill(recorder)
+        recorder.confirmSave(treadmillConsoleM: 1_400)
+        await recorder.settled()
+        recorder.reset()
+
+        session = FakeSession()
+        now = t(1_000)
+        recorder.send(.start(RecorderState.Setup(kind: .treadmill), at: now))
+        now = t(1_003)
+        recorder.send(.countdownDone(at: now))
+        belt(recorder, from: 1_013, through: 1_403, baseS: 1_003)
+        endTreadmill(recorder, at: 1_404)
+        recorder.confirmSave()
+        await recorder.settled()
+        XCTAssertEqual(session.distanceWritten, 1_250, accuracy: 1e-9)
+        XCTAssertNil(session.finishMetadata[RecordingMetadata.consoleDistanceMKey])
     }
 
     /// Heart rate shows when a strap sends it; when it stops, the tile becomes the last split.
@@ -746,6 +889,7 @@ final class WorkoutRecorderTests: XCTestCase {
     private func relaunched(units: Units = .km) -> WorkoutRecorder {
         location = FakeLocation()
         motion = FakeMotion()
+        steps = FakeSteps()
         cues = FakeCues()
         lines = []
         logged = []
@@ -980,34 +1124,36 @@ final class WorkoutRecorderTests: XCTestCase {
         XCTAssertEqual(saved.map(\.workout.uuid), [session.workoutID], "Tempo's half, with the workout Health had")
     }
 
-    /// HealthKit's own distance on a treadmill counted the belt while Tempo was dead; the
-    /// run comes back with it, and carries on reading it.
-    func testATreadmillRunComesBackWithTheSessionsOwnDistance() async throws {
+    /// Core Motion kept counting the belt while Tempo was dead. The run comes back counting
+    /// from its last snapshot, so the gap is credited, and the whole run — none of which
+    /// was in Health yet — goes in once, at Save.
+    func testATreadmillRunComesBackCountingFromItsLastSnapshot() async throws {
         let before = await started(.treadmill)
-        for s in stride(from: 10.0, through: 300, by: 10) {
-            now = t(s)
-            session.onSignal?(.distance(totalMeters: s * 1000 / 320, at: now))
-            before.tick()
-        }
+        belt(before, through: 300)
         let killed = try lastSnapshot()
+        XCTAssertEqual(killed.savedAt, t(300))
 
         now = t(420)
         let recorder = relaunched()
-        let (recovered, survivor) = survivor(of: killed, healthHas: 420 * 1000 / 320)
+        let (recovered, survivor) = survivor(of: killed, healthHas: nil)
         await recorder.adopt(snapshot: killed, session: recovered)
-        XCTAssertEqual(recorder.snapshot.distanceM, 420 * 1000 / 320, accuracy: 0.2,
-                       "the belt kept turning and HealthKit kept counting")
+        XCTAssertEqual(steps.startedFrom, [killed.savedAt], "counting again from the last thing we know")
         XCTAssertEqual(location.starts, 0, "a treadmill never asks for location, recovered or not")
 
+        steps.total(120 * 1000 / 320, at: now)
+        recorder.tick()
+        XCTAssertEqual(recorder.snapshot.distanceM, 420 * 1000 / 320, accuracy: 0.2,
+                       "the belt kept turning and Core Motion kept counting")
+
         now = t(430)
-        survivor.onSignal?(.distance(totalMeters: 430 * 1000 / 320, at: now))
+        steps.total(130 * 1000 / 320, at: now)
         recorder.tick()
         XCTAssertEqual(recorder.snapshot.distanceM, 430 * 1000 / 320, accuracy: 0.2)
 
         recorder.send(.endRequested(.liveScreen, at: now))
         recorder.confirmSave()
         await recorder.settled()
-        XCTAssertEqual(survivor.distanceWritten, 0, "HealthKit already has a treadmill's distance")
+        XCTAssertEqual(survivor.distanceWritten, 430 * 1000 / 320, accuracy: 0.2, "all of it, once, at Save")
         XCTAssertEqual(recorder.state.phase, .saved(workoutID: survivor.workoutID))
     }
 

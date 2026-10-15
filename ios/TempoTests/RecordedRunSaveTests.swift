@@ -207,6 +207,78 @@ final class RecordedRunSaveTests: XCTestCase {
         XCTAssertEqual(try JSONDecoder().decode([RecordedRunSave.Pending].self, from: data), [original])
     }
 
+    // MARK: - A treadmill run corrected to its console (#116)
+
+    /// 5.00 mi on the console, 4.71 on the phone, 40 minutes on the belt: the workout as
+    /// Health hands it back once the recorder has written the console's curve into it. Its
+    /// samples add up to a hair under the console in floating point.
+    private func corrected(console: Double = 8_046.7, estimate: Double = 7_580.0) -> WorkoutRow.Workout {
+        var w = workout(meters: console - 1e-9, movingS: 2_400, elapsedS: 2_400, avgHR: nil, indoor: true)
+        w.correction = WorkoutRow.Workout.Correction(
+            consoleM: console, estimateM: estimate,
+            note: "Treadmill console: 5.00 mi (phone estimated 4.71 mi)")
+        return w
+    }
+
+    func testACorrectedTreadmillRunIsWrittenAsAnEditedRun() throws {
+        guard case .insert(let row) = RecordedRunSave.decide(corrected(), nearby: [], userID: user) else {
+            return XCTFail("a new treadmill run must be written")
+        }
+        XCTAssertEqual(row.distance_m, 8_047, "the console's figure to the metre, not the samples' float sum truncated")
+        XCTAssertEqual(row.avg_pace_sec, 479, "pace from the console: 2400 s / 5.0002 mi, truncated")
+        XCTAssertEqual(row.corrected, true)
+        XCTAssertEqual(row.correction_note, "Treadmill console: 5.00 mi (phone estimated 4.71 mi)")
+        // `original` is what the phone counted — the snapshot a coach amendment would keep.
+        XCTAssertEqual(row.original, RunInsert.Original(distance_m: 7_580, duration_s: 2_400, avg_hr: nil,
+                                                        avg_pace_sec: 509))
+    }
+
+    /// Everything that is not a console correction is written exactly as before, down to the
+    /// JSON keys. The sync's bulk upsert sends one key set for every row; a row that grew
+    /// `corrected: false` or `original: null` would change what every insert sends.
+    func testAnUncorrectedRowSendsTheKeysItAlwaysHas() throws {
+        guard case .insert(let row) = RecordedRunSave.decide(workout(indoor: true), nearby: [], userID: user) else {
+            return XCTFail()
+        }
+        XCTAssertNil(row.corrected)
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(row)) as? [String: Any])
+        XCTAssertEqual(Set(json.keys), ["user_id", "source", "external_id", "start_time", "distance_m",
+                                         "duration_s", "elapsed_duration_s", "avg_pace_sec", "avg_hr"])
+        let fixed = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(
+            WorkoutRow.corrected(row, by: corrected()))) as? [String: Any])
+        XCTAssertTrue(Set(fixed.keys).isSuperset(of: ["corrected", "correction_note", "original"]))
+    }
+
+    /// Saved with no signal in a basement gym: by the time the queued retry runs, the sync
+    /// has written the row from Health, unmarked. The retry marks it.
+    func testARowTheSyncWroteFirstIsMarkedCorrected() throws {
+        let w = corrected()
+        let existing = stored(ingestRows([w])[0])
+        XCTAssertEqual(RecordedRunSave.decide(w, nearby: [existing], userID: user), .alreadyStored(rowID: existing.id))
+        let patch = try XCTUnwrap(RecordedRunSave.correctionPatch(for: w))
+        XCTAssertEqual(patch.corrected, true)
+        XCTAssertEqual(patch.distance_m, 8_047)
+        XCTAssertEqual(patch.correction_note, w.correction?.note)
+        XCTAssertEqual(patch.original.distance_m, 7_580)
+        XCTAssertNil(RecordedRunSave.correctionPatch(for: workout()), "nothing to add to an uncorrected run")
+    }
+
+    /// A run queued before this build has no correction in its JSON, and still comes back.
+    func testAQueuedRunFromBeforeCorrectionsStillDecodes() throws {
+        let old = pending(RunJournalEntry(rpe: 4))
+        var json = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(old)) as? [String: Any])
+        var workoutJSON = try XCTUnwrap(json["workout"] as? [String: Any])
+        workoutJSON["correction"] = nil
+        json["workout"] = workoutJSON
+        let decoded = try JSONDecoder().decode(RecordedRunSave.Pending.self,
+                                               from: JSONSerialization.data(withJSONObject: json))
+        XCTAssertEqual(decoded, old)
+
+        let queued = RecordedRunSave.Pending(workout: corrected(), journal: RunJournalEntry(), photoJPEG: nil, queuedAt: start)
+        XCTAssertEqual(try JSONDecoder().decode(RecordedRunSave.Pending.self, from: JSONEncoder().encode(queued)), queued,
+                       "and a queued correction survives a relaunch")
+    }
+
     func testOnlyANotNowStaysQueued() {
         // No answer at all is the dead spot at the end of a run — the case the queue is for.
         for status in [nil, 408, 429, 500, 503] as [Int?] {
