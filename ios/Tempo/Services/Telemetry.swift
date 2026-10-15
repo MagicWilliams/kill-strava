@@ -58,6 +58,17 @@ enum Telemetry {
         log(.error, event, String(describing: error).prefix(300).description, context: ctx)
     }
 
+    /// `error(_:_:context:)` for a read whose caller may simply have gone away (#155).
+    ///
+    /// A cancellation is dropped, not reported: once a refresh is cancelled every await still
+    /// ahead of it throws, so logging them — even at `.info` under one name — would still be
+    /// one row per call site, not one per cancelled refresh. Any other error reports exactly
+    /// as `error` does. The classification is `Engine/Cancellation.swift`, pinned by tests.
+    static func errorUnlessCancelled(_ event: String, _ error: Error, context: [String: String] = [:]) {
+        guard !Cancellation.isCancellation(error) else { return }
+        self.error(event, error, context: context)
+    }
+
     /// Sends recorder lines built by `RecorderTelemetry` (#131), whose names and keys live there.
     static func log(_ lines: [RecorderTelemetry.Line]) {
         for line in lines { log(line) }
