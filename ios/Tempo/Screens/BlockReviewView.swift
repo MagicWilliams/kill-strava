@@ -118,7 +118,7 @@ struct BlockReviewView: View {
         _goal = State(initialValue: goal)
     }
 
-    private var raceMeters: Double { RaceRecap.raceMeters(goalDistance: goal.distance) }
+    private var raceMeters: Double { RaceRecap.raceMeters(goal: goal) }
     private var raceName: String { goal.raceName.flatMap { $0.isEmpty ? nil : $0 } ?? RaceCountdown.unnamedRace }
     private var isClosed: Bool { goal.outcome != nil }
 
@@ -142,12 +142,10 @@ struct BlockReviewView: View {
         )
     }
 
-    /// The race as a run: the one the goal recorded, or — while the block is open — whatever
-    /// `RaceRecap.isRace` finds on race day (the longest, if several qualify).
+    /// The race as a run: the one the goal links (a Race-mode save, #117, or the close-out),
+    /// or — while the block is open — whatever `RaceRecap.isRace` finds on race day.
     private var raceRun: RunSummary? {
-        if let id = goal.race_run_id { return store.runs.first { $0.id == id } }
-        guard !isClosed else { return nil }
-        return store.runs.filter { RaceRecap.isRace(run: $0, goal: goal) }.max { $0.distanceM < $1.distanceM }
+        RaceRecap.raceRun(in: store.runs, goal: goal, guessing: !isClosed)
     }
 
     var body: some View {
@@ -518,7 +516,7 @@ struct CloseBlockSheet: View {
         _startTime = State(initialValue: morning ?? .now)
     }
 
-    private var raceMeters: Double { RaceRecap.raceMeters(goalDistance: goal.distance) }
+    private var raceMeters: Double { RaceRecap.raceMeters(goal: goal) }
     private var parsed: Int? { BlockCloseout.parseFinish(timeText, raceMeters: raceMeters) }
     private var canSave: Bool { outcome != .raced || parsed != nil }
 

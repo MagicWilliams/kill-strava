@@ -25,11 +25,10 @@ enum RaceRecap {
     static let marathonMeters = 42_195.0
     static let metersPerMile = 1609.34
 
-    /// `goals.distance` → metres. The column is constrained to `5k`/`10k`/`half`/`marathon`
-    /// today (`0001_init.sql`); `1mi`, `15k` and `10mi` are the keys #102 proposes widening
-    /// it to, read here already so a block for one of those reviews at the right distance
-    /// the day they arrive. An unreadable value falls back to the marathon: every goal this
-    /// app has ever created is one, and `plan` only writes `"marathon"`.
+    /// `goals.distance` → metres: the label, for a goal with no `distance_m`
+    /// (`raceMeters(goal:)` reads that first). `custom` has no fixed length and lands on the
+    /// default with any other unreadable value. That default is the marathon because every
+    /// goal written before 0014 is one.
     static func raceMeters(goalDistance: String?) -> Double {
         switch goalDistance {
         case "1mi":  return metersPerMile
@@ -40,6 +39,17 @@ enum RaceRecap {
         case "half": return 21_097.5
         default:     return marathonMeters
         }
+    }
+
+    /// The goal's race distance in metres: `goals.distance_m` first, the label after.
+    ///
+    /// `distance_m` (0014) is the number the math is meant to read, and the only one a custom
+    /// distance has: a 30K goal is labelled `custom`, and the label alone would read it as a
+    /// marathon and file nothing on race day as the race (#140 item 1). The label is the
+    /// fallback for a goal written before 0014, whose `distance_m` is nil.
+    static func raceMeters(goal: GoalInfo?) -> Double {
+        if let m = goal?.distance_m, m > 0 { return Double(m) }
+        return raceMeters(goalDistance: goal?.distance)
     }
 
     // MARK: - Is this the race?
@@ -72,9 +82,36 @@ enum RaceRecap {
             start: run.start,
             distanceM: run.distanceM,
             raceDay: goal.raceDay,
-            raceMeters: raceMeters(goalDistance: goal.distance),
+            raceMeters: raceMeters(goal: goal),
             calendar: calendar
         )
+    }
+
+    /// Whether `run` is `goal`'s race, the explicit link first (#117).
+    ///
+    /// A run recorded in Race mode writes itself into `goals.race_run_id`, and that is the
+    /// athlete's word: once a goal names its race, that run and only that run is the race.
+    /// The date-and-distance guess is for a goal that names none — a race run on a Garmin, or
+    /// a race-mode save that never got its link written — and would otherwise also hand the
+    /// recap to, say, a second long recording on race day.
+    static func isGoalRace(run: RunSummary, goal: GoalInfo?, calendar: Calendar = .current) -> Bool {
+        guard let goal else { return false }
+        if let linked = goal.race_run_id { return run.id == linked }
+        return isRace(run: run, goal: goal, calendar: calendar)
+    }
+
+    /// The run among `runs` that was `goal`'s race: the linked run when it is loaded, else —
+    /// if `guessing` — the longest run `isRace` picks out on race day.
+    ///
+    /// A link whose run isn't in `runs` falls back to the guess rather than to nothing: the
+    /// column is `on delete set null`, so a link that resolves to no row is a run not loaded
+    /// yet, not a run that is gone. `guessing` is off for a closed block, whose race is
+    /// whatever the close-out recorded and never a fresh guess.
+    static func raceRun(in runs: [RunSummary], goal: GoalInfo, guessing: Bool = true,
+                        calendar: Calendar = .current) -> RunSummary? {
+        if let linked = goal.race_run_id, let run = runs.first(where: { $0.id == linked }) { return run }
+        guard guessing else { return nil }
+        return runs.filter { isRace(run: $0, goal: goal, calendar: calendar) }.max { $0.distanceM < $1.distanceM }
     }
 
     // MARK: - GPS overread

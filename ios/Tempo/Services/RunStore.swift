@@ -269,11 +269,12 @@ final class RunStore: ObservableObject {
     }
 
     /// The goal a run was the race for: a closed block that recorded it as its race run, or
-    /// else the active goal if `RaceRecap.isRace` picks it out. Without the first half, closing
-    /// a block would quietly take the "Race recap" door off its own race's page.
+    /// else the active goal — its linked race run (#117) if it has one, the date-and-distance
+    /// guess if not (`RaceRecap.isGoalRace`). Without the first half, closing a block would
+    /// quietly take the "Race recap" door off its own race's page.
     func raceGoal(for run: RunSummary) -> GoalInfo? {
         if let closed = pastBlocks.first(where: { $0.race_run_id == run.id }) { return closed }
-        return RaceRecap.isRace(run: run, goal: goal) ? goal : nil
+        return RaceRecap.isGoalRace(run: run, goal: goal) ? goal : nil
     }
 
     // MARK: - Overlapping runs (#30)

@@ -176,7 +176,8 @@ struct RunDetailView: View {
     }
 
     /// The door to the race recap. Only on the run that *is* the goal race — see
-    /// `RaceRecap.isRace` — so every other run's page is exactly what it was.
+    /// `RunStore.raceGoal(for:)`: the linked race run, else `RaceRecap.isRace` — so every other
+    /// run's page is exactly what it was.
     @ViewBuilder private var raceRecapCard: some View {
         if let raceGoal = store.raceGoal(for: run) {
             Button { router.openRaceRecap(run) } label: {
