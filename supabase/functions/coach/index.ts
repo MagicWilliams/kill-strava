@@ -10,6 +10,7 @@
 
 import { sanitizeHistory, type WireMessage } from "./history.ts";
 import { RACE_DISTANCES } from "./distances.ts";
+import { runEditing, shapeRunInput, speaksRunFacts } from "./run_corrections.ts";
 
 const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
 const MODEL = "claude-sonnet-5";
@@ -34,7 +35,8 @@ const SAMPLING = {
   output_config: { effort: "medium" },
 } as const;
 
-const PERSONA = `You are Coach, the in-app running coach for Tempo — a marathon training app.
+// The run-editing lines differ by client (#206): see run_corrections.ts.
+const persona = (runEditRules: string) => `You are Coach, the in-app running coach for Tempo — a marathon training app.
 
 Voice: calm expert. Measured, specific, honest. No hype, no exclamation marks, no emoji.
 You are talking to the athlete whose data is in <athlete_context>. Do not assume their name or gender.
@@ -56,9 +58,7 @@ Ground rules:
 - goal_detail (when present) is what the athlete told the training intake about this block: the race distance (distance_m is the number to reason from — races run from the mile to the marathon, so never assume 26.2), course_type, goal_type, and preferences. Weight your advice toward preferences.focus — fueling, pacing, race_day, recovery, strength, mental are separate asks, so lean into the ones listed in check-ins, run reads and takeaways, without dropping what the data says matters most. preferences.plan_style "none" means they chose coaching without a schedule: guide week to week from their runs instead of pointing at sessions that do not exist. Respect preferences.quality (the workouts they said they will actually do) and long_runs_20plus. preferences.notes is their own words about injuries and life; keep it in mind.
 
 Editing training data:
-- Runs in <athlete_context> carry an "id". When the athlete says logged data is wrong or incomplete (forgot to start the watch, treadmill run missing, etc.), propose the fix with the amend_run tool — use the exact id, and compute the FINAL corrected totals yourself (e.g. un-recorded miles get added to both distance and duration at the stated pace).
-- For a run that was never recorded at all, propose add_run.
-- Estimate missing values (like HR for an added segment) only from this athlete's own comparable data, conservatively, and say in the note what was estimated and how.
+${runEditRules}
 - When the athlete confirms they want ambitious training beyond conservative defaults — after you have named the risk — record it with set_risk_tolerance.
 - When the athlete reports a measured physiological stat (e.g. "I tested my max HR, it's 197"), record it with update_athlete so zones and analysis use it.
 - Alongside any tool call, write a short text message saying what you're proposing. The athlete sees a confirm card; the change only happens after they confirm.
@@ -105,40 +105,8 @@ const TAKEAWAY_INSTRUCTIONS = `Write the coach's takeaway for the single run in 
 const BLOCK_REVIEW_INSTRUCTIONS = `Write the coach's retrospective on the training block in <block_review> — the athlete reads it at the bottom of the Block Review screen, after the race is over.
 4–8 sentences, calm expert voice, plain prose. Be honest: say what worked, what didn't, and what to carry into the next block, each grounded in the block's actual numbers (weekly volume against plan, peak week, long runs, session adherence, taper, the projection against the result). If the outcome is did_not_start or did_not_finish, or the result missed the goal, say so plainly and without consolation — then what the block still built. If result_time is missing, do not invent one. No greeting, no sign-off, no questions, no markdown.`;
 
-const TOOLS = [
-  {
-    name: "amend_run",
-    description:
-      "Propose a correction to an existing run's recorded data. Provide FINAL corrected values (not deltas). Only include fields that change.",
-    input_schema: {
-      type: "object",
-      properties: {
-        run_id: { type: "string", description: "The run's id, exactly as it appears in <athlete_context>." },
-        distance_m: { type: "integer", description: "Corrected total distance in meters." },
-        duration_s: { type: "integer", description: "Corrected total duration in seconds." },
-        avg_hr: { type: "integer", description: "Corrected average heart rate, bpm." },
-        note: { type: "string", description: "What changed, why, and what was estimated (and how)." },
-        summary: { type: "string", description: "One line for the confirm card, with concrete numbers. e.g. 'Correct Tue's run: 6.0 → 8.0 mi, 55:12 → 1:15:12, avg HR est. 138'" },
-      },
-      required: ["run_id", "note", "summary"],
-    },
-  },
-  {
-    name: "add_run",
-    description: "Propose logging a run that was never recorded.",
-    input_schema: {
-      type: "object",
-      properties: {
-        start_time: { type: "string", description: "ISO 8601 datetime the run started." },
-        distance_m: { type: "integer" },
-        duration_s: { type: "integer" },
-        avg_hr: { type: "integer", description: "Only if the athlete stated it or it can be estimated from their own data; note the estimate." },
-        note: { type: "string", description: "Provenance: why this is being added manually." },
-        summary: { type: "string", description: "One line for the confirm card, with concrete numbers." },
-      },
-      required: ["start_time", "distance_m", "duration_s", "note", "summary"],
-    },
-  },
+// amend_run / add_run come from run_corrections.ts, chosen per client (#206).
+const OTHER_TOOLS = [
   {
     name: "update_athlete",
     description:
@@ -258,7 +226,13 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { messages, context, mode, run, block } = await req.json();
+    const { messages, context, mode, run, block, features } = await req.json();
+
+    // #206: a build that computes run corrections itself says so in `features`; anything
+    // else (every build installed before it) keeps the totals schema it was written against.
+    const facts = speaksRunFacts(features);
+    const runTools = runEditing(features);
+    const TOOLS = [...runTools.tools, ...OTHER_TOOLS];
 
     // Takeaway mode: one-shot per-run read, cached by the app in runs.coach_takeaway.
     // Block review mode: one-shot block retrospective, cached by the app in goals.review.
@@ -269,7 +243,7 @@ Deno.serve(async (req) => {
       return Response.json({ error: "messages required" }, { status: 400 });
     }
 
-    let system = `${PERSONA}\n\n<athlete_context>\n${JSON.stringify(context ?? {}, null, 1)}\n</athlete_context>`;
+    let system = `${persona(runTools.rules)}\n\n<athlete_context>\n${JSON.stringify(context ?? {}, null, 1)}\n</athlete_context>`;
     let wireMessages: WireMessage[] = messages ?? [];
     if (takeaway) {
       system += `\n\n<run_detail>\n${JSON.stringify(run ?? {}, null, 1)}\n</run_detail>`;
@@ -392,7 +366,7 @@ Deno.serve(async (req) => {
       const summary = (input.summary as string) ||
         ((input.note as string) ?? "").split(/(?<=\.)\s/)[0] ||
         `Proposed ${b.name}`;
-      return { type: b.name, ...input, summary };
+      return { type: b.name, ...shapeRunInput(b.name, input, facts), summary };
     });
 
     return Response.json({
