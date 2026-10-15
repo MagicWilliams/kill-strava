@@ -27,7 +27,8 @@ struct LiveRunView: View {
                 // #128 replaces this branch with frame 5a (paused, with discard).
                 LiveRunLayout(display: display, snapshot: snapshot, send: { recorder.send($0) })
             case .recovering:
-                // #128 replaces this branch with the "We kept your run" prompt (#115).
+                // A run picked back up after a kill gets `RecoveredRunView` instead of this
+                // screen (#115, `PreRun.screen(for:recovered:)`). Here, only hold-to-end.
                 LiveRunLayout(display: display, snapshot: snapshot, send: { recorder.send($0) })
             case .over:
                 // #129 replaces this with the save screen.

@@ -21,7 +21,7 @@ struct LiveRunDisplay: Equatable {
         /// Resume, and hold-to-end. Frame 5a (#128) draws over this.
         case paused
         /// The recorder lost the run and has not got it back. Only hold-to-end ("save what we
-        /// have") is accepted; the recovery prompt is #128.
+        /// have") is accepted, never Resume; the recovery prompt is `RecoveredRunView` (#115).
         case recovering
         /// The clock has stopped: the save screen's business (#129), not this one's.
         case over
