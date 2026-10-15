@@ -476,6 +476,55 @@ final class WorkoutRecorderTests: XCTestCase {
         XCTAssertTrue(location.isOn)
     }
 
+    /// Pause and Resume on the Lock Screen (#119) reach the workout session exactly as the
+    /// live screen's do, so HealthKit's own duration leaves the stop out.
+    func testLockScreenPauseAndResumeReachTheSession() async {
+        let recorder = await started()
+        now = t(300)
+        recorder.send(RunActivityCommand.pause.event(at: now))
+        XCTAssertEqual(recorder.state.phase, .paused)
+        XCTAssertEqual(session.calls.last, .pause(t(300)))
+        now = t(330)
+        recorder.send(RunActivityCommand.resume.event(at: now))
+        await recorder.settled()
+        XCTAssertEqual(recorder.state.phase, .running)
+        XCTAssertEqual(session.calls.last, .resume(t(330)))
+        XCTAssertFalse(session.endedOrThrownAway)
+    }
+
+    /// The Live Activity (#119) hears every refresh, and from it exists exactly from the
+    /// countdown's end to the save: never during the 3-2-1, never after the run is in Health.
+    func testTheLiveActivityFollowsTheRunFromTheCountdownsEndToTheSave() async {
+        let recorder = makeRecorder()
+        var heard: [(RunActivityState?, UUID?)] = []
+        recorder.onRefresh = { state, snapshot, id in
+            heard.append((RunActivityPlan.content(state: state, snapshot: snapshot), id))
+        }
+        recorder.send(.start(RecorderState.Setup(kind: .outdoor, target: tempo), at: now))
+        XCTAssertNil(heard.last?.0, "the countdown has no activity")
+        now = t(0)
+        recorder.send(.countdownDone(at: now))
+        XCTAssertEqual(heard.last?.0?.stage, .running)
+        XCTAssertEqual(heard.last?.0?.startedAt, t(0))
+        XCTAssertEqual(heard.last?.1, recorder.recordingID)
+        XCTAssertEqual(heard.last?.0?.units, .km, "the unit the run started in")
+
+        let before = heard.count
+        run(recorder, line(from: 0, seconds: 10, secPerKm: 300))
+        XCTAssertEqual(heard.count - before, 11, "once a tick: the plan, not the recorder, throttles")
+
+        now = t(20)
+        recorder.send(.pause(.manual(.liveScreen), at: now))
+        XCTAssertEqual(heard.last?.0?.stage, .paused)
+        recorder.send(.endRequested(.liveScreen, at: now))
+        XCTAssertEqual(heard.last?.0?.stage, .ended)
+        XCTAssertEqual(heard.last?.0?.endedAt, t(20))
+        recorder.confirmSave()
+        await recorder.settled()
+        XCTAssertEqual(recorder.state.phase, .saved(workoutID: session.workoutID))
+        XCTAssertNil(heard.last?.0, "saved: the activity goes")
+    }
+
     /// Location turned off mid-run is logged, not a stop. The clock keeps going.
     func testRevokedLocationIsLoggedAndTheRunGoesOn() async {
         let recorder = await started()
@@ -891,6 +940,10 @@ final class WorkoutRecorderTests: XCTestCase {
 
         now = t(720)
         let recorder = relaunched()
+        var lockScreen: [(RunActivityState?, UUID?)] = []
+        recorder.onRefresh = { state, snapshot, id in
+            lockScreen.append((RunActivityPlan.content(state: state, snapshot: snapshot), id))
+        }
         let (recovered, survivor) = survivor(of: killed, healthHas: inHealthBefore)
         await recorder.adopt(snapshot: killed, session: recovered)
         await recorder.settled()
@@ -906,6 +959,10 @@ final class WorkoutRecorderTests: XCTestCase {
         XCTAssertTrue(location.isOn, "GPS is back on")
         XCTAssertEqual(survivor.calls, [], "the session is adopted as it is: nothing prepared, begun or resumed")
         XCTAssertEqual(lines.first { $0.event == .recovered }?.context["outcome"], "resumed")
+        // The Lock Screen comes back with it (#119): the same recording's activity, the same clock.
+        XCTAssertEqual(lockScreen.last?.1, recordingID)
+        XCTAssertEqual(lockScreen.last?.0?.stage, .running)
+        XCTAssertEqual(lockScreen.last?.0?.startedAt, t(0))
         XCTAssertEqual(lines.first { $0.event == .interrupted }?.context["reason"], "app_terminated")
         XCTAssertEqual((persisted.last ?? nil)?.savedAt, t(720), "rewritten at once: a second kill costs no more")
 
