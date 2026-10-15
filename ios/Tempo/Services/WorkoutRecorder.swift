@@ -25,7 +25,9 @@ protocol WorkoutSessionDriving: AnyObject {
     func pause(at date: Date)
     func resume(at date: Date)
     /// The athlete ended the run: stop the activity and end collection at `date`. The
-    /// session is not ended yet; that happens in `finish` or `discard`.
+    /// session is not ended yet; that happens in `finish` or `discard`. Indoors, collection
+    /// may end in `finish` instead, at this same `date`, so the treadmill's distance — only
+    /// written at Save (#116) — lands while the builder is still collecting.
     func stop(at date: Date) async throws
     /// Append GPS fixes to the workout's route.
     func addRoute(_ locations: [CLLocation]) async throws

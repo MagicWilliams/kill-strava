@@ -31,6 +31,10 @@ final class HealthWorkoutSession: NSObject, WorkoutSessionDriving {
     /// alone (finished against the saved workout afterwards).
     private var routeIsAssociated = false
     private var stopWaiters: [CheckedContinuation<Void, Never>] = []
+    /// Indoors, where the run ended: collection is ended there in `finish`, not in `stop`,
+    /// because a treadmill's distance is only written at Save (#116) and every sample should
+    /// land while the builder is still collecting.
+    private var collectionEnd: Date?
 
     /// How long `stop` waits for the session to report it has stopped before ending
     /// collection anyway. Ending the run must not hang on a callback that never comes.
@@ -145,8 +149,17 @@ final class HealthWorkoutSession: NSObject, WorkoutSessionDriving {
                 }
             }
         }
-        // A session recovered on the save screen (#115) may already have ended collection
-        // before the kill; ending it twice throws, and the save would read that as a failure.
+        // Indoors the distance is still to come (#116): collection ends at `date`, in `finish`.
+        if indoor {
+            collectionEnd = date
+            return
+        }
+        try await endCollection(at: date)
+    }
+
+    /// A session recovered on the save screen (#115) may already have ended collection
+    /// before the kill; ending it twice throws, and the save would read that as a failure.
+    private func endCollection(at date: Date) async throws {
         if builder.endDate == nil {
             try await builder.endCollection(at: date)
         }
@@ -168,6 +181,7 @@ final class HealthWorkoutSession: NSObject, WorkoutSessionDriving {
 
     func finish(metadata: [String: Any]) async throws -> FinishedWorkout {
         if !metadata.isEmpty { try await builder.addMetadata(metadata) }
+        if indoor { try await endCollection(at: collectionEnd ?? Date()) }
         guard let workout = try await builder.finishWorkout() else {
             throw RecorderSaveError.noWorkout
         }
