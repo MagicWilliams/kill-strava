@@ -463,8 +463,8 @@ private struct Chip: View {
 }
 
 /// The system camera, for a photo taken there and then. `PhotosPicker` covers the library
-/// but has no camera.
-private struct CameraPicker: UIViewControllerRepresentable {
+/// but has no camera. Also used by the journal edit sheet on Run Detail (#124).
+struct CameraPicker: UIViewControllerRepresentable {
     let onFinish: (UIImage?) -> Void
 
     static var isAvailable: Bool { UIImagePickerController.isSourceTypeAvailable(.camera) }

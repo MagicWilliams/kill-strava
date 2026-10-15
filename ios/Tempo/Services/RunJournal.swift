@@ -133,6 +133,44 @@ enum RunJournal {
         return path
     }
 
+    /// Fetch a run's photo for Run Detail (#124): sign the object key, then download it. The
+    /// key has already been checked by `RunDetailJournal.photoObjectKey`. Nil on any failure,
+    /// which the page treats as "no photo" and gives the hero back to the map.
+    static func loadPhoto(objectKey: String) async -> UIImage? {
+        do {
+            let url = try await Supa.client.storage
+                .from(RunJournalPayload.bucket)
+                .createSignedURL(path: objectKey, expiresIn: RunDetailJournal.signedURLLifetime)
+            let (data, response) = try await URLSession.shared.data(from: url)
+            if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
+                Telemetry.warn("journal.photo_load_failed", "status \(http.statusCode)")
+                return nil
+            }
+            return UIImage(data: data)
+        } catch {
+            Telemetry.error("journal.photo_load_failed", error)
+            return nil
+        }
+    }
+
+    /// Take the photo off a run (#124): `photo_path` written as null. The object stays in the
+    /// bucket — an orphan in a private bucket costs nothing, and deleting it first would
+    /// leave a row naming a missing object if the null write then failed.
+    static func detachPhoto(fromRun runID: UUID) async -> Bool {
+        do {
+            try await withRetry("journal.photo_detach_failed") {
+                try await Supa.client
+                    .from("runs")
+                    .update(RunJournalPayload.PhotoPathUpdate(photoPath: nil))
+                    .eq("id", value: runID.uuidString)
+                    .execute()
+            }
+            return true
+        } catch {
+            return false
+        }
+    }
+
     /// Redraw at ≤ 2048 px on the longest side and encode as JPEG. Drawing through the
     /// renderer also bakes in the EXIF orientation, so a portrait photo is stored upright
     /// for viewers that ignore the tag.
