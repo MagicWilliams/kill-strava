@@ -10,11 +10,13 @@ import HealthKit
 /// The running session is also what keeps a treadmill run alive in the background, where
 /// there are no location updates to do it.
 ///
-/// Distance, outdoors, is Tempo's: the data source's own distance collection is turned off
-/// and `TrackMath`'s is written instead (`DistanceChunks`), so the run in Health is the run
-/// the athlete watched. On a treadmill there is no GPS, so HealthKit's collection stays on
-/// and its running total is reported up as `.distance`. Heart rate is collected when a
-/// Watch or strap is paired, reported up when it arrives, and never waited for.
+/// Distance is always Tempo's: the data source's own distance collection is turned off and
+/// Tempo writes its curve instead (`DistanceChunks`), so the run in Health is the run the
+/// athlete watched. Outdoors that is `TrackMath`'s GPS curve, as he runs. On a treadmill it
+/// is his step count from Core Motion, written once at Save, after the console has had its
+/// say (#116, `TreadmillDistance`) — a sample in the builder can never be taken back out.
+/// Heart rate is collected when a Watch or strap is paired, reported up when it arrives,
+/// and never waited for.
 @MainActor
 final class HealthWorkoutSession: NSObject, WorkoutSessionDriving {
 
@@ -29,6 +31,10 @@ final class HealthWorkoutSession: NSObject, WorkoutSessionDriving {
     /// alone (finished against the saved workout afterwards).
     private var routeIsAssociated = false
     private var stopWaiters: [CheckedContinuation<Void, Never>] = []
+    /// Indoors, where the run ended: collection is ended there in `finish`, not in `stop`,
+    /// because a treadmill's distance is only written at Save (#116) and every sample should
+    /// land while the builder is still collecting.
+    private var collectionEnd: Date?
 
     /// How long `stop` waits for the session to report it has stopped before ending
     /// collection anyway. Ending the run must not hang on a callback that never comes.
@@ -56,7 +62,7 @@ final class HealthWorkoutSession: NSObject, WorkoutSessionDriving {
         builder = recovered.associatedWorkoutBuilder()
         indoor = recovered.workoutConfiguration.locationType == .indoor
         // A recovered builder comes back without a data source (Apple's iPhone workout
-        // sample sets it again); without one, heart rate and treadmill distance stop.
+        // sample sets it again); without one, heart rate stops.
         builder.dataSource = Self.dataSource(store: store, configuration: recovered.workoutConfiguration)
         super.init()
         session.delegate = self
@@ -84,8 +90,8 @@ final class HealthWorkoutSession: NSObject, WorkoutSessionDriving {
     /// argument.
     var isPaused: Bool { session.state == .paused }
 
-    /// The builder's cumulative distance in metres, if it has one. Outdoors that is exactly
-    /// the samples Tempo wrote before the kill; on a treadmill, HealthKit's own total.
+    /// The builder's cumulative distance in metres, if it has one: exactly the samples Tempo
+    /// wrote before the kill. Outdoors, the run so far; on a treadmill, nothing until Save.
     var distanceM: Double? {
         builder.statistics(for: HKQuantityType(.distanceWalkingRunning))?
             .sumQuantity()?.doubleValue(for: .meter())
@@ -143,8 +149,17 @@ final class HealthWorkoutSession: NSObject, WorkoutSessionDriving {
                 }
             }
         }
-        // A session recovered on the save screen (#115) may already have ended collection
-        // before the kill; ending it twice throws, and the save would read that as a failure.
+        // Indoors the distance is still to come (#116): collection ends at `date`, in `finish`.
+        if indoor {
+            collectionEnd = date
+            return
+        }
+        try await endCollection(at: date)
+    }
+
+    /// A session recovered on the save screen (#115) may already have ended collection
+    /// before the kill; ending it twice throws, and the save would read that as a failure.
+    private func endCollection(at date: Date) async throws {
         if builder.endDate == nil {
             try await builder.endCollection(at: date)
         }
@@ -166,6 +181,7 @@ final class HealthWorkoutSession: NSObject, WorkoutSessionDriving {
 
     func finish(metadata: [String: Any]) async throws -> FinishedWorkout {
         if !metadata.isEmpty { try await builder.addMetadata(metadata) }
+        if indoor { try await endCollection(at: collectionEnd ?? Date()) }
         guard let workout = try await builder.finishWorkout() else {
             throw RecorderSaveError.noWorkout
         }
@@ -190,11 +206,10 @@ final class HealthWorkoutSession: NSObject, WorkoutSessionDriving {
 
     private static func dataSource(store: HKHealthStore, configuration: HKWorkoutConfiguration) -> HKLiveWorkoutDataSource {
         let source = HKLiveWorkoutDataSource(healthStore: store, workoutConfiguration: configuration)
-        if configuration.locationType != .indoor {
-            // Outdoors the distance is written from the GPS track; HealthKit's own estimate
-            // alongside it would count every metre twice.
-            source.disableCollection(for: HKQuantityType(.distanceWalkingRunning))
-        }
+        // Tempo writes the distance, indoors and out; HealthKit's own estimate alongside it
+        // would count every metre twice. Indoors it matters twice over: whatever the data
+        // source added could not be taken back when the console disagrees (#116).
+        source.disableCollection(for: HKQuantityType(.distanceWalkingRunning))
         return source
     }
 
@@ -257,12 +272,6 @@ extension HealthWorkoutSession: HKLiveWorkoutBuilderDelegate {
            let latest = stats.mostRecentQuantity() {
             let bpm = latest.doubleValue(for: HKUnit.count().unitDivided(by: .minute()))
             signals.append(.heartRate(bpm: bpm, at: stats.mostRecentQuantityDateInterval()?.end ?? now))
-        }
-
-        let distance = HKQuantityType(.distanceWalkingRunning)
-        if collectedTypes.contains(distance),
-           let total = workoutBuilder.statistics(for: distance)?.sumQuantity() {
-            signals.append(.distance(totalMeters: total.doubleValue(for: .meter()), at: now))
         }
 
         guard !signals.isEmpty else { return }

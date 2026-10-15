@@ -54,7 +54,7 @@ enum RecordedRunSave {
             return .alreadyStored(rowID: same.id)
         }
         if let kept = RunDedupe.reconcile(candidates: [summary], existing: nearby).inserts.first {
-            return .insert(WorkoutRow.insert(kept, userID: userID))
+            return .insert(WorkoutRow.corrected(WorkoutRow.insert(kept, userID: userID), by: workout))
         }
         // reconcile drops a lone candidate only when a row sits inside the window, so this
         // finds one — the first, the same scan order reconcile matched it in.
@@ -63,7 +63,37 @@ enum RecordedRunSave {
         }) {
             return .sameRunAs(rowID: twin.id)
         }
-        return .insert(WorkoutRow.insert(summary, userID: userID))
+        return .insert(WorkoutRow.corrected(WorkoutRow.insert(summary, userID: userID), by: workout))
+    }
+
+    /// What to write onto a row that was already there (`.alreadyStored`) when the workout
+    /// carries a console correction (#116), or nil when there is nothing to add.
+    ///
+    /// The case this is for: a treadmill run saved with no signal in a basement gym. It is
+    /// queued, and by the time the retry runs the sync has ingested the same workout from
+    /// Health — with the console's distance, because that is what is in the workout, but
+    /// unmarked, because the sync reads no journal and no correction. Without this the run
+    /// would read as the phone's own number that happened to be right.
+    ///
+    /// The service applies it only where `corrected` is still false, so a row the coach has
+    /// amended since keeps his correction and its `original`.
+    static func correctionPatch(for workout: WorkoutRow.Workout) -> CorrectionPatch? {
+        guard let c = workout.correction else { return nil }
+        let row = WorkoutRow.insert(WorkoutRow.summary(workout), userID: "")
+        return CorrectionPatch(
+            distance_m: row.distance_m,
+            avg_pace_sec: row.avg_pace_sec,
+            correction_note: c.note,
+            original: WorkoutRow.original(row, estimateM: c.estimateM)
+        )
+    }
+
+    struct CorrectionPatch: Encodable, Equatable {
+        let distance_m: Int
+        let avg_pace_sec: Int?
+        var corrected = true
+        let correction_note: String
+        let original: RunInsert.Original
     }
 
     /// The slice of the archive `decide` needs: from one window before the start to one after.

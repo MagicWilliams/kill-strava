@@ -42,6 +42,20 @@ struct RunInsert: Encodable, Equatable {
     let elapsed_duration_s: Int?    // wall clock; nil when the source didn't say
     let avg_pace_sec: Int?
     let avg_hr: Int?
+    /// Set only for a treadmill run corrected to its console (#116, `WorkoutRow.corrected`).
+    /// Nil is left out of the JSON entirely, so every other insert — the sync's bulk upsert
+    /// included — sends exactly the keys it always has, and the columns keep their defaults.
+    var corrected: Bool? = nil
+    var correction_note: String? = nil
+    var original: Original? = nil
+
+    /// `runs.original`: the pre-correction snapshot, the shape `ChatStore.applyAmend` writes.
+    struct Original: Encodable, Equatable {
+        let distance_m: Int
+        let duration_s: Int
+        let avg_hr: Int?
+        let avg_pace_sec: Int?
+    }
 }
 
 // MARK: - RunSummary (a run as read from HealthKit)

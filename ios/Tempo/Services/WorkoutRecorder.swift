@@ -15,8 +15,7 @@ import UIKit
 /// the run is saved or discarded.
 @MainActor
 protocol WorkoutSessionDriving: AnyObject {
-    /// HealthKit reporting back: heart rate, treadmill distance, a failure. Set by the
-    /// recorder before `prepare`.
+    /// HealthKit reporting back: heart rate, a failure. Set by the recorder before `prepare`.
     var onSignal: ((WorkoutSessionSignal) -> Void)? { get set }
 
     /// Countdown started: get the sensors ready. Records nothing.
@@ -26,11 +25,14 @@ protocol WorkoutSessionDriving: AnyObject {
     func pause(at date: Date)
     func resume(at date: Date)
     /// The athlete ended the run: stop the activity and end collection at `date`. The
-    /// session is not ended yet; that happens in `finish` or `discard`.
+    /// session is not ended yet; that happens in `finish` or `discard`. Indoors, collection
+    /// may end in `finish` instead, at this same `date`, so the treadmill's distance — only
+    /// written at Save (#116) — lands while the builder is still collecting.
     func stop(at date: Date) async throws
     /// Append GPS fixes to the workout's route.
     func addRoute(_ locations: [CLLocation]) async throws
-    /// Add one stretch of distance to the workout (outdoor runs; see `DistanceChunks`).
+    /// Add one stretch of distance to the workout (see `DistanceChunks`): outdoors as the
+    /// run goes, on a treadmill all at once at Save.
     func addDistance(meters: Double, from start: Date, to end: Date) async throws
     /// Save the workout to Health, with `metadata` added, and end the session.
     func finish(metadata: [String: Any]) async throws -> FinishedWorkout
@@ -42,8 +44,6 @@ protocol WorkoutSessionDriving: AnyObject {
 enum WorkoutSessionSignal {
     /// From a paired Watch or chest strap, when there is one.
     case heartRate(bpm: Double, at: Date)
-    /// HealthKit's own running total. Only used on a treadmill, where there is no GPS.
-    case distance(totalMeters: Double, at: Date)
     /// The session failed underneath the run.
     case failed(reason: String)
 }
@@ -73,6 +73,24 @@ protocol RunMotionStreaming: AnyObject {
     var onSample: ((AutoPause.Sample) -> Void)? { get set }
     func start(from date: Date)
     func stop()
+}
+
+/// A treadmill run's distance (#116): Core Motion's cumulative step distance since `start`,
+/// `RunStepDistanceStream` on device, a fake in tests. Started for treadmill runs only.
+@MainActor
+protocol RunStepDistanceStreaming: AnyObject {
+    /// `(metres since start(from:), when)`.
+    var onDistance: ((Double, Date) -> Void)? { get set }
+    func start(from date: Date)
+    func stop()
+}
+
+/// No step distance: for a recorder that never records a treadmill run.
+@MainActor
+final class NoStepDistance: RunStepDistanceStreaming {
+    var onDistance: ((Double, Date) -> Void)?
+    func start(from date: Date) {}
+    func stop() {}
 }
 
 /// The voice (#118): `CueSpeaker` on device, a fake in tests. One per run.
@@ -202,6 +220,14 @@ struct RecoverySources {
 /// place a decision becomes an event, and the place the spoken cue (#118) hooks in
 /// (`onAutoPause`). Decisions are backdated to the start of the stop or the restart, so
 /// the moving clock can step back a few seconds when one lands; that is expected (#127).
+///
+/// **A treadmill run (#116)** has no GPS: its curve is his step distance from Core Motion
+/// (`TreadmillDistance.Steps`), and none of it goes into the workout while he runs. At Save
+/// the save screen hands over what the console said (`confirmSave(…, treadmillConsoleM:)`),
+/// the curve is rescaled to it (`TreadmillDistance.rescaled`), and only then written —
+/// HealthKit can never take a sample back, so writing as he ran would have made a phone that
+/// over-counted impossible to correct. The workout is finished with the correction in its
+/// metadata, which is what marks the `runs` row corrected (`WorkoutRow.corrected`).
 @MainActor
 @Observable
 final class WorkoutRecorder {
@@ -271,6 +297,7 @@ final class WorkoutRecorder {
     private let makeSession: (RecorderState.RunKind) throws -> WorkoutSessionDriving
     private let location: RunLocationStreaming
     private let motion: RunMotionStreaming
+    private let steps: RunStepDistanceStreaming
     private let makeCues: () -> RunCueSpeaking
     private let unitsSource: () -> Units
     /// The active goal, for Race mode (#117): how far the race is, and what to file it under.
@@ -294,8 +321,15 @@ final class WorkoutRecorder {
     /// setting does mid-run.
     @ObservationIgnored private var units: Units = .fallback
     @ObservationIgnored private var track: TrackMath.Track?
-    /// Treadmill distance curve, from HealthKit's running total.
+    /// Treadmill distance curve, from Core Motion's step distance (#116).
     @ObservationIgnored private var treadmill: [BestEfforts.Point] = []
+    @ObservationIgnored private var stepCredit = TreadmillDistance.Steps()
+    /// What the treadmill console said, from the save screen; nil to keep the step count.
+    @ObservationIgnored private var consoleM: Double?
+    /// The correction the workout was written with. Settled at the first Save: from then on
+    /// samples are in Health, and a Retry must finish the same run, not a re-corrected one.
+    @ObservationIgnored private var treadmillCorrection: TreadmillDistance.Correction?
+    @ObservationIgnored private var treadmillSettled = false
     @ObservationIgnored private var routeGate = RouteGate<CLLocation>()
     @ObservationIgnored private var routeBatch: [CLLocation] = []
     @ObservationIgnored private var distanceFlushed = BestEfforts.Point(t: 0, m: 0)
@@ -327,6 +361,7 @@ final class WorkoutRecorder {
 
     /// - Parameters:
     ///   - makeSession: builds the session for a run of the given kind, at the countdown.
+    ///   - steps: a treadmill run's distance. Nil counts nothing.
     ///   - units: read once per run, at the countdown.
     ///   - saveToTempo: writes the saved workout into Tempo — `RecordedRunSaver.save`.
     ///   - goal: the active goal, read when a race needs it (#117).
@@ -336,6 +371,7 @@ final class WorkoutRecorder {
         makeSession: @escaping (RecorderState.RunKind) throws -> WorkoutSessionDriving,
         location: RunLocationStreaming,
         motion: RunMotionStreaming,
+        steps: RunStepDistanceStreaming? = nil,
         cues: @escaping () -> RunCueSpeaking,
         units: @escaping () -> Units,
         saveToTempo: @escaping (WorkoutRow.Workout, RunJournalEntry, UIImage?) async -> RecordedRunSaver.Outcome,
@@ -351,6 +387,7 @@ final class WorkoutRecorder {
         self.makeSession = makeSession
         self.location = location
         self.motion = motion
+        self.steps = steps ?? NoStepDistance()
         self.makeCues = cues
         self.unitsSource = units
         self.saveToTempo = saveToTempo
@@ -365,6 +402,7 @@ final class WorkoutRecorder {
         location.onLocations = { [weak self] in self?.receiveLocations($0) }
         location.onAccess = { [weak self] in self?.accessChanged($0) }
         motion.onSample = { [weak self] in self?.receivePedometer($0) }
+        self.steps.onDistance = { [weak self] in self?.receiveSteps(totalM: $0, at: $1) }
     }
 
     /// The real thing: HealthKit, Core Location, and the save path into Tempo.
@@ -374,6 +412,7 @@ final class WorkoutRecorder {
             makeSession: { kind in try HealthWorkoutSession(store: health, kind: kind) },
             location: RunLocationStream(),
             motion: RunPedometerStream(),
+            steps: RunStepDistanceStream(),
             cues: { CueSpeaker() },
             units: { [weak store] in store?.units ?? .fallback },
             saveToTempo: { [weak store] workout, journal, photo in
@@ -406,9 +445,14 @@ final class WorkoutRecorder {
 
     /// Save on the post-run screen (or Retry after a failed save), with what he wrote there.
     /// A race saves itself at the finish with no journal; his notes can follow (#125).
-    func confirmSave(journal: RunJournalEntry = RunJournalEntry(), photo: UIImage? = nil) {
+    ///
+    /// `treadmillConsoleM`: on a treadmill, the distance the console showed (#130), or nil to
+    /// keep the step count. Read at the first Save only; see `treadmillCorrection`.
+    func confirmSave(journal: RunJournalEntry = RunJournalEntry(), photo: UIImage? = nil,
+                     treadmillConsoleM: Double? = nil) {
         self.journal = journal
         self.photo = photo
+        if !treadmillSettled { consoleM = treadmillConsoleM }
         send(.endConfirmed)
     }
 
@@ -446,12 +490,21 @@ final class WorkoutRecorder {
         route = []
         track = nil
         treadmill = []
+        resetTreadmill()
         heartRate = nil
         heldFixes = []
         lastPedometerAt = nil
         writesDistance = false
         usedFixes = []
         recovered = nil
+    }
+
+    /// A new recording's treadmill state: no steps counted, no console reading, nothing written.
+    private func resetTreadmill() {
+        stepCredit = TreadmillDistance.Steps()
+        consoleM = nil
+        treadmillCorrection = nil
+        treadmillSettled = false
     }
 
     /// Rebuild the snapshot for now.
@@ -565,6 +618,7 @@ final class WorkoutRecorder {
         usedFixes = snapshot.lastFixes
         lastSnapshot = nil
         snapshotCleared = false
+        resetTreadmill()
         if kind == .treadmill {
             track = nil
             treadmill = seed.curve.points
@@ -574,7 +628,9 @@ final class WorkoutRecorder {
                                     elevationLossM: snapshot.elevationLossM)
             treadmill = []
         }
-        distanceFlushed = seed.inHealth
+        // A treadmill run has written nothing yet, whatever the session says: its distance
+        // goes in at Save, all of it.
+        distanceFlushed = kind == .treadmill ? BestEfforts.Point(t: 0, m: 0) : seed.inHealth
         announcedThroughM = seed.curve.lastMeters
         writesDistance = kind != .treadmill
 
@@ -590,9 +646,9 @@ final class WorkoutRecorder {
         } else if let rescue = recovery.rescue(snapshot.state) {
             rescue.onSignal = { [weak self] in self?.receiveSignal($0) }
             self.session = rescue
-            // HealthKit has none of this run: every metre of the curve is written, treadmill
-            // or not.
-            writesDistance = true
+            // HealthKit has none of this run: every metre of the curve is written — outdoors
+            // at the stop, on a treadmill at Save like any treadmill run.
+            writesDistance = kind != .treadmill
             distanceFlushed = BestEfforts.Point(t: 0, m: 0)
             let metadata = RecordingMetadata.atBegin(
                 recordingID: recordingID ?? UUID(), kind: kind, target: snapshot.state.target)
@@ -615,7 +671,10 @@ final class WorkoutRecorder {
         case .running, .paused:
             // Back on the live screen: GPS, the voice and the clock pick up where they were.
             cues = makeCues()
-            if kind != .treadmill { location.start() }
+            // A treadmill counts from its last snapshot: Core Motion kept counting while
+            // Tempo was gone, and what it counted since then is the gap, credited if he is
+            // running.
+            if kind != .treadmill { location.start() } else { steps.start(from: snapshot.savedAt) }
             if state.autoPauseEnabled { motion.start(from: now) }
             startTicker()
         case .ending:
@@ -646,6 +705,8 @@ final class WorkoutRecorder {
         case .begin(let at):
             if state.kind == .treadmill {
                 treadmill = [BestEfforts.Point(t: 0, m: 0)]
+                stepCredit = TreadmillDistance.Steps()
+                steps.start(from: at)
             } else {
                 track = TrackMath.Track(start: at)
             }
@@ -684,6 +745,7 @@ final class WorkoutRecorder {
             cues?.stop()
             location.stop()
             motion.stop()
+            steps.stop()
             track?.close()
             flushRoute()
             flushDistance(final: true)
@@ -696,7 +758,6 @@ final class WorkoutRecorder {
             }
 
         case .save:
-            let metadata = RecordingMetadata.atSave(state: state)
             let journal = journal, photo = photo
             let session = session
             // A run recovered after a kill can reach Save with nothing to save into: no
@@ -706,6 +767,18 @@ final class WorkoutRecorder {
                 send(.saveFailed(reason: "Couldn't reach Apple Health"))
                 return
             }
+            // A treadmill run's console reading is settled at the first Save that can reach
+            // Health, before a metre of it is there (#116).
+            if state.kind == .treadmill, finished == nil, !treadmillSettled {
+                treadmillCorrection = TreadmillDistance.correction(
+                    consoleM: consoleM, estimateM: timeline.last?.m ?? 0, units: units)
+                treadmillSettled = true
+            }
+            let treadmillCurve = state.kind == .treadmill
+                ? TreadmillDistance.rescaled(timeline, by: treadmillCorrection, startedAt: state.startedAt,
+                                             endedAt: state.endedAt, pauses: state.pauses)
+                : nil
+            let metadata = RecordingMetadata.atSave(state: state, correction: treadmillCorrection, units: units)
             enqueueWork { [weak self] in
                 guard let self else { return }
                 // Health first, and only once: a retry after this point is Tempo's half.
@@ -715,6 +788,7 @@ final class WorkoutRecorder {
                 if let finished {
                     workout = finished
                 } else if let session {
+                    if let treadmillCurve { try await writeTreadmill(treadmillCurve, into: session) }
                     workout = try await session.finish(metadata: metadata)
                     finished = workout
                 } else {
@@ -730,7 +804,7 @@ final class WorkoutRecorder {
                 }
                 // One line per save, once both halves have answered (#131).
                 report([RecorderTelemetry.saved(
-                    state, distanceM: timeline.last?.m, fixes: track?.verdicts ?? [:],
+                    state, distanceM: (treadmillCurve ?? timeline).last?.m, fixes: track?.verdicts ?? [:],
                     tempo: outcome, saveLatency: clock().timeIntervalSince(began))])
                 let event = Self.saveEvent(for: outcome, workoutID: workout.id)
                 if case .saveSucceeded = event {
@@ -747,6 +821,7 @@ final class WorkoutRecorder {
             cues?.stop()
             location.stop()
             motion.stop()
+            steps.stop()
             // Already in Health (Tempo refused the row and he gave up): nothing to throw
             // away. It stays in Health, and the sync ingests it like any other workout.
             if finished == nil { enqueue { session in await session.discard() } }
@@ -754,6 +829,7 @@ final class WorkoutRecorder {
         case .tearDown:
             location.stop()
             motion.stop()
+            steps.stop()
             ticker?.cancel()
             ticker = nil
             // After whatever is still queued for this session, not before it.
@@ -772,6 +848,7 @@ final class WorkoutRecorder {
         lastFailure = nil
         saveOutcome = nil
         finished = nil
+        resetTreadmill()
         cues = makeCues()
         announcedThroughM = 0
         usedFixes = []
@@ -827,10 +904,6 @@ final class WorkoutRecorder {
         switch signal {
         case .heartRate(let bpm, let at):
             heartRate = RecorderSnapshot.HeartRate(bpm: bpm, at: at)
-        case .distance(let meters, let at):
-            guard state.kind == .treadmill, let start = state.startedAt,
-                  let last = treadmill.last, meters > last.m else { return }
-            treadmill.append(BestEfforts.Point(t: max(last.t, at.timeIntervalSince(start)), m: meters))
         case .failed(let reason):
             lastFailure = reason
             log("recorder.session_error", ["step": "running"])
@@ -871,6 +944,17 @@ final class WorkoutRecorder {
                 .suffix(InProgressRun.maxCarriedFixes))
         }
         self.track = track
+    }
+
+    /// A treadmill's step distance: onto the curve while he is running, the baseline only
+    /// while he is not (`TreadmillDistance.Steps`).
+    private func receiveSteps(totalM: Double, at: Date) {
+        guard state.kind == .treadmill, let start = state.startedAt, let last = treadmill.last else { return }
+        let running = state.phase == .running
+        if let point = stepCredit.credit(totalM: totalM, t: at.timeIntervalSince(start),
+                                         running: running, after: last) {
+            treadmill.append(point)
+        }
     }
 
     private func receivePedometer(_ sample: AutoPause.Sample) {
@@ -934,6 +1018,23 @@ final class WorkoutRecorder {
             } onError: { [weak self] error in
                 self?.log("recorder.distance_failed", ["error_type": String(describing: type(of: error))])
             }
+        }
+    }
+
+    /// A treadmill run's whole curve into the workout, at Save: `curve` is the step count
+    /// rescaled to the console, or untouched when he left it alone. Same `DistanceChunks` an
+    /// outdoor run writes, so splits read back out of Health the same way. `distanceFlushed`
+    /// marks each chunk once it has landed, so a Retry after a failure part-way writes the
+    /// rest and never a metre twice.
+    private func writeTreadmill(_ curve: [BestEfforts.Point], into session: WorkoutSessionDriving) async throws {
+        guard let start = state.startedAt else { return }
+        for chunk in DistanceChunks.backlog(timeline: curve, flushed: distanceFlushed) {
+            if chunk.meters > 0 {
+                try await session.addDistance(meters: chunk.meters,
+                                              from: start.addingTimeInterval(chunk.from.t),
+                                              to: start.addingTimeInterval(chunk.to.t))
+            }
+            distanceFlushed = chunk.to
         }
     }
 

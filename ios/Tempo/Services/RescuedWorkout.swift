@@ -26,6 +26,10 @@ final class RescuedWorkout: WorkoutSessionDriving {
 
     private let builder: HKWorkoutBuilder
     private let pauses: [RecorderState.Pause]
+    private let indoor: Bool
+    /// Indoors, where the run ended: collection ends there in `finish`, after the treadmill's
+    /// distance is written at Save (#116), as `HealthWorkoutSession` does.
+    private var collectionEnd: Date?
 
     init(store: HKHealthStore, state: RecorderState) {
         let configuration = HKWorkoutConfiguration()
@@ -33,6 +37,7 @@ final class RescuedWorkout: WorkoutSessionDriving {
         configuration.locationType = state.kind == .treadmill ? .indoor : .outdoor
         builder = HKWorkoutBuilder(healthStore: store, configuration: configuration, device: .local())
         pauses = state.pauses
+        indoor = state.kind == .treadmill
     }
 
     func prepare() throws {}
@@ -49,7 +54,7 @@ final class RescuedWorkout: WorkoutSessionDriving {
     func stop(at date: Date) async throws {
         let events = Self.pauseEvents(pauses, endingBy: date)
         if !events.isEmpty { try await builder.addWorkoutEvents(events) }
-        try await builder.endCollection(at: date)
+        if indoor { collectionEnd = date } else { try await builder.endCollection(at: date) }
     }
 
     /// Not carried by the snapshot; see the type's note.
@@ -66,6 +71,7 @@ final class RescuedWorkout: WorkoutSessionDriving {
 
     func finish(metadata: [String: Any]) async throws -> FinishedWorkout {
         if !metadata.isEmpty { try await builder.addMetadata(metadata) }
+        if indoor, builder.endDate == nil { try await builder.endCollection(at: collectionEnd ?? Date()) }
         guard let workout = try await builder.finishWorkout() else {
             throw RecorderSaveError.noWorkout
         }

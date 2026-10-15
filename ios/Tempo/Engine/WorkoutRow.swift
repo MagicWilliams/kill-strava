@@ -31,6 +31,19 @@ enum WorkoutRow {
         /// `HKMetadataKeyIndoorWorkout` — a treadmill run. Carried so both paths read it the
         /// same way, but `runs` has no column for it yet, so it does not reach the row.
         var indoor: Bool = false
+        /// A treadmill run Tempo recorded and the athlete put right by its console (#116),
+        /// from the workout's metadata (`RecordingMetadata.correction(from:)`). Nil for
+        /// every other workout.
+        var correction: Correction? = nil
+
+        struct Correction: Codable, Equatable {
+            /// What the console said: the run's distance.
+            var consoleM: Double
+            /// The phone's step estimate it replaced.
+            var estimateM: Double
+            /// `runs.correction_note`, written in the unit he ran in.
+            var note: String
+        }
     }
 
     /// Every row this mapping writes is a HealthKit row, whichever path wrote it.
@@ -47,11 +60,15 @@ enum WorkoutRow {
     /// Two clocks, both straight off the workout record: `movingS` excludes paused stretches
     /// and start→end is the wall clock. They differ only when the athlete stopped. See
     /// `TimeAccounting`.
+    ///
+    /// A console-corrected workout's distance is the console's figure, to the metre. Its
+    /// samples sum to the same number, but HealthKit adds them in floating point, and a
+    /// 5.00 km run whose total comes back as 4,999.9999 m would truncate to 4,999.
     static func summary(_ w: Workout) -> RunSummary {
         RunSummary(
             id: w.uuid,
             start: w.start,
-            distanceM: Int(w.distanceM ?? 0),
+            distanceM: w.correction.map { Int($0.consoleM.rounded()) } ?? Int(w.distanceM ?? 0),
             durationS: Int(w.movingS),
             elapsedS: Int(w.end.timeIntervalSince(w.start)),
             avgHR: w.avgHR.map { Int($0.rounded()) },
@@ -82,6 +99,36 @@ enum WorkoutRow {
             elapsed_duration_s: s.elapsedS,
             avg_pace_sec: s.paceSecPerMile,
             avg_hr: s.avgHR
+        )
+    }
+
+    /// `row`, marked the way every edited run is marked when `w` carries a console correction
+    /// (#116): `corrected`, the note, and `original` — the run as the phone counted it, the
+    /// same pre-correction snapshot a coach amendment keeps. Once `corrected` is set, the
+    /// athlete's word outranks the math everywhere (the HR backfill, the detail screen, the
+    /// coach's own amendments, which keep this `original` rather than overwrite it).
+    ///
+    /// The row as given when there is no correction, so every other run is written exactly
+    /// as before.
+    static func corrected(_ row: RunInsert, by w: Workout) -> RunInsert {
+        guard let c = w.correction else { return row }
+        var out = row
+        out.corrected = true
+        out.correction_note = c.note
+        out.original = original(row, estimateM: c.estimateM)
+        return out
+    }
+
+    /// The run as the phone counted it: the estimate's distance and pace, everything else as
+    /// the row has it — a console correction changes the distance and nothing else.
+    static func original(_ row: RunInsert, estimateM: Double) -> RunInsert.Original {
+        let meters = Int(estimateM.isFinite ? max(0, estimateM) : 0)
+        return RunInsert.Original(
+            distance_m: meters,
+            duration_s: row.duration_s,
+            avg_hr: row.avg_hr,
+            avg_pace_sec: TimeAccounting.paceSecPerMile(seconds: row.duration_s,
+                                                        miles: Double(meters) / Units.metersPerMile)
         )
     }
 }

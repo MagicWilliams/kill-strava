@@ -129,6 +129,13 @@ enum RecordingMetadata {
     /// Whether the target strip was on screen when the run ended, or he was running free.
     /// Added at save; everything else is added at begin.
     static let targetShownKey = "TempoTargetShown"
+    /// A treadmill run put right by its console (#116), added at save: the console's
+    /// distance, the step estimate it replaced, and the note the `runs` row carries. In the
+    /// workout itself so every path that reads it back — the save, a retry after a relaunch,
+    /// a run found in Health after a kill — writes the same corrected row.
+    static let consoleDistanceMKey = "TempoTreadmillConsoleM"
+    static let stepEstimateMKey = "TempoTreadmillStepEstimateM"
+    static let correctionNoteKey = "TempoCorrectionNote"
 
     /// Everything known when the run begins.
     static func atBegin(recordingID: UUID, kind: RecorderState.RunKind,
@@ -149,9 +156,28 @@ enum RecordingMetadata {
     }
 
     /// What only the end of the run knows.
-    static func atSave(state: RecorderState) -> [String: Any] {
-        guard state.target != nil else { return [:] }
-        return [targetShownKey: state.targetVisible]
+    static func atSave(state: RecorderState, correction: TreadmillDistance.Correction? = nil,
+                       units: Units = .fallback) -> [String: Any] {
+        var m: [String: Any] = [:]
+        if state.target != nil { m[targetShownKey] = state.targetVisible }
+        if let correction {
+            m[consoleDistanceMKey] = correction.consoleM
+            m[stepEstimateMKey] = correction.estimateM
+            m[correctionNoteKey] = TreadmillDistance.note(correction, units: units)
+        }
+        return m
+    }
+
+    /// The console correction a saved workout carries, read back from its metadata. Nil
+    /// unless all three keys are there: a half-written correction is not one.
+    static func correction(from metadata: [String: Any]?) -> WorkoutRow.Workout.Correction? {
+        guard let metadata,
+              let console = (metadata[consoleDistanceMKey] as? NSNumber)?.doubleValue,
+              let estimate = (metadata[stepEstimateMKey] as? NSNumber)?.doubleValue,
+              let note = metadata[correctionNoteKey] as? String,
+              console.isFinite, console > 0, estimate.isFinite
+        else { return nil }
+        return WorkoutRow.Workout.Correction(consoleM: console, estimateM: estimate, note: note)
     }
 }
 
