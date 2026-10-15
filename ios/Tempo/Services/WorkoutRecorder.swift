@@ -107,6 +107,54 @@ enum InProgressRunWriter {
     }
 }
 
+/// A workout session `HKHealthStore.recoverActiveWorkoutSession` handed back after a kill
+/// (#115), as the recorder needs it: something to drive, and what it says about itself.
+struct RecoveredSession {
+    let driver: WorkoutSessionDriving
+    /// The Tempo recording it belongs to, from its builder's metadata. Nil if the kill came
+    /// before the metadata was written.
+    let recordingID: UUID?
+    let info: InProgressRun.SessionRecovery
+}
+
+/// Where kill recovery (#115) reads from at launch: on device, the snapshot file and
+/// HealthKit; in tests, fakes. Each is a seam so the launch path is a test, not a force-quit.
+struct RecoverySources {
+    /// The in-progress snapshot on disk (`InProgressRunStore.load`).
+    var loadSnapshot: () -> InProgressRun?
+    /// The workout session that was running when Tempo died (`HealthWorkoutSession.recoverActive`).
+    var recoverSession: @MainActor () async -> RecoveredSession?
+    /// A workout to save a run into when no session survived ("save what we have"):
+    /// `RescuedWorkout` on device. Nil if one can't be made.
+    var rescue: @MainActor (RecorderState) -> WorkoutSessionDriving?
+    /// The workout a recording already became in Health, if it did — see
+    /// `HealthWorkoutSession.savedWorkout(recordingID:store:)`.
+    var savedWorkout: @MainActor (UUID) async -> FinishedWorkout?
+
+    /// Nothing to recover from and nothing to save into.
+    static func none() -> RecoverySources {
+        RecoverySources(loadSnapshot: { nil }, recoverSession: { nil }, rescue: { _ in nil }, savedWorkout: { _ in nil })
+    }
+
+    /// The real thing.
+    static func device(store: HKHealthStore) -> RecoverySources {
+        RecoverySources(
+            loadSnapshot: { InProgressRunStore.load() },
+            recoverSession: {
+                do {
+                    guard let session = try await HealthWorkoutSession.recoverActive(store: store) else { return nil }
+                    return RecoveredSession(driver: session, recordingID: session.recordingID, info: session.recovery)
+                } catch {
+                    Telemetry.error("recorder.session_recover_error", error)
+                    return nil
+                }
+            },
+            rescue: { state in RescuedWorkout(store: store, state: state) },
+            savedWorkout: { id in await HealthWorkoutSession.savedWorkout(recordingID: id, store: store) }
+        )
+    }
+}
+
 // MARK: - The recorder
 
 /// Records a run on the iPhone (#114): a native `HKWorkoutSession` (iOS 26+, Tempo's
@@ -131,8 +179,8 @@ enum InProgressRunWriter {
 /// the state machine hears (`saveEvent(for:workoutID:)`). A finished workout is kept, so a
 /// Retry after Tempo refused the row never finishes the HealthKit workout a second time.
 ///
-/// **Kill recovery (#115).** This file writes the run down; the launch path that reads it
-/// back is a follow-up. What is in place:
+/// **Kill recovery (#115).** This file writes the run down as it goes, and reads it back at
+/// launch (`recoverAtLaunch`, then `adopt`):
 /// - An `InProgressRun` snapshot is written on every state change and every
 ///   `InProgressRun.saveInterval` while the run is rescuable (`InProgressRun.shouldSave`),
 ///   and cleared once it is in Health or discarded (`shouldClear`). Its `workoutSessionID` is
@@ -144,6 +192,10 @@ enum InProgressRunWriter {
 /// - Ending a run stops the session's activity but does not end the session until the save
 ///   or the discard, so a kill on the save screen leaves a session to recover.
 /// - Distance samples and the route go into the builder as the run goes, not at the end.
+/// - At launch, `adopt` takes the snapshot and whatever session HealthKit gives back, lets
+///   `InProgressRun.recover` decide, and picks the run up: the live screen again if the
+///   session survived, "save what we have" through a `RescuedWorkout` if it did not, the
+///   save screen if it died there. `recovered` is what the UI reads to say so.
 ///
 /// **Auto-pause (#113), when he has turned it on**, is fed every GPS fix's speed and, from
 /// Core Motion, his step speed. What it decides goes through `applyAutoPause`, the single
@@ -170,6 +222,12 @@ final class WorkoutRecorder {
         if case .saved(let runID) = saveOutcome { return runID }
         return nil
     }
+    /// What launch found when iOS had killed Tempo mid-run (#115), until the athlete has
+    /// seen it: the "We kept your run" prompt (#128, Figma frame 10) is up while this is set.
+    /// `.resume` is a run going again; `.rescue` / `.expired` a run waiting for "Save what we
+    /// have" or "Discard"; `.unfinished` a run back on the save screen. Never `.nothing` or
+    /// `.orphanSession` — neither has a run to show.
+    private(set) var recovered: InProgressRun.Recovery?
     /// An auto-pause decision the run accepted: where the spoken + haptic cue (#118) fires,
     /// so an auto pause is never silent.
     @ObservationIgnored var onAutoPause: ((AutoPause.Decision) -> Void)?
@@ -201,6 +259,7 @@ final class WorkoutRecorder {
     /// Diagnostics outside that vocabulary: which HealthKit call failed, and how.
     private let log: (String, [String: String]) -> Void
     private let persist: (InProgressRun?) -> Void
+    private let recovery: RecoverySources
     private let saveToTempo: (WorkoutRow.Workout, RunJournalEntry, UIImage?) async -> RecordedRunSaver.Outcome
 
     // One recording's working state
@@ -220,7 +279,11 @@ final class WorkoutRecorder {
     /// Whether the snapshot on disk has been cleared for a run that came to rest.
     @ObservationIgnored private var snapshotCleared = true
     /// The newest fixes the track used, for the snapshot's `lastFixes`.
-    @ObservationIgnored private var usedFixes: [TrackMath.Fix] = []
+    @ObservationIgnored private var usedFixes: [InProgressRun.CarriedFix] = []
+    /// Whether this recording writes its own distance samples: an outdoor run (HealthKit's
+    /// own collection is off), or any run rebuilt after a kill, where HealthKit has none.
+    @ObservationIgnored private var writesDistance = false
+    @ObservationIgnored private var recoveryAttempted = false
     /// The workout once HealthKit has it. Set at most once per recording.
     @ObservationIgnored private var finished: FinishedWorkout?
     /// What the athlete wrote on the save screen, for the save in flight.
@@ -252,7 +315,8 @@ final class WorkoutRecorder {
         tickInterval: Duration? = .seconds(1),
         report: @escaping ([RecorderTelemetry.Line]) -> Void = { Telemetry.log($0) },
         log: @escaping (String, [String: String]) -> Void = { Telemetry.warn($0, context: $1) },
-        persist: @escaping (InProgressRun?) -> Void = InProgressRunWriter.persist
+        persist: @escaping (InProgressRun?) -> Void = InProgressRunWriter.persist,
+        recovery: RecoverySources = .none()
     ) {
         self.makeSession = makeSession
         self.location = location
@@ -265,6 +329,7 @@ final class WorkoutRecorder {
         self.report = report
         self.log = log
         self.persist = persist
+        self.recovery = recovery
         location.onLocations = { [weak self] in self?.receiveLocations($0) }
         location.onAccess = { [weak self] in self?.accessChanged($0) }
         motion.onSample = { [weak self] in self?.receivePedometer($0) }
@@ -283,7 +348,8 @@ final class WorkoutRecorder {
                 // No store means no app to show it in; the sync ingests it from Health.
                 guard let store else { return .queued }
                 return await RecordedRunSaver.save(workout, journal: journal, photo: photo, store: store)
-            }
+            },
+            recovery: .device(store: health)
         )
     }
 
@@ -345,6 +411,9 @@ final class WorkoutRecorder {
         heartRate = nil
         heldFixes = []
         lastPedometerAt = nil
+        writesDistance = false
+        usedFixes = []
+        recovered = nil
     }
 
     /// Rebuild the snapshot for now.
@@ -364,6 +433,170 @@ final class WorkoutRecorder {
         }
     }
 
+    // MARK: - Kill recovery (#115)
+
+    /// Launch: read back whatever was recording when iOS killed Tempo, and pick it up. Once
+    /// per process; a second call (a scene reconnecting) does nothing.
+    func recoverAtLaunch() async {
+        guard !recoveryAttempted else { return }
+        recoveryAttempted = true
+        let snapshot = recovery.loadSnapshot()
+        let session = await recovery.recoverSession()
+        await adopt(snapshot: snapshot, session: session)
+    }
+
+    /// The adopt entry point: take a snapshot from disk and the session HealthKit recovered,
+    /// either or both possibly missing, and make them this recorder's run.
+    ///
+    /// `InProgressRun.recover` decides (one copy of the decision table), and the recorder
+    /// reaches the state it decided the way it reaches every state: the snapshot's own state,
+    /// then `.interrupted(.appTerminated)` stamped at the snapshot's last write, then — if the
+    /// session came back — `.recovered(sessionPaused:)`, all through `send`. The recovery
+    /// itself is reported once, as `recorder.recovered` or `recorder.recovery_failed`.
+    ///
+    /// Does nothing if a run is already under way in this process: nothing on disk outranks
+    /// the run in front of him.
+    func adopt(snapshot: InProgressRun?, session: RecoveredSession?) async {
+        guard state.phase == .idle else { return }
+        let now = clock()
+
+        // A session that is some other recording's is not grafted onto this one: that would
+        // splice two runs into one. It is let go below, and this snapshot is rescued alone.
+        var ours = session
+        var strays: [RecoveredSession] = []
+        if let snapshot, let session, !InProgressRun.matches(snapshot: snapshot, sessionRecordingID: session.recordingID) {
+            ours = nil
+            strays.append(session)
+            log("recorder.recovery_failed", ["outcome": "session_mismatch"])
+        }
+
+        let outcome = InProgressRun.recover(snapshot: snapshot, session: ours?.info, now: now)
+        if let found = InProgressRun.telemetry(for: outcome, snapshot: snapshot, session: ours?.info, now: now),
+           let event = RecorderTelemetry.Event(rawValue: found.event) {
+            report([RecorderTelemetry.Line(event: event, level: event == .recovered ? .info : .warn, context: found.context)])
+        }
+
+        switch outcome {
+        case .resume, .rescue, .expired, .unfinished:
+            if let snapshot { await pickUp(outcome, from: snapshot, session: ours, now: now) }
+        case .nothing, .orphanSession:
+            // A countdown that died, or a snapshot of a run that had already come to rest:
+            // nothing to rescue, and left on disk it would be asked about on every launch.
+            if snapshot != nil { persist(nil) }
+            if let ours { strays.append(ours) }
+        }
+
+        // A session with no run of ours behind it. The only way Tempo leaves one is dying
+        // between clearing the snapshot and ending the session — the athlete had already
+        // saved or discarded that run — so it is ended, not saved. Left running, it would
+        // hold the phone's one workout session and block the next run.
+        for stray in strays { await stray.driver.discard() }
+    }
+
+    /// The prompt has been seen. The run itself is untouched: a rescue still waits for
+    /// "Save what we have" or "Discard", and its snapshot stays on disk until then.
+    func acknowledgeRecovery() {
+        recovered = nil
+    }
+
+    /// Rebuild a recording's working state from its snapshot and become that run.
+    private func pickUp(_ outcome: InProgressRun.Recovery, from snapshot: InProgressRun,
+                        session: RecoveredSession?, now: Date) async {
+        let resuming: Bool
+        if case .resume = outcome { resuming = true } else { resuming = false }
+        let seed = InProgressRun.resumption(snapshot: snapshot, session: session?.info,
+                                            resumedAt: resuming ? now : nil)
+        let start = snapshot.state.startedAt ?? snapshot.savedAt
+        let kind = snapshot.state.kind
+
+        // Read at recovery: the snapshot does not carry the unit the run started in.
+        units = unitsSource()
+        recordingID = snapshot.workoutSessionID ?? session?.recordingID ?? UUID()
+        lastFailure = nil
+        saveOutcome = nil
+        finished = nil
+        journal = RunJournalEntry()
+        photo = nil
+        heartRate = nil
+        autoPause = AutoPause()
+        lastPedometerAt = nil
+        heldFixes = []
+        routeGate.reset()
+        routeBatch = []
+        usedFixes = snapshot.lastFixes
+        lastSnapshot = nil
+        snapshotCleared = false
+        if kind == .treadmill {
+            track = nil
+            treadmill = seed.curve.points
+        } else {
+            track = TrackMath.Track(start: start, resuming: seed.curve.points, movingS: snapshot.movingS,
+                                    elevationGainM: snapshot.elevationGainM,
+                                    elevationLossM: snapshot.elevationLossM)
+            treadmill = []
+        }
+        distanceFlushed = seed.inHealth
+        announcedThroughM = seed.curve.lastMeters
+        writesDistance = kind != .treadmill
+
+        // Something to finish the run through: the session that survived; else, for a run
+        // that died on the save screen, the workout Health may already have; else a
+        // workout rebuilt from the snapshot.
+        if let session {
+            session.driver.onSignal = { [weak self] in self?.receiveSignal($0) }
+            self.session = session.driver
+        } else if case .unfinished = outcome, let id = snapshot.workoutSessionID,
+                  let saved = await recovery.savedWorkout(id) {
+            finished = saved
+        } else if let rescue = recovery.rescue(snapshot.state) {
+            rescue.onSignal = { [weak self] in self?.receiveSignal($0) }
+            self.session = rescue
+            // HealthKit has none of this run: every metre of the curve is written, treadmill
+            // or not.
+            writesDistance = true
+            distanceFlushed = BestEfforts.Point(t: 0, m: 0)
+            let metadata = RecordingMetadata.atBegin(
+                recordingID: recordingID ?? UUID(), kind: kind, target: snapshot.state.target)
+            enqueue { session in
+                try await session.begin(at: start, metadata: metadata)
+            } onError: { [weak self] error in
+                self?.lastFailure = String(describing: error)
+                self?.log("recorder.session_error", ["step": "rescue_begin",
+                                                     "error_type": String(describing: type(of: error))])
+            }
+        } else {
+            log("recorder.recovery_failed", ["outcome": "no_workout_to_save_into"])
+        }
+
+        state = snapshot.state
+        send(.interrupted(.appTerminated, at: snapshot.savedAt))
+        if resuming, let session { send(.recovered(sessionPaused: session.info.isPaused)) }
+
+        switch state.phase {
+        case .running, .paused:
+            // Back on the live screen: GPS, the voice and the clock pick up where they were.
+            cues = makeCues()
+            if kind != .treadmill { location.start() }
+            if state.autoPauseEnabled { motion.start(from: now) }
+            startTicker()
+        case .ending:
+            // Died on the save screen. The run had already stopped; make sure the workout
+            // holds all of it, and that its collection has ended, before Save is offered.
+            if finished == nil, let end = state.endedAt {
+                flushDistance(final: true)
+                enqueue { session in try await session.stop(at: end) } onError: { [weak self] error in
+                    self?.log("recorder.stop_failed", ["error_type": String(describing: type(of: error))])
+                }
+            }
+        default:
+            // `.recovering`: waiting on "Save what we have" or "Discard". Nothing runs.
+            break
+        }
+
+        recovered = outcome
+        refresh()
+    }
+
     // MARK: - Effects
 
     private func perform(_ effect: RecorderEffect) {
@@ -378,6 +611,7 @@ final class WorkoutRecorder {
                 track = TrackMath.Track(start: at)
             }
             distanceFlushed = BestEfforts.Point(t: 0, m: 0)
+            writesDistance = state.kind != .treadmill
             routeGate.reset()
             autoPause = AutoPause()
             lastPedometerAt = nil
@@ -425,16 +659,27 @@ final class WorkoutRecorder {
         case .save:
             let metadata = RecordingMetadata.atSave(state: state)
             let journal = journal, photo = photo
-            enqueue { [weak self] session in
+            let session = session
+            // A run recovered after a kill can reach Save with nothing to save into: no
+            // session survived and no rescue workout could be made. Say so and keep the
+            // run, rather than sit on "saving" forever.
+            guard session != nil || finished != nil else {
+                send(.saveFailed(reason: "Couldn't reach Apple Health"))
+                return
+            }
+            enqueueWork { [weak self] in
                 guard let self else { return }
                 // Health first, and only once: a retry after this point is Tempo's half.
+                // A run already in Health before a kill (#115) arrives here with `finished` set.
                 let workout: FinishedWorkout
                 let began = clock()
                 if let finished {
                     workout = finished
-                } else {
+                } else if let session {
                     workout = try await session.finish(metadata: metadata)
                     finished = workout
+                } else {
+                    return
                 }
                 let outcome = await saveToTempo(workout.row, journal, photo)
                 saveOutcome = outcome
@@ -511,11 +756,19 @@ final class WorkoutRecorder {
         onError: @escaping @MainActor (Error) -> Void = { _ in }
     ) {
         guard let session else { return }
+        enqueueWork({ try await work(session) }, onError: onError)
+    }
+
+    /// The same queue, for work that may not need a session.
+    private func enqueueWork(
+        _ work: @escaping @MainActor () async throws -> Void,
+        onError: @escaping @MainActor (Error) -> Void = { _ in }
+    ) {
         let previous = queue
         queued += 1
         queue = Task {
             await previous?.value
-            do { try await work(session) } catch { onError(error) }
+            do { try await work() } catch { onError(error) }
         }
     }
 
@@ -565,7 +818,8 @@ final class WorkoutRecorder {
             let verdict = track.ingest(TrackMath.Fix(location))
             let used = routeGate.admit(location, verdict: verdict, wasLocked: wasLocked)
             routeBatch += used
-            usedFixes = Array((usedFixes + used.map(TrackMath.Fix.init)).suffix(InProgressRun.maxCarriedFixes))
+            usedFixes = Array((usedFixes + used.map { InProgressRun.CarriedFix(TrackMath.Fix($0)) })
+                .suffix(InProgressRun.maxCarriedFixes))
         }
         self.track = track
     }
@@ -613,19 +867,23 @@ final class WorkoutRecorder {
         }
     }
 
-    /// Outdoor distance into the workout, a chunk at a time (see `DistanceChunks`).
+    /// Distance into the workout, a chunk at a time (see `DistanceChunks`): outdoors as the
+    /// run goes, and the whole curve for a run rebuilt after a kill.
     private func flushDistance(final: Bool) {
-        guard state.kind != .treadmill, let track, let start = state.startedAt,
-              let chunk = DistanceChunks.next(timeline: track.timeline, flushed: distanceFlushed, final: final)
-        else { return }
-        distanceFlushed = chunk.to
-        guard chunk.meters > 0 else { return }
-        let from = start.addingTimeInterval(chunk.from.t)
-        let to = start.addingTimeInterval(chunk.to.t)
-        enqueue { session in
-            try await session.addDistance(meters: chunk.meters, from: from, to: to)
-        } onError: { [weak self] error in
-            self?.log("recorder.distance_failed", ["error_type": String(describing: type(of: error))])
+        guard writesDistance, let start = state.startedAt else { return }
+        let chunks = final
+            ? DistanceChunks.backlog(timeline: timeline, flushed: distanceFlushed)
+            : DistanceChunks.next(timeline: timeline, flushed: distanceFlushed, final: false).map { [$0] } ?? []
+        for chunk in chunks {
+            distanceFlushed = chunk.to
+            guard chunk.meters > 0 else { continue }
+            let from = start.addingTimeInterval(chunk.from.t)
+            let to = start.addingTimeInterval(chunk.to.t)
+            enqueue { session in
+                try await session.addDistance(meters: chunk.meters, from: from, to: to)
+            } onError: { [weak self] error in
+                self?.log("recorder.distance_failed", ["error_type": String(describing: type(of: error))])
+            }
         }
     }
 
@@ -699,7 +957,7 @@ final class WorkoutRecorder {
             movingS: track?.movingS ?? 0,
             elevationGainM: track?.elevationGainM ?? 0,
             elevationLossM: track?.elevationLossM ?? 0,
-            lastFixes: usedFixes.map(InProgressRun.CarriedFix.init)
+            lastFixes: usedFixes
         )
         persist(snapshot)
         lastSnapshot = snapshot

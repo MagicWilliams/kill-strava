@@ -264,6 +264,23 @@ final class PreRunTests: XCTestCase {
         for phase in live { XCTAssertEqual(PreRun.screen(for: phase), .live, "\(phase)") }
     }
 
+    /// A run picked back up after a kill (#115) is shown in the same cover, in place of the
+    /// live screen — never alongside it — until he has answered it. An idle recorder never
+    /// gets a cover, recovered or not.
+    func testARecoveredRunTakesTheSameCoverInsteadOfTheLiveScreen() {
+        let phases: [RecorderState.Phase] = [
+            .running, .paused, .recovering(since: .now),
+            .ending(.review), .ending(.saving), .ending(.failed(reason: "x")),
+            .saved(workoutID: nil), .discarded,
+        ]
+        for phase in phases {
+            XCTAssertEqual(PreRun.screen(for: phase, recovered: true), .recovered, "\(phase)")
+            XCTAssertEqual(PreRun.screen(for: phase, recovered: false), .live, "\(phase)")
+        }
+        XCTAssertEqual(PreRun.screen(for: .idle, recovered: true), .none)
+        XCTAssertEqual(PreRun.screen(for: .countdown(startedAt: .now), recovered: true), .countdown)
+    }
+
     /// The sheet's answers become exactly the run the reducer starts: a hidden target is
     /// still carried (hiding is reversible mid-run), just not shown.
     func testCancellingTheCountdownLeavesNothingRecorded() {

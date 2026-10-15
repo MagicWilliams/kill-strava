@@ -207,6 +207,37 @@ final class RecorderSnapshotTests: XCTestCase {
                      "live, it waits like any other short stretch")
     }
 
+    /// A run rebuilt after a kill (#115) has its whole curve to write at once. One sample
+    /// for all of it would flatten every split Health hands back to the run's average, so
+    /// the backlog goes in the same ten-second stretches a live run writes.
+    func testABacklogIsWrittenInTenSecondStretchesThatAddUpToTheCurve() throws {
+        let timeline = steady(secPerKm: 300, seconds: 605)
+        let origin = BestEfforts.Point(t: 0, m: 0)
+        let chunks = DistanceChunks.backlog(timeline: timeline, flushed: origin)
+
+        XCTAssertEqual(chunks.count, 61, "sixty ten-second stretches and the last five seconds")
+        XCTAssertEqual(chunks.first?.from, origin)
+        XCTAssertEqual(chunks.last?.to, timeline.last)
+        XCTAssertTrue(chunks.dropLast().allSatisfy { $0.to.t - $0.from.t >= DistanceChunks.minSpanS })
+        XCTAssertTrue(zip(chunks, chunks.dropFirst()).allSatisfy { $0.to == $1.from }, "contiguous, no overlap")
+        XCTAssertEqual(chunks.map(\.meters).reduce(0, +), timeline.last!.m, accuracy: 1e-9)
+
+        // From a bookmark part-way along — what Health already held — only the rest.
+        let bookmark = timeline[300]
+        let rest = DistanceChunks.backlog(timeline: timeline, flushed: bookmark)
+        XCTAssertEqual(rest.first?.from, bookmark)
+        XCTAssertEqual(rest.map(\.meters).reduce(0, +), timeline.last!.m - bookmark.m, accuracy: 1e-9)
+        XCTAssertTrue(DistanceChunks.backlog(timeline: timeline, flushed: timeline.last!).isEmpty, "and only once")
+    }
+
+    /// On a live run the end-of-run backlog is the one short tail `next` would have given.
+    func testALiveRunsFinalBacklogIsOneTail() throws {
+        let flushed = BestEfforts.Point(t: 600, m: 1995)
+        let closed = [BestEfforts.Point(t: 0, m: 0), flushed, BestEfforts.Point(t: 600, m: 2000)]
+        let tail = DistanceChunks.backlog(timeline: closed, flushed: flushed)
+        XCTAssertEqual(tail, [try XCTUnwrap(DistanceChunks.next(timeline: closed, flushed: flushed, final: true))])
+    }
+
     // MARK: - Metadata
 
     func testIndoorKeyIsHealthKits() {

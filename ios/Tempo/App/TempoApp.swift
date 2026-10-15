@@ -5,13 +5,21 @@ struct TempoApp: App {
     @StateObject private var runs: RunStore
     @StateObject private var router = TabRouter()
     /// The one recorder (#114), for the life of the app: a run outlives every screen, tab
-    /// switch and sheet. Built on the same store the save path writes into.
+    /// switch and sheet. Built on the same store the save path writes into. The same
+    /// instance recovers a killed run at launch (#115) and drives the live screen, so a
+    /// recovered session is never adopted by a recorder the screens can't see.
     @State private var recorder: WorkoutRecorder
 
     init() {
         let runs = RunStore()
+        let recorder = WorkoutRecorder(store: runs)
         _runs = StateObject(wrappedValue: runs)
-        _recorder = State(initialValue: WorkoutRecorder(store: runs))
+        _recorder = State(initialValue: recorder)
+        // Kill recovery (#115) starts with the process, not with a view: when iOS relaunches
+        // Tempo for a workout session it killed, there may be no scene on screen to run a
+        // `.task`, and the session is waiting to be picked back up either way. What it finds
+        // is shown by `.runRecorder(...)`, the one place recorder screens are presented.
+        Task { @MainActor in await recorder.recoverAtLaunch() }
     }
 
     var body: some Scene {
