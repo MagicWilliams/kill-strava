@@ -31,8 +31,9 @@ struct LiveRunView: View {
                 // screen (#115, `PreRun.screen(for:recovered:)`). Here, only hold-to-end.
                 LiveRunLayout(display: display, snapshot: snapshot, send: { recorder.send($0) })
             case .over:
-                // #129 replaces this with the save screen.
-                RunEndedHandOff()
+                // Never drawn: once the clock stops, `PreRun.screen(for:)` puts the save
+                // screen (#129) in this cover instead. The canvas is the instant between.
+                EmptyView()
             }
         }
     }
@@ -265,55 +266,6 @@ struct LiveRunLayout: View {
 
     private func dismissBanner() {
         withAnimation(Motion.reveal) { banner = nil }
-    }
-}
-
-// MARK: - Run over
-
-/// The minimum between the end of a run and the save screen (#129), so a run that reaches it
-/// before #129 and #128 land is never stranded: Save puts it in Health with no journal, which
-/// is what a race does anyway, and Discard asks once more first (#128: "Discard needs a
-/// second confirmation"). #129 replaces this view wholesale.
-private struct RunEndedHandOff: View {
-    @Environment(WorkoutRecorder.self) private var recorder
-    @State private var confirmingDiscard = false
-
-    var body: some View {
-        let snapshot = recorder.snapshot
-        let display = LiveRunDisplay(snapshot)
-        VStack(spacing: Tokens.Space.xl) {
-            Spacer()
-            Text("Run ended").display(30)
-            HStack(spacing: Tokens.Space.xl2) {
-                StatTile(value: display.time, label: "Time")
-                StatTile(value: display.distance, label: display.distanceUnit)
-            }
-            Spacer()
-            switch snapshot.phase {
-            case .ending(.review):
-                PrimaryButton(title: "Save to Apple Health") { recorder.send(.endConfirmed) }
-                QuietButton(title: "Discard") { confirmingDiscard = true }
-            case .ending(.saving):
-                PrimaryButton(title: "Saving\u{2026}", loading: true)
-            case .ending(.failed(let reason)):
-                Text(reason)
-                    .font(Tokens.Font.ui(14))
-                    .foregroundStyle(Tokens.Palette.danger)
-                    .multilineTextAlignment(.center)
-                PrimaryButton(title: "Try again") { recorder.send(.endConfirmed) }
-                QuietButton(title: "Discard") { confirmingDiscard = true }
-            default:
-                // Back to idle closes the cover (`PreRun.screen(for:)`, #126).
-                PrimaryButton(title: "Done") { recorder.reset() }
-            }
-        }
-        .padding(Tokens.Space.xl2)
-        .confirmationDialog("Discard this run?", isPresented: $confirmingDiscard, titleVisibility: .visible) {
-            Button("Discard run", role: .destructive) { recorder.send(.discard(.liveScreen)) }
-            Button("Keep it", role: .cancel) {}
-        } message: {
-            Text("It won't be saved to Apple Health or Tempo.")
-        }
     }
 }
 

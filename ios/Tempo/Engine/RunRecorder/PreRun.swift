@@ -265,12 +265,16 @@ enum PreRun {
     enum Screen: Equatable {
         case none
         case countdown
-        /// The live run (#127), and for now everything after it: the post-run screen (#128)
-        /// takes `.ending` and `.saved` / `.discarded` from here when it lands.
+        /// The live run (#127): recording, paused, or lost and waiting to be picked back up.
         case live
+        /// The save screen (#129), from the moment the clock stops until the recorder is
+        /// reset: the journal, the save in flight, a failed save and its retry, and the
+        /// instant after a save or a discard when only the cover is left to close
+        /// (`PostRun.stage`).
+        case save
         /// "We kept your run" (#115): launch picked up a run iOS had killed, and he has not
-        /// seen it yet. Shown in the same cover, in place of the live screen, until he
-        /// answers it (`WorkoutRecorder.acknowledgeRecovery`) or the run is reset.
+        /// seen it yet. Shown in the same cover, in place of the live or save screen, until
+        /// he answers it (`WorkoutRecorder.acknowledgeRecovery`) or the run is reset.
         case recovered
     }
 
@@ -281,7 +285,9 @@ enum PreRun {
         switch phase {
         case .idle: .none
         case .countdown: .countdown
-        case .running, .paused, .recovering, .ending, .saved, .discarded: recovered ? .recovered : .live
+        case _ where recovered: .recovered
+        case .running, .paused, .recovering: .live
+        case .ending, .saved, .discarded: .save
         }
     }
 

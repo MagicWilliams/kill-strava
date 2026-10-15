@@ -375,6 +375,16 @@ final class RunDetailLoader {
         }
 
         // ── Route segments colored by pace ────────────────────────────────────
+        d.routeSegments = Self.routeSegments(locations)
+
+        return d
+    }
+
+    /// The map's polyline, cut into runs of one pace colour: fastest stretch Z5, slowest Z1,
+    /// relative to this run's own 10th–90th percentile. Static so the post-run save screen
+    /// (#129) draws a just-recorded route exactly the way this page will draw it once synced.
+    /// Empty for a route too short to colour.
+    static func routeSegments(_ locations: [CLLocation]) -> [RunDetail.RouteSegment] {
         if locations.count > 10 {
             let step = max(1, locations.count / 600)
             var sampled: [CLLocation] = []
@@ -412,10 +422,9 @@ final class RunDetailLoader {
                 if coords.count > 1 {
                     segments.append(RunDetail.RouteSegment(id: segments.count, coords: coords, zone: currentZone))
                 }
-                d.routeSegments = segments
+                return segments
             }
         }
-
-        return d
+        return []
     }
 }
