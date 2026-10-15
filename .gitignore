@@ -19,3 +19,7 @@ node_modules/
 package-lock.json
 
 .DS_Store
+
+# Obsidian (docs/ is symlinked into the vault)
+.obsidian/
+.trash/
