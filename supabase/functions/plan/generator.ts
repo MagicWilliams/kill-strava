@@ -256,9 +256,9 @@ export interface ResolvedDistance {
   profile: DistanceProfile;
 }
 
-/// `goals.distance_m` is the source of truth (#102); the label is the fallback; and with
-/// neither — every request that predates #102 — the answer is the marathon, as it always was.
-export function resolveDistance(label: unknown, meters: unknown): ResolvedDistance {
+/// The distance a label and metres actually name, or null when they name none.
+/// `goals.distance_m` is the source of truth (#102); the label is the fallback.
+export function namedDistance(label: unknown, meters: unknown): ResolvedDistance | null {
   const m = typeof meters === "number" ? meters : typeof meters === "string" ? Number(meters) : NaN;
   if (Number.isFinite(m) && m >= 400 && m <= 100_000) {
     const nearest = (Object.values(DISTANCES) as DistanceProfile[]).reduce((best, p) =>
@@ -276,7 +276,16 @@ export function resolveDistance(label: unknown, meters: unknown): ResolvedDistan
     const p = DISTANCES[label as DistanceKey];
     return { label: p.key, meters: p.meters, profile: p };
   }
-  return { label: "marathon", meters: DISTANCES.marathon.meters, profile: DISTANCES.marathon };
+  return null;
+}
+
+/// `namedDistance`, with the marathon for a row that names nothing. That fallback is for
+/// READING goals written before #102, which were all marathons. It is not for deciding what
+/// a new goal is: on 2026-10-15 it turned a 5K card that carried no distance into a saved
+/// marathon goal (#184). New writes go through `resolveGoal`, which refuses instead.
+export function resolveDistance(label: unknown, meters: unknown): ResolvedDistance {
+  return namedDistance(label, meters) ??
+    { label: "marathon", meters: DISTANCES.marathon.meters, profile: DISTANCES.marathon };
 }
 
 // ── Preferences (goals.preferences, #102) ─────────────────────────────────────

@@ -13,15 +13,16 @@
 //
 // Since #104 the request may also carry the intake's goal fields (#102): distance /
 // distance_m, course_type, goal_type, started_week, preferences — the same names as the
-// goals columns they land in. All optional: a request without them is a marathon plan,
-// exactly as before. goal.ts decides how they resolve and carry across regenerations.
+// goals columns they land in. All optional for a regeneration of the active goal's race,
+// which carries them over. A NEW race must name its distance: since #184 a request with none
+// gets 400 `distance_required` instead of a marathon plan. goal.ts decides all of this.
 
 import { createClient } from "npm:@supabase/supabase-js@2";
 import {
   equivalentTime, fmtClock, fmtPace, generate, type Generated, MI, mondayOf, paceBasis, planWrites,
   racePlacement, readPreferences, sessionDate, type Shape, taperWeeksFor, trainingPaces,
 } from "./generator.ts";
-import { goalInsertRow, isMissingColumnError, requiresTargetTime, resolveGoal } from "./goal.ts";
+import { DistanceRequired, goalInsertRow, isMissingColumnError, requiresTargetTime, resolveGoal } from "./goal.ts";
 
 const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
 const MODEL = "claude-sonnet-5";
@@ -212,7 +213,15 @@ Deno.serve(async (req) => {
       .eq("user_id", uid).eq("is_active", true)
       .order("created_at", { ascending: false }).limit(1).maybeSingle();
     const now = new Date();
-    const goal = resolveGoal(body, (activeGoal ?? null) as Record<string, unknown> | null, now);
+    let goal;
+    try {
+      goal = resolveGoal(body, (activeGoal ?? null) as Record<string, unknown> | null, now);
+    } catch (err) {
+      // Before anything is written: the app shows "that card is missing something" and the
+      // coach re-proposes it with a distance (#184).
+      if (err instanceof DistanceRequired) return Response.json({ error: err.code }, { status: 400 });
+      throw err;
+    }
     if (goal_time_s == null && requiresTargetTime(goal.goal_type)) {
       return Response.json({ error: "goal_time_s required for a time goal" }, { status: 400 });
     }
