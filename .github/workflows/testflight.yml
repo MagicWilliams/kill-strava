@@ -42,17 +42,40 @@ jobs:
 
       # Signed upload needs all four. Until they exist (see docs/TESTFLIGHT.md), say so
       # loudly and fall back to an unsigned archive rather than failing every merge.
+      #
+      # The CI development identity (#183) is optional on top of that. Without it a signed
+      # run still works the #103 way (Xcode mints a certificate, cleanup revokes it), so a
+      # missing secret is a warning, never a failed merge. Only presence is passed in here;
+      # the secret values themselves reach no step but the import.
       - name: Decide mode
         id: mode
+        env:
+          HAS_DEV_CERT_P12: ${{ secrets.CI_DEV_CERT_P12 != '' }}
+          HAS_DEV_CERT_PASSWORD: ${{ secrets.CI_DEV_CERT_PASSWORD != '' }}
         run: |
+          signed=false
           if [ "${{ github.event_name }}" = "pull_request" ]; then
-            echo "signed=false" >> "$GITHUB_OUTPUT"
+            :
           elif [ -n "$ASC_KEY_ID" ] && [ -n "$ASC_ISSUER_ID" ] && [ -n "$ASC_KEY_P8" ] && [ -n "$APPLE_TEAM_ID" ]; then
-            echo "signed=true" >> "$GITHUB_OUTPUT"
+            signed=true
           else
             echo "::warning::TestFlight not configured (ASC_* secrets / APPLE_TEAM_ID var missing) — unsigned archive only, nothing uploaded. See docs/TESTFLIGHT.md."
-            echo "signed=false" >> "$GITHUB_OUTPUT"
           fi
+          echo "signed=$signed" >> "$GITHUB_OUTPUT"
+
+          dev_identity=false
+          if [ "$signed" = "true" ]; then
+            missing=""
+            [ "$HAS_DEV_CERT_P12" = "true" ] || missing="CI_DEV_CERT_P12"
+            [ "$HAS_DEV_CERT_PASSWORD" = "true" ] || missing="${missing:+$missing and }CI_DEV_CERT_PASSWORD"
+            if [ -z "$missing" ]; then
+              dev_identity=true
+            else
+              echo "::warning::CI development identity not configured (repo secret $missing not set) — Xcode will mint an Apple Development certificate and the cleanup will revoke it, which emails David. See docs/TESTFLIGHT.md (#183)."
+              echo "- CI development identity: **not configured** ($missing not set). Expect one minted and revoked below." >> "$GITHUB_STEP_SUMMARY"
+            fi
+          fi
+          echo "dev_identity=$dev_identity" >> "$GITHUB_OUTPUT"
 
       - name: Show toolchain
         run: xcodebuild -version
@@ -91,6 +114,59 @@ jobs:
           KEY_PATH="$RUNNER_TEMP/AuthKey_$ASC_KEY_ID.p8"
           printf '%s' "$ASC_KEY_P8" > "$KEY_PATH"
           echo "KEY_PATH=$KEY_PATH" >> "$GITHUB_ENV"
+
+      # Minting and revoking a development certificate on every run (#103) works, but Apple
+      # emails "Your Certificate Has Been Revoked" for each one: 19 of them between 12 and
+      # 15 Oct 2026. With one long-lived CI identity on the runner, Xcode reuses it and
+      # mints nothing, and because that certificate predates the snapshot below, the
+      # cleanup can never revoke it. The snapshot/cleanup steps stay as the safety net.
+      #
+      # The keychain is appended to the search list, not swapped in for it, and the login
+      # keychain stays the default: if Xcode mints one anyway it lands where the cleanup
+      # looks, and still gets revoked. Nothing here prints the secret, the .p12 or the
+      # keychain password.
+      - name: Import CI development identity
+        if: steps.mode.outputs.signed == 'true' && steps.mode.outputs.dev_identity == 'true'
+        env:
+          CI_DEV_CERT_P12: ${{ secrets.CI_DEV_CERT_P12 }}
+          CI_DEV_CERT_PASSWORD: ${{ secrets.CI_DEV_CERT_PASSWORD }}
+        run: |
+          set -euo pipefail
+          kc="$RUNNER_TEMP/ci-dev.keychain-db"
+          p12="$RUNNER_TEMP/ci-dev.p12"
+          trap 'rm -f "$p12"' EXIT
+          # Recorded first, so the always() removal step finds it even if a later line fails.
+          echo "CI_KEYCHAIN=$kc" >> "$GITHUB_ENV"
+
+          kc_password="$(openssl rand -hex 32)"
+          security create-keychain -p "$kc_password" "$kc"
+          security set-keychain-settings "$kc"   # no -t, no -l: never times out or locks
+          security unlock-keychain -p "$kc_password" "$kc"
+
+          keychains=("$kc")
+          while IFS= read -r line; do
+            # create-keychain may already have listed it; keep it once, first.
+            if [ -n "$line" ] && [ "$line" != "$kc" ]; then keychains+=("$line"); fi
+          done < <(security list-keychains -d user | sed -e 's/^[[:space:]]*"//' -e 's/"[[:space:]]*$//')
+          security list-keychains -d user -s "${keychains[@]}"
+
+          printf '%s' "$CI_DEV_CERT_P12" | base64 --decode > "$p12"
+          security import "$p12" -k "$kc" -f pkcs12 -P "$CI_DEV_CERT_PASSWORD" \
+            -T /usr/bin/codesign -T /usr/bin/security
+          rm -f "$p12"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s \
+            -k "$kc_password" "$kc" > /dev/null
+
+          identities="$(security find-identity -v -p codesigning "$kc")"
+          count="$(printf '%s\n' "$identities" | grep -c '"Apple Development: ' || true)"
+          if [ "$count" != "1" ]; then
+            echo "::error::CI_DEV_CERT_P12 must hold exactly one valid Apple Development identity; found $count. Listing without -v shows invalid ones and why (see docs/TESTFLIGHT.md):"
+            security find-identity -p codesigning "$kc"
+            exit 1
+          fi
+          name="$(printf '%s\n' "$identities" | sed -n 's/.*"\(Apple Development: [^"]*\)".*/\1/p')"
+          echo "Imported $name"
+          echo "- CI development identity: **imported** (\`$name\`). Xcode should reuse it, so expect Minted this run: 0." >> "$GITHUB_STEP_SUMMARY"
 
       # A fresh runner has no development identity, so the signed archive below makes
       # Xcode mint a new Apple Development certificate on every run. Nothing ever revoked
@@ -186,3 +262,13 @@ jobs:
       - name: Remove API key
         if: always()
         run: rm -f "$RUNNER_TEMP"/AuthKey_*.p8
+
+      # After the cleanup, which reads the keychain search list. delete-keychain also takes
+      # it off that list. The identity's certificate stays on the account for the next run.
+      - name: Remove CI keychain
+        if: always()
+        run: |
+          if [ -n "${CI_KEYCHAIN:-}" ] && [ -e "$CI_KEYCHAIN" ]; then
+            security delete-keychain "$CI_KEYCHAIN"
+          fi
+          rm -f "$RUNNER_TEMP/ci-dev.p12"

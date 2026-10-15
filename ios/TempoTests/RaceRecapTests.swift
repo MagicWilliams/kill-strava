@@ -374,6 +374,28 @@ final class RaceRecapTests: XCTestCase {
         XCTAssertNotNil(block.projectedFinishS, "a 20-miler inside six weeks projects a finish")
 
         let halfBlock = RaceRecap.block(runs: [long], raceDay: raceDay, raceMeters: 21_097.5, calendar: cal)
-        XCTAssertNil(halfBlock.projectedFinishS, "the projection only ever speaks to 26.2")
+        XCTAssertNotNil(halfBlock.projectedFinishS, "a half gets a half projection (#185)")
+        XCTAssertLessThan(halfBlock.projectedFinishS ?? .max, block.projectedFinishS ?? 0)
+    }
+
+    /// #185: the recap's "faster/slower than the projection said" line was marathon-only,
+    /// because the projection could only extrapolate to 26.2. A 5K recap now gets a 5K
+    /// projection from race morning and a comparison against it.
+    func testAFiveKRaceGetsAFiveKProjectionAndIsComparedToIt() {
+        let raceDay = day("2026-11-05")
+        let tempo = RunSummary(id: UUID(), start: day("2026-10-25", hour: 7), distanceM: Int(6 * 1609.34),
+                               durationS: 6 * 540, avgHR: nil)                       // 6 mi at 9:00/mi
+        let block = RaceRecap.block(runs: [tempo], raceDay: raceDay, raceMeters: 5_000, calendar: cal)
+
+        XCTAssertEqual(block.projectedFinishS ?? 0, 1_612, accuracy: 2, "26:52, not 4:17:48")
+        XCTAssertLessThan(block.finishVersusProjectionS(1_560) ?? 0, 0,
+                          "a 26:00 finish reads as faster than the projection said")
+        XCTAssertGreaterThan(block.finishVersusProjectionS(1_700) ?? 0, 0,
+                             "a 28:20 finish reads as slower")
+        XCTAssertEqual(block.finishVersusProjectionS(1_560) ?? .nan,
+                       1_560 - Double(block.projectedFinishS ?? 0))
+
+        let nothing = RaceRecap.block(runs: [], raceDay: raceDay, raceMeters: 5_000, calendar: cal)
+        XCTAssertNil(nothing.finishVersusProjectionS(1_560), "no projection, no comparison")
     }
 }

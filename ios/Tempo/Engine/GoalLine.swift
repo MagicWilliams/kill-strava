@@ -79,6 +79,21 @@ enum GoalLine {
         }
     }
 
+    /// The You tab goal card's **TARGET**: the goal time spread over the goal's own distance,
+    /// in the athlete's unit. "—" when the goal has no target time.
+    ///
+    /// This used to be `PaceModel.paces(for: .marathon, goalSeconds:).marathon`, which reads
+    /// every goal time as a *marathon* time and divides it over 26.2 — so a 25:00 5K goal
+    /// showed a target of 0:57 /mi (#188). It is not a Riegel equivalent either: the target
+    /// is the pace the athlete has to hold on race day, which is plain time over distance.
+    ///
+    /// The distance is `ProjectionHistory.raceMeters(goal:)`, the same reading the projected
+    /// finish beside it uses (#185), so TARGET and PROJECTED always answer for one race.
+    static func targetPace(goal: GoalInfo?, units: Units) -> String {
+        guard let seconds = goal?.goalTimeSeconds, seconds > 0 else { return Units.missing }
+        return units.formatPace(seconds: Double(seconds), meters: ProjectionHistory.raceMeters(goal: goal))
+    }
+
     /// `raceName`, `raceDate` and `goalTimeSeconds` come straight off `RunStore.goal`; pass
     /// `nil` for the whole goal when there is none.
     ///

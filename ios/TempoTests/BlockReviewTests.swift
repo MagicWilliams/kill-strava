@@ -177,16 +177,22 @@ final class BlockReviewTests: XCTestCase {
     // MARK: - Distance
 
     /// Races run from the mile to the marathon (#102). The 20+ tile belongs to half and
-    /// marathon blocks; the projection only speaks to 26.2, so a 10K block has none.
+    /// marathon blocks. The projection belongs to every block, at the block's own distance:
+    /// it used to be marathon-only, so a 10K block had none (#185).
     func testDistanceDecidesWhatTheBlockShows() {
         let long = run("2026-09-20", miles: 20)
         XCTAssertTrue(review([long]).showsLongRunCount)
         XCTAssertTrue(review([long], raceMeters: RaceRecap.raceMeters(goalDistance: "half")).showsLongRunCount)
-        let tenK = review([long], raceMeters: RaceRecap.raceMeters(goalDistance: "10k"))
+        let tenKMeters = RaceRecap.raceMeters(goalDistance: "10k")
+        let tenK = review([long], raceMeters: tenKMeters)
         XCTAssertFalse(tenK.showsLongRunCount)
-        XCTAssertNil(tenK.projectedRaceMorningS)
-        XCTAssertNil(tenK.projectedAtStartS)
         XCTAssertEqual(tenK.longest?.id, long.id, "short blocks still show their longest run")
+        XCTAssertEqual(
+            tenK.projectedRaceMorningS,
+            ProjectionHistory.projection([long], asOf: raceDay.addingTimeInterval(-1), raceMeters: tenKMeters)?.finishS
+        )
+        XCTAssertLessThan(tenK.projectedRaceMorningS ?? .max, review([long]).projectedRaceMorningS ?? 0,
+                          "a 10K projection, not the marathon one")
     }
 
     func testRaceDistanceIsReadOffTheGoalNeverAssumed() {
@@ -208,8 +214,8 @@ final class BlockReviewTests: XCTestCase {
         let sept = RunSummary(id: UUID(), start: at("2026-09-20"), distanceM: Int(10 * 1609.34),
                               durationS: 10 * 420, avgHR: nil)                // 7:00/mi
         let r = review([june, sept])
-        let start = ProjectionHistory.projection([june, sept], asOf: planStart.addingTimeInterval(-1))?.finishS
-        let morning = ProjectionHistory.projection([june, sept], asOf: raceDay.addingTimeInterval(-1))?.finishS
+        let start = ProjectionHistory.projection([june, sept], asOf: planStart.addingTimeInterval(-1), raceMeters: marathon)?.finishS
+        let morning = ProjectionHistory.projection([june, sept], asOf: raceDay.addingTimeInterval(-1), raceMeters: marathon)?.finishS
         XCTAssertEqual(r.projectedAtStartS, start)
         XCTAssertEqual(r.projectedRaceMorningS, morning)
         XCTAssertLessThan(r.projectionChangeS ?? 0, 0, "the block made the projection faster")

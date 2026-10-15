@@ -45,7 +45,7 @@ struct YouView: View {
                         Text("\(PaceModel.formatFinish(t)) · \(g.raceName ?? "Race")")
                             .font(Tokens.Font.display(23)).foregroundStyle(Tokens.Palette.textPrimary)
                         HStack(spacing: 18) {
-                            metric("TARGET", units.formatPace(secondsPerMile: PaceModel.paces(for: .marathon, goalSeconds: Double(t)).marathon))
+                            metric("TARGET", GoalLine.targetPace(goal: g, units: units))
                             if let day = g.raceDay {
                                 metric("RACE", day.formatted(.dateTime.month(.abbreviated).day()))
                             }

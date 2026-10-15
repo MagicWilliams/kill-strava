@@ -9,6 +9,9 @@ struct CoachView: View {
     /// Changes applied this week, for the "What changed" row. Nil until the ledger answers.
     @State private var changesThisWeek: Int?
     @State private var draft = ""
+    /// The composer's focus, so a tap on the transcript can put the keyboard away (#186).
+    /// Sending leaves it alone: the athlete may be mid-thought.
+    @FocusState private var composerFocused: Bool
 
     /// iMessage-style drag-from-the-right to reveal per-message timestamps.
     @GestureState private var timeReveal: CGFloat = 0
@@ -92,6 +95,19 @@ struct CoachView: View {
                 }
                 .defaultScrollAnchor(.bottom)
                 .scrollIndicators(.hidden)
+                // Dragging the conversation down pulls the keyboard down with the finger, and a
+                // tap on it puts the keyboard away. Before #186 neither did, so the only way out
+                // of the keyboard was to leave the tab.
+                .scrollDismissesKeyboard(.interactively)
+                .onTapGesture { composerFocused = false }
+                // The keyboard (or a composer growing a line) shortens the transcript from the
+                // bottom, and a shorter viewport keeps its top edge: the newest message slid
+                // under the composer. Only while typing, so a shrink on arrival from "See in
+                // chat" can't yank the athlete off the message they were sent to.
+                .onScrollGeometryChange(for: CGFloat.self) { $0.containerSize.height } action: { old, new in
+                    guard composerFocused, new < old else { return }
+                    proxy.scrollTo(Self.bottomID, anchor: .bottom)
+                }
                 .simultaneousGesture(
                     DragGesture(minimumDistance: 20)
                         .updating($timeReveal) { value, state, _ in
@@ -430,6 +446,7 @@ struct CoachView: View {
                 .background(Tokens.Palette.surface)
                 .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).strokeBorder(Tokens.Palette.elevated, lineWidth: 1))
+                .focused($composerFocused)
                 .onSubmit(sendDraft)
             Button(action: sendDraft) {
                 Image(systemName: "arrow.up")

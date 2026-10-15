@@ -82,6 +82,7 @@ struct ProjectionDetailView: View {
         .toolbar(.hidden, for: .navigationBar)
         .task(id: store.runs.count) { rebuild() }
         .task(id: range) { rebuild() }
+        .task(id: raceMeters) { rebuild() }
     }
 
     // MARK: - Data
@@ -91,15 +92,24 @@ struct ProjectionDetailView: View {
         let from = range.days
             .flatMap { ProjectionHistory.calendar.date(byAdding: .day, value: -$0, to: now) }
             ?? .distantPast
-        points = ProjectionHistory.series(runs: store.runs, from: from, to: now)
+        // Every week is re-read at *today's* goal distance, not the distance the goal had
+        // back then. On purpose: the chart answers "how has my readiness for this race
+        // moved", and a line that switched races partway through would answer nothing.
+        points = ProjectionHistory.series(runs: store.runs, from: from, to: now, raceMeters: raceMeters)
     }
+
+    /// The race being projected: the active goal's distance, the marathon with no goal.
+    private var raceMeters: Double { ProjectionHistory.raceMeters(goal: store.goal) }
+
+    /// "5K", "the marathon": named from the same metres the number was projected to.
+    private var raceName: String { ProjectionHistory.distanceName(raceMeters: raceMeters, units: units) }
 
     private var goalTime: Int? { store.goal?.goalTimeSeconds }
 
     /// Live value first, falling back to the stored one, so the card still reads when a run
     /// has landed but the plan row hasn't been rewritten yet.
     private var current: (run: RunSummary, finishS: Int)? {
-        ProjectionHistory.projection(store.runs, asOf: .now)
+        ProjectionHistory.projection(store.runs, asOf: .now, raceMeters: raceMeters)
     }
 
     private var displayedFinish: Int? { store.plan?.projected_finish_s ?? current?.finishS }
@@ -109,7 +119,7 @@ struct ProjectionDetailView: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 3) {
             Text("Projected finish").font(Tokens.Font.display(28)).foregroundStyle(Tokens.Palette.textPrimary)
-            Text("One recent effort, scaled to 26.2 — and how it has moved")
+            Text("One recent effort, scaled to \(raceName) — and how it has moved")
                 .font(Tokens.Font.ui(13)).foregroundStyle(Tokens.Palette.textSecondary)
         }
     }
@@ -346,7 +356,7 @@ struct ProjectionDetailView: View {
                 }
                 .buttonStyle(Pressable())
 
-                Text("The whole projection is this one effort scaled up. When it ages past six weeks, the next-fastest run takes over and the number steps — that step is the window moving, not your fitness.")
+                Text("The whole projection is this one effort, scaled to \(raceName). When it ages past six weeks, the next-fastest run takes over and the number steps — that step is the window moving, not your fitness.")
                     .font(Tokens.Font.ui(12)).foregroundStyle(Tokens.Palette.textTertiary)
                     .lineSpacing(3)
             }
@@ -358,7 +368,7 @@ struct ProjectionDetailView: View {
     private var howItWorks: some View {
         Card {
             SectionLabel("How this works")
-            Text("Every week on the chart is the same rule re-run against the runs on file that day: the fastest run of \(minQualifying) or more in the previous six weeks, extrapolated to marathon distance by Riegel (t₂ = t₁ × (d₂/d₁)^1.06). Nothing was stored month by month — it is all recomputed from your archive, so it stays correct if the formula ever changes.\n\nThat also makes it deliberately jumpy. One fast parkrun drops it by minutes; six weeks later the same run leaves the window and it climbs back, with no change in fitness either way. Read the trend, not the step. Where the line breaks, no run in that six-week window went far enough to extrapolate from — nothing is drawn rather than a number nobody earned.")
+            Text("Every week on the chart is the same rule re-run against the runs on file that day: the fastest run of \(minQualifying) or more in the previous six weeks, extrapolated to \(raceName) by Riegel (t₂ = t₁ × (d₂/d₁)^1.06). Nothing was stored month by month — it is all recomputed from your archive, so it stays correct if the formula ever changes.\n\nThat also makes it deliberately jumpy. One fast parkrun drops it by minutes; six weeks later the same run leaves the window and it climbs back, with no change in fitness either way. Read the trend, not the step. Where the line breaks, no run in that six-week window went far enough to extrapolate from — nothing is drawn rather than a number nobody earned.")
                 .font(Tokens.Font.ui(12)).foregroundStyle(Tokens.Palette.textSecondary)
                 .lineSpacing(3)
         }
