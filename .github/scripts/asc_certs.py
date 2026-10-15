@@ -176,6 +176,10 @@ def render_summary(
     lines = ["### Development certificates (#103)", ""]
     lines.append(f"- Before archive: **{len(before)}**")
     lines.append(f"- After export: **{len(after)}**")
+    # Minted and revoked are the same set today. They are separate lines because they
+    # answer different questions: Minted says whether Xcode reused the imported CI
+    # identity (#183; should be 0), Revoked says whether the safety net had to act.
+    lines.append(f"- Minted this run: **{len(revoked)}**")
     lines.append(f"- {verb} (created by this run): **{len(revoked)}**")
     if remaining is not None:
         lines.append(f"- Left on the account now: **{remaining}** (re-listed via the API)")

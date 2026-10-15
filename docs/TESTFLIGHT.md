@@ -112,6 +112,72 @@ Adding a capability in `ios/project.yml`? Add it to `REQUIRED` in that script to
 Both scripts have tests (`python3 -m unittest discover -s .github/scripts -v`), which
 run at the start of every TestFlight job before the scripts touch the account.
 
+## Why CI imports its own development identity (#183)
+
+The #103 cleanup works, but Apple emails **"Your Certificate Has Been Revoked"** every time
+it revokes a certificate. That was every merge: 19 emails between 12 and 15 Oct 2026, five
+of them in one night. Run 38698347575 shows the pattern: before 1, after 2, revoked
+`H45BP2D28T (Created via API)`, kept `7FRM9K725A` (the Mac).
+
+The fix is to stop minting. One long-lived **Apple Development** identity made only for CI
+lives in two repo secrets. Before the snapshot, the workflow puts it in a throwaway keychain
+in `$RUNNER_TEMP` (random password, never printed), adds that keychain to the search list,
+and checks it holds exactly one valid Apple Development identity. Xcode finds it and reuses
+it. The keychain is deleted at the end of the run, even if the run failed.
+
+The #103 snapshot and cleanup are unchanged and stay as the safety net. The CI certificate
+already exists when the snapshot is taken, so the cleanup can't revoke it. If Xcode ever
+mints one anyway, that one is still revoked. The run summary says which case you got:
+
+- **Secret present:** "CI development identity: **imported**", then `Minted this run: 0`
+  and `Revoked (created by this run): 0`. No email.
+- **Secret missing:** a `::warning::` naming the missing secret, then the old behaviour:
+  `Minted this run: 1`, `Revoked: 1`, one email. The build still ships. A missing secret
+  never fails a merge.
+- **Pull request:** unsigned archive. No import, no snapshot, no cleanup.
+
+It is a separate certificate from the Mac's on purpose, so revoking either one never breaks
+the other.
+
+### One-time setup (David, about 10 minutes)
+
+Xcode's *Manage Certificates → + → Apple Development* usually won't make a second one on a
+Mac that already has one. The developer portal will:
+
+1. **Make a key pair.** Keychain Access → menu **Keychain Access → Certificate Assistant →
+   Request a Certificate From a Certificate Authority…**. Email `david@delight.studio`,
+   Common Name `Tempo CI`, **Saved to disk**. Keychain Access creates the private key in your
+   login keychain and saves a `.certSigningRequest`.
+2. **Get the certificate.** developer.apple.com → Certificates, IDs & Profiles →
+   **Certificates** → `+` → **Apple Development** → upload the `.certSigningRequest` →
+   Download. Double-click the `.cer` so it pairs with the key from step 1.
+   It will be named `Apple Development: David Latimore II (…)`, just like the Mac's, so
+   write down its **expiry date**. That is how you tell the two apart in the portal and in
+   run summaries.
+3. **Export it with its private key.** Keychain Access → **login** → **My Certificates** →
+   expand the new certificate (the one with the expiry from step 2) so the key shows under
+   it → select the certificate → File → **Export Items…** → `.p12`, save as `ci-dev.p12`,
+   set a strong password.
+4. **Hand it to GitHub,** from the repo root:
+   ```bash
+   base64 -i ci-dev.p12 | gh secret set CI_DEV_CERT_P12
+   ```
+   ```bash
+   gh secret set CI_DEV_CERT_PASSWORD
+   ```
+   (`gh` prompts for the password, so it never sits in your shell history.)
+5. **Clean up the Mac.** Delete `ci-dev.p12` and the `.certSigningRequest`. In Keychain
+   Access, delete the CI certificate and its private key from **login**, so Xcode on the Mac
+   keeps signing with its own identity. Keep the `.p12` password in your password manager
+   if you want a backup. Otherwise, re-doing this section is the recovery.
+6. **Prove it.** Actions → **TestFlight** → Run workflow on `main`, twice. Both summaries
+   should read `Minted this run: 0` and `Revoked (created by this run): 0`, and no
+   revocation email should arrive.
+
+Apple Development certificates last **one year**. When this one expires, the import step
+fails the run ("must hold exactly one valid Apple Development identity; found 0"). Redo
+this section, then revoke the expired one in the portal.
+
 ## When it breaks
 
 - **Workflow warns "TestFlight not configured"**: a secret or the variable is missing (step 5).
@@ -127,10 +193,16 @@ run at the start of every TestFlight job before the scripts touch the account.
   certificates"**: development certificates leaked (#103), most likely from before the
   cleanup existed. developer.apple.com → Certificates, IDs & Profiles → **Certificates**.
   Revoke the *Development* ones that aren't yours: CI's are created through the API key, so
-  they are not named "David Latimore II". Keep yours. If two rows look alike, compare the
-  expiry date with
+  they are not named "David Latimore II". Keep yours. Also keep the **CI identity** (#183):
+  it *is* named "David Latimore II", and you can tell it apart by the expiry date you noted
+  when you made it. If two rows look alike, compare the expiry date with
   `security find-certificate -c "Apple Development: David Latimore II" -p | openssl x509 -noout -enddate`
   on the Mac. Never touch *Distribution* certificates. Then re-run the workflow.
+- **"CI_DEV_CERT_P12 must hold exactly one valid Apple Development identity"**: the CI
+  identity (#183) is expired, revoked, or the `.p12` was exported without its private key
+  (or with two identities in it). The log lists what was found, including invalid ones and
+  why. Redo the #183 setup. Or, to unblock now, delete the `CI_DEV_CERT_P12` secret: runs
+  fall back to minting and revoking (one email per merge) until you redo it.
 - **"Entitlements check failed"**: the signed IPA lost a capability, so nothing was
   uploaded. The App ID is usually missing HealthKit or App Groups (steps 2 and the widgets
   bullet above).

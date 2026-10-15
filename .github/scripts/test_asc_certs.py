@@ -293,7 +293,27 @@ class LiveCleanupAgainstAFakeAccount(unittest.TestCase):
         code, out = self.cleanup(account)
         self.assertEqual(code, 0)
         self.assertEqual(account.deleted, ["CINEW00018"])
+        self.assertIn("Minted this run: **1**", out)
         self.assertIn("Left on the account now: **2**", out)
+
+    def test_imported_ci_identity_is_reused_never_revoked_and_nothing_is_minted(self):
+        # #183: run 38698347575 (15 Oct 2026) minted H45BP2D28T and revoked it, the 19th
+        # "Certificate Has Been Revoked" email since 12 Oct. With the long-lived CI identity
+        # imported, the runner keychain holds it, but it predates the snapshot, so it must
+        # survive cleanup, and the summary must say nothing was minted.
+        ci_identity = cert("CIIDENT183", "D" * 40, name="Apple Development: CI")
+        with open(self.snapshot, "w") as f:
+            json.dump([DAVID_MAC, ci_identity], f)
+        with open(self.keychain, "w") as f:
+            f.write(f"SHA-1 hash: {ci_identity['sha1']}\n")
+        account = self.FakeAccount([DAVID_MAC, ci_identity])
+        code, out = self.cleanup(account)
+        self.assertEqual(code, 0)
+        self.assertEqual(account.deleted, [])
+        self.assertIn("Minted this run: **0**", out)
+        self.assertIn("Revoked (created by this run): **0**", out)
+        self.assertIn("Left on the account now: **2**", out)
+        self.assertIn("| `CIIDENT183` | Apple Development: CI | DEVELOPMENT | 2027-10-11 | pre-existing: kept |", out)
 
     def test_a_failed_revoke_turns_the_step_red(self):
         account = self.FakeAccount([DAVID_MAC, STALE_CI, THIS_RUN], fail_on={"CINEW00018"})
