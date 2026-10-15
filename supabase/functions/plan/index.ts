@@ -18,9 +18,10 @@
 
 import { createClient } from "npm:@supabase/supabase-js@2";
 import {
-  equivalentTime, fmtClock, fmtPace, generate, type Generated, MI, mondayOf, paceBasis, planWrites,
+  fmtClock, generate, type Generated, MI, mondayOf, paceBasis, planWrites,
   racePlacement, readPreferences, sessionDate, type Shape, taperWeeksFor, trainingPaces,
 } from "./generator.ts";
+import { extractFeatures, projectedFinishS, QUALIFYING_MI, type RunRow } from "./features.ts";
 import { goalInsertRow, isMissingColumnError, requiresTargetTime, resolveGoal } from "./goal.ts";
 
 const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
@@ -40,82 +41,6 @@ const SAMPLING = {
   thinking: { type: "adaptive" },
   output_config: { effort: "medium" },
 } as const;
-
-// ── Feature extraction ────────────────────────────────────────────────────────
-interface RunRow {
-  start_time: string;
-  distance_m: number;
-  duration_s: number;
-  avg_hr: number | null;
-}
-
-function extractFeatures(runs: RunRow[], raceMi: number) {
-  const now = new Date();
-  const weeks: Record<string, { mi: number; runs: number }> = {};
-  for (const r of runs) {
-    const wk = mondayOf(new Date(r.start_time)).toISOString().slice(0, 10);
-    weeks[wk] ??= { mi: 0, runs: 0 };
-    weeks[wk].mi += r.distance_m / MI;
-    weeks[wk].runs += 1;
-  }
-  const lastNWeeks = (n: number) => {
-    const out: { week: string; mi: number; runs: number }[] = [];
-    for (let i = n - 1; i >= 0; i--) {
-      const wk = new Date(mondayOf(now));
-      wk.setUTCDate(wk.getUTCDate() - 7 * i);
-      const key = wk.toISOString().slice(0, 10);
-      out.push({ week: key, mi: +(weeks[key]?.mi ?? 0).toFixed(1), runs: weeks[key]?.runs ?? 0 });
-    }
-    return out;
-  };
-  const last12 = lastNWeeks(12);
-  const last4 = last12.slice(-4);
-  const prev4 = last12.slice(-8, -4);
-  const avg = (a: number[]) => (a.length ? a.reduce((x, y) => x + y, 0) / a.length : 0);
-  const vol4 = avg(last4.map((w) => w.mi));
-  const vol4prev = avg(prev4.map((w) => w.mi));
-
-  const eightWeeksAgo = new Date(now.getTime() - 56 * 86400_000);
-  const recent = runs.filter((r) => new Date(r.start_time) >= eightWeeksAgo);
-  const longestRecentMi = Math.max(0, ...recent.map((r) => r.distance_m / MI));
-
-  // Best sustained effort (≥ 2.5 mi) in the last 8 weeks → Riegel current marathon fitness.
-  let bestPace = Infinity;
-  let bestMiles = 0;
-  for (const r of recent) {
-    const mi = r.distance_m / MI;
-    if (mi >= 2.5) {
-      const pace = r.duration_s / mi;
-      if (pace < bestPace) {
-        bestPace = pace;
-        bestMiles = mi;
-      }
-    }
-  }
-  const currentMarathonS = bestPace < Infinity
-    ? Math.round(equivalentTime(bestPace * bestMiles, bestMiles, 26.2188))
-    : null;
-  // Same Riegel, aimed at the race actually being run — a 5K goal projects a 5K time.
-  const currentRaceS = bestPace < Infinity
-    ? Math.round(equivalentTime(bestPace * bestMiles, bestMiles, raceMi))
-    : null;
-
-  return {
-    weekly_last_12: last12,
-    vol_4wk_avg_mi: +vol4.toFixed(1),
-    vol_prev_4wk_avg_mi: +vol4prev.toFixed(1),
-    consistency_weeks_with_runs_of_last_8: last12.slice(-8).filter((w) => w.runs > 0).length,
-    longest_run_8wk_mi: +longestRecentMi.toFixed(1),
-    best_effort: bestPace < Infinity
-      ? { miles: +bestMiles.toFixed(1), pace_per_mile: fmtPace(bestPace) }
-      : null,
-    riegel_current_marathon: currentMarathonS
-      ? `${Math.floor(currentMarathonS / 3600)}:${String(Math.floor((currentMarathonS % 3600) / 60)).padStart(2, "0")}:${String(currentMarathonS % 60).padStart(2, "0")}`
-      : null,
-    riegel_current_marathon_s: currentMarathonS,
-    riegel_current_race_s: currentRaceS,
-  };
-}
 
 // ── Shape proposal (Claude, forced tool) ─────────────────────────────────────
 const SHAPE_TOOL = {
@@ -247,9 +172,8 @@ Deno.serve(async (req) => {
     // conservative default. The basis is never stored as the goal's time.
     const basis = paceBasis(goal_time_s, raceMi, features.riegel_current_race_s);
     const paces = trainingPaces(basis.seconds, raceMi);
-    // Projection: Riegel current fitness at the race distance, else a modest miss of goal.
-    // No target and no runs → no projection; the app already omits the line when it's null.
-    const projected = features.riegel_current_race_s ?? (goal_time_s != null ? Math.round(goal_time_s * 1.06) : null);
+    // Riegel current fitness at the race distance, or null — never derived from the goal (#205).
+    const projected = projectedFinishS(features);
     const targetLine = goal_time_s != null
       ? `target ${fmtClock(goal_time_s)}`
       : `no target time — the goal is to finish. Training paces are derived from ${basis.source === "fitness" ? "current fitness" : "a conservative default (no usable recent runs)"}, not a goal; do not invent a target in the rationale`;
@@ -269,6 +193,11 @@ Deno.serve(async (req) => {
         : null,
       prefs.courseType === "rolling" || prefs.courseType === "hilly"
         ? `- Course is ${prefs.courseType}: the generator adds hill work to base/build.`
+        : null,
+      // The rationale is shown beside the projection; with none stored, a finish time in the
+      // prose would be the same made-up number #205 removed from the column.
+      projected == null
+        ? `- No run of ${QUALIFYING_MI}+ mi in the last 8 weeks, so there is no projected finish. Do not estimate, predict or quote a finish time for the athlete in the rationale.`
         : null,
     ].filter(Boolean).join("\n");
 
