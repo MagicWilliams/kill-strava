@@ -156,7 +156,7 @@ final class RunStore: ObservableObject {
             do {
                 inserted = try await health.sync(ingested, existing: response.knownRows ?? runs)
             } catch {
-                Telemetry.error("sync.insert_failed", error)
+                Telemetry.errorUnlessCancelled("sync.insert_failed", error)
             }
             if inserted > 0 {
                 switch await readRuns() {
@@ -475,7 +475,7 @@ final class RunStore: ObservableObject {
         do {
             latestRead = try await TakeawayService.latestRead()
         } catch {
-            Telemetry.error("takeaway.latest_unreadable", error)
+            Telemetry.errorUnlessCancelled("takeaway.latest_unreadable", error)
         }
     }
 
@@ -518,7 +518,7 @@ final class RunStore: ObservableObject {
         do {
             return .rows(try await fetchFromSupabase())
         } catch {
-            Telemetry.error("sync.runs_unreadable", error)
+            Telemetry.errorUnlessCancelled("sync.runs_unreadable", error)
             return .unreachable
         }
     }
