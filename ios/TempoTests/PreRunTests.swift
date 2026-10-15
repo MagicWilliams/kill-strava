@@ -250,18 +250,20 @@ final class PreRunTests: XCTestCase {
 
     // MARK: - Which screen covers the app
 
-    /// The live screen follows the recorder, not a view's opinion. Every phase after the
-    /// countdown keeps it up, including `.recovering` (#115) and a save that failed — a
-    /// screen that went away there would hide a run that is still on the line.
+    /// The cover follows the recorder, not a view's opinion. Every phase after the countdown
+    /// keeps it up, including `.recovering` (#115) and a save that failed — a screen that
+    /// went away there would hide a run that is still on the line. The live screen has the
+    /// run until the clock stops; the save screen (#129) has it from then until the reset.
     func testTheCoverFollowsTheRecordersPhase() {
         XCTAssertEqual(PreRun.screen(for: .idle), .none)
         XCTAssertEqual(PreRun.screen(for: .countdown(startedAt: .now)), .countdown)
-        let live: [RecorderState.Phase] = [
-            .running, .paused, .recovering(since: .now),
+        let live: [RecorderState.Phase] = [.running, .paused, .recovering(since: .now)]
+        for phase in live { XCTAssertEqual(PreRun.screen(for: phase), .live, "\(phase)") }
+        let save: [RecorderState.Phase] = [
             .ending(.review), .ending(.saving), .ending(.failed(reason: "x")),
             .saved(workoutID: nil), .discarded,
         ]
-        for phase in live { XCTAssertEqual(PreRun.screen(for: phase), .live, "\(phase)") }
+        for phase in save { XCTAssertEqual(PreRun.screen(for: phase), .save, "\(phase)") }
     }
 
     /// A run picked back up after a kill (#115) is shown in the same cover, in place of the
@@ -275,8 +277,10 @@ final class PreRunTests: XCTestCase {
         ]
         for phase in phases {
             XCTAssertEqual(PreRun.screen(for: phase, recovered: true), .recovered, "\(phase)")
-            XCTAssertEqual(PreRun.screen(for: phase, recovered: false), .live, "\(phase)")
+            XCTAssertNotEqual(PreRun.screen(for: phase, recovered: false), .recovered, "\(phase)")
         }
+        // Answered, a run killed on the save screen goes back to the save screen (#129).
+        XCTAssertEqual(PreRun.screen(for: .ending(.review), recovered: false), .save)
         XCTAssertEqual(PreRun.screen(for: .idle, recovered: true), .none)
         XCTAssertEqual(PreRun.screen(for: .countdown(startedAt: .now), recovered: true), .countdown)
     }

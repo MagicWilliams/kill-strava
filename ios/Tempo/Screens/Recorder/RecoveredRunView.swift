@@ -84,11 +84,11 @@ struct RecoveredRunView: View {
 
     /// From the live screen's point of view: the athlete ended the run. Out of
     /// `.recovering` the reducer ends it at the last instant it was known to be recording.
-    /// A race saves itself; anything else goes straight through Save, since the save
-    /// screen (#129) is not here to stop on.
+    /// A race saves itself; anything else lands on the save screen (#129), where the journal
+    /// is optional and Save is one tap, like any other run he ends.
     private func endAndSave() {
         recorder.send(.endRequested(.liveScreen, at: Date()))
-        if recorder.state.phase == .ending(.review) { recorder.confirmSave() }
+        recorder.acknowledgeRecovery()
     }
 
     // MARK: - Copy

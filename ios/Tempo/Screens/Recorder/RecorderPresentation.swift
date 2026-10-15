@@ -7,8 +7,8 @@ extension View {
     /// - the pre-run sheet, whenever `TabRouter.startRun(_:)` is called;
     /// - one full-screen cover over everything while a run exists, its content chosen by
     ///   `PreRun.screen(for:recovered:)` from the recorder's phase. Countdown, live run
-    ///   (#127), a run recovered after a kill (#115) and, when it lands, post-run (#128) all
-    ///   hang off that one switch, so no screen decides on its own that a run is over.
+    ///   (#127), a run recovered after a kill (#115) and the save screen (#129) all hang off
+    ///   that one switch, so no screen decides on its own that a run is over.
     ///
     /// Start is handed over in two steps on purpose. The sheet sets `router.pendingStart` and
     /// closes; `.start` is sent from the sheet's `onDismiss`, once it is gone. Sent while the
@@ -69,9 +69,11 @@ private struct RecorderScreen: View {
             }
         case (.live, _):
             LiveRunView()
+        case (.save, _):
+            SaveRunView()
         case (.recovered, _):
             // A run launch picked back up after a kill (#115). Same cover, so it can never
-            // be on screen alongside the live screen.
+            // be on screen alongside the live or save screen.
             RecoveredRunView()
         default:
             // Idle, for the instant the cover takes to leave.

@@ -51,6 +51,9 @@ targets:
         # Auto-pause (#113, #114) reads step speed from CMPedometer, which crashes without
         # this key. Only asked for at the first run with auto-pause on.
         NSMotionUsageDescription: "With auto-pause on, Tempo uses your steps to tell when you've stopped running and when you've started again."
+        # The save screen (#129) offers a photo taken there and then. Library picks go through
+        # PhotosPicker, which runs out of process and needs no permission at all.
+        NSCameraUsageDescription: "Take a photo on the save screen to keep with your run."
         # location: allowsBackgroundLocationUpdates = true without this key is a fatal error,
         #   not a silent no-op (CLLocationManager docs).
         # audio: spoken split cues (#118) with the phone locked in a pocket. Without it,
