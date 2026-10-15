@@ -60,6 +60,10 @@ struct RecorderSnapshot: Equatable {
     /// Whole splits finished. The split voice cue (#118) fires when this ticks up.
     var completedSplits: Int
     var target: Target?
+    /// This run has a target, shown or hidden. `target` is nil both when there is none and
+    /// when he is running free, and the live screen has to tell those apart: the second one
+    /// gets a chip that brings the target back with one tap (David, #125).
+    var hasTarget: Bool
     /// Outdoor only: whether GPS has locked, so the screen can say "finding GPS".
     var gpsLocked: Bool
 
@@ -67,7 +71,7 @@ struct RecorderSnapshot: Equatable {
         phase: .idle, kind: .outdoor, units: .fallback, elapsedS: 0, movingS: 0,
         distanceM: 0, currentPaceS: nil, averagePaceS: nil, heartRateBPM: nil,
         secondary: .none, currentSplit: nil, lastSplit: nil, completedSplits: 0,
-        target: nil, gpsLocked: false
+        target: nil, hasTarget: false, gpsLocked: false
     )
 
     // MARK: - Heart rate
@@ -145,6 +149,7 @@ struct RecorderSnapshot: Equatable {
             lastSplit: last,
             completedSplits: completed,
             target: target(state: state, averagePaceS: average, units: units),
+            hasTarget: state.target != nil,
             gpsLocked: gpsLocked
         )
     }
