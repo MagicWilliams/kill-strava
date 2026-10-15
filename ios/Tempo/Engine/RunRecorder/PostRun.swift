@@ -31,7 +31,9 @@ enum PostRun {
         case race(saving: Bool, failure: String?)
         /// Saved, but somewhere he won't see it on Today straight away: say where, then Done.
         case saved(note: String)
-        /// Nothing left to show — saved onto Today, or discarded. Reset, and the cover closes.
+        /// Nothing left to show — saved, or discarded. Reset, and the cover closes: onto Today,
+        /// or for a race with a row onto its recap, pushed underneath by the app root
+        /// (`RaceFinish.destination`, #117) so this screen never has to know.
         case close
     }
 

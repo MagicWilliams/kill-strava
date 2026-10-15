@@ -19,7 +19,25 @@ struct TempoApp: App {
         // Tempo for a workout session it killed, there may be no scene on screen to run a
         // `.task`, and the session is waiting to be picked back up either way. What it finds
         // is shown by `.runRecorder(...)`, the one place recorder screens are presented.
-        Task { @MainActor in await recorder.recoverAtLaunch() }
+        //
+        // The Live Activity (#119) follows every refresh, from the countdown's end to the
+        // save or the discard, a recovered run included. One sync after recovery settles
+        // ends a Lock Screen activity left over from a run that was not picked back up.
+        let liveActivity = RunLiveActivity()
+        recorder.onRefresh = { state, snapshot, recordingID in
+            liveActivity.sync(state: state, snapshot: snapshot, recordingID: recordingID)
+        }
+        let recovery = Task { @MainActor in
+            await recorder.recoverAtLaunch()
+            liveActivity.sync(state: recorder.state, snapshot: recorder.snapshot, recordingID: recorder.recordingID)
+        }
+        // Pause / Resume on the Lock Screen. A tap can relaunch a Tempo that iOS killed, so
+        // it waits for recovery to pick the run back up; sent to an idle recorder it would
+        // be dropped. The reducer decides what a Lock Screen tap may do (#111).
+        RunActivityControl.handler = { command in
+            await recovery.value
+            recorder.send(command.event(at: .now))
+        }
     }
 
     var body: some Scene {

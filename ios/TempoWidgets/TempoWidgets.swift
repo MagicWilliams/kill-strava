@@ -1,15 +1,18 @@
 import SwiftUI
 import WidgetKit
 
-/// Tempo's widgets (#76): the week at a glance, and what the coach wants next.
+/// Tempo's widgets (#76): the week at a glance, and what the coach wants next. And the run
+/// being recorded, on the Lock Screen and in the Dynamic Island (#119).
 ///
 /// Display only. Every number comes from the `WidgetSnapshot` the app last wrote — see that
-/// file for why the extension never fetches anything itself.
+/// file for why the extension never fetches anything itself — or, for the run, from the
+/// Live Activity's content, which only the app sends.
 @main
 struct TempoWidgetsBundle: WidgetBundle {
     var body: some Widget {
         WeekWidget()
         CoachWidget()
+        RunActivityWidget()
     }
 }
 

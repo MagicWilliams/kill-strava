@@ -15,8 +15,10 @@ enum BlockReviewService {
         let sessions: [BlockReview.PlannedSession]
     }
 
+    /// `distance_m` (0014, applied 2026-10-12) so a closed block's recap and review measure
+    /// a 15K or a custom distance at its own length (`RaceRecap.raceMeters(goal:)`, #140).
     static let goalColumns =
-        "id,race_name,race_date,goal_time_seconds,distance,completed_at,outcome,result_time_s,race_run_id,review"
+        "id,race_name,race_date,goal_time_seconds,distance,distance_m,completed_at,outcome,result_time_s,race_run_id,review"
 
     // MARK: - Reads
 
@@ -115,7 +117,7 @@ enum BlockReviewService {
     /// Returns the goal as it now stands.
     static func close(_ req: CloseRequest, now: Date = .now) async throws -> GoalInfo {
         guard let uid = Supa.userID?.uuidString else { throw CloseError.notSignedIn }
-        let raceMeters = RaceRecap.raceMeters(goalDistance: req.goal.distance)
+        let raceMeters = RaceRecap.raceMeters(goal: req.goal)
 
         var raceRunID = req.raceRunID
         if req.outcome == .raced, raceRunID == nil, let start = req.logRunStart, let finish = req.finishS {

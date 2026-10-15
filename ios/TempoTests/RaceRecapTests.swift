@@ -101,6 +101,79 @@ final class RaceRecapTests: XCTestCase {
         XCTAssertFalse(RaceRecap.isRace(run: run, goal: nil, calendar: .current), "no goal, no race")
     }
 
+    // MARK: - The goal's distance (#140 item 1)
+
+    /// The intake (#102) writes `distance_m` as the number the math reads, and a label for
+    /// show. Read off the label alone, a custom 30K is a marathon and a 15K run on race day
+    /// is never the race. `distance_m` first; the label only for a goal written before 0014.
+    func testRaceMetersReadsDistanceMFirst() {
+        func goal(_ label: String?, _ meters: Int?) -> GoalInfo {
+            var g = GoalInfo(id: UUID(), race_name: nil, race_date: "2026-10-11", goal_time_seconds: nil, distance: label)
+            g.distance_m = meters
+            return g
+        }
+        XCTAssertEqual(RaceRecap.raceMeters(goal: goal("1mi", 1_609)), 1_609)
+        XCTAssertEqual(RaceRecap.raceMeters(goal: goal("15k", 15_000)), 15_000)
+        XCTAssertEqual(RaceRecap.raceMeters(goal: goal("10mi", 16_093)), 16_093)
+        XCTAssertEqual(RaceRecap.raceMeters(goal: goal("custom", 30_000)), 30_000, "only distance_m knows a custom race")
+        XCTAssertEqual(RaceRecap.raceMeters(goal: goal("half", nil)), 21_097.5, "pre-0014 goal: the label")
+        XCTAssertEqual(RaceRecap.raceMeters(goal: goal("10k", 0)), 10_000, "a zero is no distance; the label")
+        XCTAssertEqual(RaceRecap.raceMeters(goal: nil), marathon)
+    }
+
+    /// A 15K, a 10-miler and a mile, each run on race day: the race, at its own distance, and
+    /// not a marathon's 90%.
+    func testIsRaceFindsEveryDistanceFromDistanceM() {
+        for (label, meters, ran) in [("15k", 15_000, 15_150), ("10mi", 16_093, 16_300), ("1mi", 1_609, 1_640)] {
+            var g = GoalInfo(id: UUID(), race_name: nil, race_date: "2026-10-11", goal_time_seconds: nil, distance: label)
+            g.distance_m = meters
+            let run = RunSummary(id: UUID(), start: g.raceDay!.addingTimeInterval(8 * 3600), distanceM: ran,
+                                 durationS: 3_000, avgHR: nil)
+            XCTAssertTrue(RaceRecap.isRace(run: run, goal: g), label)
+        }
+        var custom = GoalInfo(id: UUID(), race_name: nil, race_date: "2026-10-11", goal_time_seconds: nil, distance: "custom")
+        custom.distance_m = 30_000
+        let thirtyK = RunSummary(id: UUID(), start: custom.raceDay!.addingTimeInterval(8 * 3600), distanceM: 30_200,
+                                 durationS: 8_000, avgHR: nil)
+        XCTAssertTrue(RaceRecap.isRace(run: thirtyK, goal: custom), "a custom 30K, which the label reads as a marathon")
+    }
+
+    // MARK: - The explicit link (#117)
+
+    /// Once a goal names its race run, that run is the race and nothing else is — not even a
+    /// second long recording on race day that the guess would also have taken.
+    func testTheLinkedRunIsTheRaceAndNothingElseIs() {
+        var g = GoalInfo(id: UUID(), race_name: "Chicago", race_date: "2026-10-11", goal_time_seconds: 11_700,
+                         distance: "marathon")
+        let morning = g.raceDay!.addingTimeInterval(7 * 3600)
+        let race = RunSummary(id: UUID(), start: morning, distanceM: 42_600, durationS: 11_900, avgHR: 160)
+        let garminCopy = RunSummary(id: UUID(), start: morning.addingTimeInterval(600), distanceM: 42_900,
+                                    durationS: 11_850, avgHR: 161)
+
+        XCTAssertTrue(RaceRecap.isGoalRace(run: garminCopy, goal: g), "no link: the guess takes either")
+        XCTAssertEqual(RaceRecap.raceRun(in: [race, garminCopy], goal: g), garminCopy, "no link: the longest")
+
+        g.race_run_id = race.id
+        XCTAssertTrue(RaceRecap.isGoalRace(run: race, goal: g))
+        XCTAssertFalse(RaceRecap.isGoalRace(run: garminCopy, goal: g), "the link outranks the guess")
+        XCTAssertEqual(RaceRecap.raceRun(in: [race, garminCopy], goal: g), race)
+        XCTAssertFalse(RaceRecap.isGoalRace(run: race, goal: nil))
+    }
+
+    /// A link to a run not loaded falls back to the guess while the block is open. A closed
+    /// block never guesses: its race is whatever the close-out recorded.
+    func testRaceRunFallsBackToTheGuessOnlyWhileOpen() {
+        var g = GoalInfo(id: UUID(), race_name: "Chicago", race_date: "2026-10-11", goal_time_seconds: 11_700,
+                         distance: "marathon")
+        let race = RunSummary(id: UUID(), start: g.raceDay!.addingTimeInterval(7 * 3600), distanceM: 42_600,
+                              durationS: 11_900, avgHR: 160)
+        g.race_run_id = UUID()
+        XCTAssertEqual(RaceRecap.raceRun(in: [race], goal: g), race)
+        XCTAssertNil(RaceRecap.raceRun(in: [race], goal: g, guessing: false))
+        g.race_run_id = race.id
+        XCTAssertEqual(RaceRecap.raceRun(in: [race], goal: g, guessing: false), race, "a closed block's own link")
+    }
+
     // MARK: - Mats
 
     /// Even pace, exactly 42,195 m in exactly 3:15:00. Every mat should fall where simple

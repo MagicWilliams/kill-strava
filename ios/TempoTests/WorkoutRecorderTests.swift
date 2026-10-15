@@ -106,7 +106,11 @@ final class WorkoutRecorderTests: XCTestCase {
             splits.append(split)
         }
         func speak(_ decision: AutoPause.Decision) { decisions.append(decision) }
-        func speakRaceDistance(meters: Double, elapsedS: Double, averagePaceS: Double?, units: Units) {}
+        /// Race-distance cues (#117): the distance said and the race clock at that moment.
+        var races: [(meters: Double, elapsedS: Double)] = []
+        func speakRaceDistance(meters: Double, elapsedS: Double, averagePaceS: Double?, units: Units) {
+            races.append((meters, elapsedS))
+        }
         func stop() { stops += 1 }
     }
 
@@ -148,6 +152,12 @@ final class WorkoutRecorderTests: XCTestCase {
     private var rescue: FakeSession?
     private var rescuedFor: [RecorderState] = []
     private var inHealth: FinishedWorkout?
+    /// Race mode (#117): the active goal the recorder reads, the links it asked to write, and
+    /// the phase the run was in when each was asked for.
+    private var goal: GoalInfo?
+    private var links: [RaceFinish.Link] = []
+    private var phaseAtLink: [RecorderState.Phase] = []
+    private weak var current: WorkoutRecorder?
 
     private let tempo = RecorderState.SessionTarget(sessionID: UUID(), type: "tempo", title: "6 mi tempo",
                                                     distanceM: 9656, paceSecPerMile: 450)
@@ -169,6 +179,9 @@ final class WorkoutRecorderTests: XCTestCase {
         rescue = nil
         rescuedFor = []
         inHealth = nil
+        goal = nil
+        links = []
+        phaseAtLink = []
     }
 
     private func makeRecorder(units: @escaping () -> Units = { .km },
@@ -184,6 +197,11 @@ final class WorkoutRecorderTests: XCTestCase {
                 saved.append((workout, journal))
                 return tempoAnswers.isEmpty ? .saved(runID: runID) : tempoAnswers.removeFirst()
             },
+            goal: { [unowned self] in goal },
+            linkRace: { [unowned self] link in
+                links.append(link)
+                if let phase = current?.state.phase { phaseAtLink.append(phase) }
+            },
             clock: { [unowned self] in now },
             tickInterval: nil,
             report: { [unowned self] in lines += $0; logged += $0.map(\.event.rawValue) },
@@ -192,6 +210,7 @@ final class WorkoutRecorderTests: XCTestCase {
             recovery: recovery
         )
         recorder.onAutoPause = { [unowned self] in autoPauses.append($0) }
+        current = recorder
         return recorder
     }
 
@@ -356,6 +375,94 @@ final class WorkoutRecorderTests: XCTestCase {
         XCTAssertEqual(saved.first?.journal, RunJournalEntry(), "the journal can follow the recap")
     }
 
+    // MARK: - Race mode (#117)
+
+    /// A goal race on the morning `t0` falls on. Custom 3 km by default: only `distance_m`
+    /// knows how far that is (the label alone reads as a marathon), and it keeps the run short.
+    private func raceGoal(distance: String = "custom", meters: Int? = 3_000, closed: Bool = false) -> GoalInfo {
+        var goal = GoalInfo(id: UUID(), race_name: "Lakefront 3K", race_date: "2026-10-11",
+                            goal_time_seconds: 720, distance: distance)
+        goal.distance_m = meters
+        if closed {
+            goal.completed_at = t(-86_400)
+            goal.outcome = "raced"
+        }
+        return goal
+    }
+
+    /// The watch reaches the race distance: said once, at the goal's own distance, with the
+    /// race clock — and in place of the split that lands on the same update, not after it.
+    func testARaceSaysItsDistanceOnceAtTheGoalsDistance() async throws {
+        goal = raceGoal()
+        let recorder = await started(.race, units: .km)
+        run(recorder, line(from: 0, seconds: 900, secPerKm: 240))
+
+        let race = try XCTUnwrap(cues.races.first, "a race in race mode hears its distance")
+        XCTAssertEqual(cues.races.count, 1, "once, at the mark; not again every second past it")
+        XCTAssertEqual(race.meters, 3_000, "the goal's distance_m, not a marathon read off the label")
+        XCTAssertEqual(race.elapsedS, 720, accuracy: 10, "the race clock at the mark")
+        XCTAssertEqual(cues.splits.map(\.index), [1, 2],
+                       "km 3 lands on the same update; 'Kilometer three' then 'Three kilometers' is noise")
+    }
+
+    /// The same goal, the same morning, an ordinary outdoor run: splits only. The race cue
+    /// is Race mode's, not race day's.
+    func testAnOrdinaryRunOnRaceDayHearsOnlySplits() async {
+        goal = raceGoal()
+        let recorder = await started(.outdoor, units: .km)
+        run(recorder, line(from: 0, seconds: 900, secPerKm: 240))
+        XCTAssertTrue(cues.races.isEmpty)
+        XCTAssertEqual(cues.splits.map(\.index), [1, 2, 3])
+    }
+
+    /// The race files itself as the block's race before the save is reported, so the recap
+    /// it lands on and the close-out both read the link. And the landing outlives the reset
+    /// the save screen does the moment the run is in Tempo (#129).
+    func testARaceFilesItselfAsTheGoalsRaceBeforeTheSaveIsReported() async throws {
+        let goal = raceGoal()
+        self.goal = goal
+        let recorder = await started(.race)
+        run(recorder, line(from: 0, seconds: 120, secPerKm: 240))
+        now = t(121)
+        recorder.send(.endRequested(.liveScreen, at: now))
+        await recorder.settled()
+
+        XCTAssertEqual(recorder.state.phase, .saved(workoutID: session.workoutID))
+        XCTAssertEqual(links, [RaceFinish.Link(goalID: goal.id, runID: runID)])
+        XCTAssertEqual(phaseAtLink, [.ending(.saving)], "linked while the race was still saving")
+        let landed = RaceFinish.SavedRun(recordingID: try XCTUnwrap(recorder.recordingID), kind: .race, runID: runID)
+        XCTAssertEqual(recorder.lastSaved, landed)
+
+        recorder.reset()
+        XCTAssertEqual(recorder.lastSaved, landed, "the root still knows where to land after the cover resets")
+    }
+
+    /// No row, no race, or no open block: nothing is linked. The run is still saved, and the
+    /// recap's date-and-distance guess still finds a race that lands later.
+    func testOnlyARaceWithARowOnAnOpenBlockIsLinked() async {
+        let cases: [(label: String, kind: RecorderState.RunKind, answer: RecordedRunSaver.Outcome, closed: Bool)] = [
+            ("an ordinary run on race day", .outdoor, .saved(runID: runID), false),
+            ("a race saved in a dead spot: no row yet", .race, .queued, false),
+            ("a race too short to be a run", .race, .tooShort, false),
+            ("a race on a block already closed", .race, .saved(runID: runID), true),
+        ]
+        for c in cases {
+            session = FakeSession()
+            links = []
+            goal = raceGoal(closed: c.closed)
+            tempoAnswers = [c.answer]
+            let recorder = await started(c.kind)
+            run(recorder, line(from: 0, seconds: 60, secPerKm: 240))
+            now = t(61)
+            recorder.send(.endRequested(.liveScreen, at: now))
+            if c.kind != .race { recorder.confirmSave() }
+            await recorder.settled()
+            XCTAssertEqual(recorder.state.phase, .saved(workoutID: session.workoutID), c.label)
+            XCTAssertTrue(links.isEmpty, c.label)
+            XCTAssertEqual(recorder.lastSaved?.kind, c.kind, c.label)
+        }
+    }
+
     // MARK: - Nothing ends a run but the athlete
 
     /// HealthKit failing underneath the run: the recorder goes to recovering and keeps
@@ -383,6 +490,55 @@ final class WorkoutRecorderTests: XCTestCase {
         XCTAssertEqual(recorder.state.phase, .running)
         XCTAssertFalse(session.endedOrThrownAway)
         XCTAssertTrue(location.isOn)
+    }
+
+    /// Pause and Resume on the Lock Screen (#119) reach the workout session exactly as the
+    /// live screen's do, so HealthKit's own duration leaves the stop out.
+    func testLockScreenPauseAndResumeReachTheSession() async {
+        let recorder = await started()
+        now = t(300)
+        recorder.send(RunActivityCommand.pause.event(at: now))
+        XCTAssertEqual(recorder.state.phase, .paused)
+        XCTAssertEqual(session.calls.last, .pause(t(300)))
+        now = t(330)
+        recorder.send(RunActivityCommand.resume.event(at: now))
+        await recorder.settled()
+        XCTAssertEqual(recorder.state.phase, .running)
+        XCTAssertEqual(session.calls.last, .resume(t(330)))
+        XCTAssertFalse(session.endedOrThrownAway)
+    }
+
+    /// The Live Activity (#119) hears every refresh, and from it exists exactly from the
+    /// countdown's end to the save: never during the 3-2-1, never after the run is in Health.
+    func testTheLiveActivityFollowsTheRunFromTheCountdownsEndToTheSave() async {
+        let recorder = makeRecorder()
+        var heard: [(RunActivityState?, UUID?)] = []
+        recorder.onRefresh = { state, snapshot, id in
+            heard.append((RunActivityPlan.content(state: state, snapshot: snapshot), id))
+        }
+        recorder.send(.start(RecorderState.Setup(kind: .outdoor, target: tempo), at: now))
+        XCTAssertNil(heard.last?.0, "the countdown has no activity")
+        now = t(0)
+        recorder.send(.countdownDone(at: now))
+        XCTAssertEqual(heard.last?.0?.stage, .running)
+        XCTAssertEqual(heard.last?.0?.startedAt, t(0))
+        XCTAssertEqual(heard.last?.1, recorder.recordingID)
+        XCTAssertEqual(heard.last?.0?.units, .km, "the unit the run started in")
+
+        let before = heard.count
+        run(recorder, line(from: 0, seconds: 10, secPerKm: 300))
+        XCTAssertEqual(heard.count - before, 11, "once a tick: the plan, not the recorder, throttles")
+
+        now = t(20)
+        recorder.send(.pause(.manual(.liveScreen), at: now))
+        XCTAssertEqual(heard.last?.0?.stage, .paused)
+        recorder.send(.endRequested(.liveScreen, at: now))
+        XCTAssertEqual(heard.last?.0?.stage, .ended)
+        XCTAssertEqual(heard.last?.0?.endedAt, t(20))
+        recorder.confirmSave()
+        await recorder.settled()
+        XCTAssertEqual(recorder.state.phase, .saved(workoutID: session.workoutID))
+        XCTAssertNil(heard.last?.0, "saved: the activity goes")
     }
 
     /// Location turned off mid-run is logged, not a stop. The clock keeps going.
@@ -950,6 +1106,10 @@ final class WorkoutRecorderTests: XCTestCase {
 
         now = t(720)
         let recorder = relaunched()
+        var lockScreen: [(RunActivityState?, UUID?)] = []
+        recorder.onRefresh = { state, snapshot, id in
+            lockScreen.append((RunActivityPlan.content(state: state, snapshot: snapshot), id))
+        }
         let (recovered, survivor) = survivor(of: killed, healthHas: inHealthBefore)
         await recorder.adopt(snapshot: killed, session: recovered)
         await recorder.settled()
@@ -965,6 +1125,10 @@ final class WorkoutRecorderTests: XCTestCase {
         XCTAssertTrue(location.isOn, "GPS is back on")
         XCTAssertEqual(survivor.calls, [], "the session is adopted as it is: nothing prepared, begun or resumed")
         XCTAssertEqual(lines.first { $0.event == .recovered }?.context["outcome"], "resumed")
+        // The Lock Screen comes back with it (#119): the same recording's activity, the same clock.
+        XCTAssertEqual(lockScreen.last?.1, recordingID)
+        XCTAssertEqual(lockScreen.last?.0?.stage, .running)
+        XCTAssertEqual(lockScreen.last?.0?.startedAt, t(0))
         XCTAssertEqual(lines.first { $0.event == .interrupted }?.context["reason"], "app_terminated")
         XCTAssertEqual((persisted.last ?? nil)?.savedAt, t(720), "rewritten at once: a second kill costs no more")
 

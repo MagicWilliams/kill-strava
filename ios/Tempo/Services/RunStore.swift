@@ -255,6 +255,22 @@ final class RunStore: ObservableObject {
         }
     }
 
+    // MARK: - The journal, edited on Run Detail (#124)
+
+    /// Whether this database has the journal columns (migration 0016). Before it does, every
+    /// journal write fails, so Run Detail doesn't offer an edit it cannot save.
+    var journalAvailable: Bool { !journalColumnsMissing }
+
+    /// A journal edit that landed: show it now rather than at the next refresh. Load is
+    /// recomputed because RPE feeds it (#161) — rating a run after the fact moves the numbers
+    /// on Today, and they should move when he taps Save, not when he next pulls to refresh.
+    func applyJournal(_ entry: RunJournalEntry, toRun runID: UUID) {
+        guard let i = runs.firstIndex(where: { $0.id == runID }), runs[i].journal != entry else { return }
+        let rpeChanged = runs[i].journal.rpe != entry.rpe
+        runs[i].journal = entry
+        if rpeChanged { fitness = LoadModel.compute(runs: runs, checkInOK: todayCheckIn?.feelsOk) }
+    }
+
     // MARK: - Training blocks (#100)
 
     /// Where the active block is — nil with no goal. Today's "review your block" card keys
@@ -269,11 +285,12 @@ final class RunStore: ObservableObject {
     }
 
     /// The goal a run was the race for: a closed block that recorded it as its race run, or
-    /// else the active goal if `RaceRecap.isRace` picks it out. Without the first half, closing
-    /// a block would quietly take the "Race recap" door off its own race's page.
+    /// else the active goal — its linked race run (#117) if it has one, the date-and-distance
+    /// guess if not (`RaceRecap.isGoalRace`). Without the first half, closing a block would
+    /// quietly take the "Race recap" door off its own race's page.
     func raceGoal(for run: RunSummary) -> GoalInfo? {
         if let closed = pastBlocks.first(where: { $0.race_run_id == run.id }) { return closed }
-        return RaceRecap.isRace(run: run, goal: goal) ? goal : nil
+        return RaceRecap.isGoalRace(run: run, goal: goal) ? goal : nil
     }
 
     // MARK: - Overlapping runs (#30)

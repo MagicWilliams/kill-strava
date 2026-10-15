@@ -248,6 +248,10 @@ final class WorkoutRecorder {
         if case .saved(let runID) = saveOutcome { return runID }
         return nil
     }
+    /// The last save that landed, for the app root to land after it (#117: a race goes to its
+    /// recap). Deliberately *not* cleared by `reset()`: the save screen resets the recorder
+    /// as soon as a run is in Tempo, and this must still be there when the root reads it.
+    private(set) var lastSaved: RaceFinish.SavedRun?
     /// What launch found when iOS had killed Tempo mid-run (#115), until the athlete has
     /// seen it: the "We kept your run" prompt (#128, Figma frame 10) is up while this is set.
     /// `.resume` is a run going again; `.rescue` / `.expired` a run waiting for "Save what we
@@ -258,9 +262,13 @@ final class WorkoutRecorder {
     /// so an auto pause is never silent.
     @ObservationIgnored var onAutoPause: ((AutoPause.Decision) -> Void)?
     /// Distance moved on, `(previous, current)` metres, once a second while running. The
-    /// race-distance cue (#117) hangs off this: `CueText.crossed(raceM, …)` then
-    /// `cues?.speakRaceDistance`.
+    /// split and race-distance cues (#118, #117) are checked against the same step, in
+    /// `announce`.
     @ObservationIgnored var onDistanceAdvanced: ((Double, Double) -> Void)?
+    /// Every refresh — each event, and once a second while recording — with the state, the
+    /// snapshot just built from it, and the recording's id. The Live Activity (#119) hangs
+    /// off this, so the Lock Screen reads the very numbers the live screen does.
+    @ObservationIgnored var onRefresh: ((RecorderState, RecorderSnapshot, UUID?) -> Void)?
     /// This run's voice. Made at the countdown and kept after the run ends, until the next
     /// run replaces it: a speaker let go mid-cue would never hand the audio back, and the
     /// music would stay ducked.
@@ -306,6 +314,11 @@ final class WorkoutRecorder {
     private let steps: RunStepDistanceStreaming
     private let makeCues: () -> RunCueSpeaking
     private let unitsSource: () -> Units
+    /// The active goal, for Race mode (#117): how far the race is, and what to file it under.
+    private let goalSource: () -> GoalInfo?
+    /// Writes `goals.race_run_id` once a race is saved. Best-effort: the run is saved either
+    /// way, and without the link the recap still finds it by date and distance.
+    private let linkRace: (RaceFinish.Link) async -> Void
     private let clock: () -> Date
     private let tickInterval: Duration?
     /// The #131 vocabulary: one line per transition, one per save.
@@ -368,6 +381,8 @@ final class WorkoutRecorder {
     ///   - steps: a treadmill run's distance. Nil counts nothing.
     ///   - units: read once per run, at the countdown.
     ///   - saveToTempo: writes the saved workout into Tempo — `RecordedRunSaver.save`.
+    ///   - goal: the active goal, read when a race needs it (#117).
+    ///   - linkRace: files a saved race against its goal — `RaceLinker.link`.
     ///   - tickInterval: how often the snapshot refreshes; nil for none (tests drive it).
     init(
         makeSession: @escaping (RecorderState.RunKind) throws -> WorkoutSessionDriving,
@@ -377,6 +392,8 @@ final class WorkoutRecorder {
         cues: @escaping () -> RunCueSpeaking,
         units: @escaping () -> Units,
         saveToTempo: @escaping (WorkoutRow.Workout, RunJournalEntry, UIImage?) async -> RecordedRunSaver.Outcome,
+        goal: @escaping () -> GoalInfo? = { nil },
+        linkRace: @escaping (RaceFinish.Link) async -> Void = { _ in },
         clock: @escaping () -> Date = Date.init,
         tickInterval: Duration? = .seconds(1),
         report: @escaping ([RecorderTelemetry.Line]) -> Void = { Telemetry.log($0) },
@@ -391,6 +408,8 @@ final class WorkoutRecorder {
         self.makeCues = cues
         self.unitsSource = units
         self.saveToTempo = saveToTempo
+        self.goalSource = goal
+        self.linkRace = linkRace
         self.clock = clock
         self.tickInterval = tickInterval
         self.report = report
@@ -417,6 +436,11 @@ final class WorkoutRecorder {
                 // No store means no app to show it in; the sync ingests it from Health.
                 guard let store else { return .queued }
                 return await RecordedRunSaver.save(workout, journal: journal, photo: photo, store: store)
+            },
+            goal: { [weak store] in store?.goal },
+            linkRace: { [weak store] link in
+                guard let store else { return }
+                await RaceLinker.link(link, store: store)
             },
             recovery: .device(store: health)
         )
@@ -506,6 +530,7 @@ final class WorkoutRecorder {
             state: state, at: clock(), timeline: timeline, units: units,
             heartRate: heartRate, gpsLocked: track?.isLocked ?? false
         )
+        onRefresh?(state, snapshot, recordingID)
     }
 
     /// Waits for every queued HealthKit call, including any queued by the ones before it.
@@ -788,11 +813,21 @@ final class WorkoutRecorder {
                 }
                 let outcome = await saveToTempo(workout.row, journal, photo)
                 saveOutcome = outcome
+                // A race files itself as the block's result (#117) before the save is
+                // reported, so the recap it lands on and the close-out both see the link.
+                if let link = RaceFinish.link(kind: state.kind, savedRunID: savedRunID,
+                                              goal: goalSource(), startedAt: state.startedAt) {
+                    await linkRace(link)
+                }
                 // One line per save, once both halves have answered (#131).
                 report([RecorderTelemetry.saved(
                     state, distanceM: (treadmillCurve ?? timeline).last?.m, fixes: track?.verdicts ?? [:],
                     tempo: outcome, saveLatency: clock().timeIntervalSince(began))])
-                send(Self.saveEvent(for: outcome, workoutID: workout.id))
+                let event = Self.saveEvent(for: outcome, workoutID: workout.id)
+                if case .saveSucceeded = event {
+                    lastSaved = RaceFinish.SavedRun(recordingID: recordingID, kind: state.kind, runID: savedRunID)
+                }
+                send(event)
             } onError: { [weak self] error in
                 self?.lastFailure = String(describing: error)
                 self?.log("recorder.health_save_error", ["error_type": String(describing: type(of: error))])
@@ -1043,14 +1078,25 @@ final class WorkoutRecorder {
     /// The split cue (#118): once per finished split, said with the split's own pace and the
     /// average so far. Checked against the snapshot just refreshed, so the voice and the
     /// screen read the same numbers.
+    ///
+    /// In Race mode, the update that reaches the race distance says that instead (#117):
+    /// distance, race clock, average, and that the finish is still ahead. On a 10-mile race
+    /// the tenth mile and the race distance land on the same update; "Mile ten" then "Ten
+    /// miles" back to back is noise, so the race cue alone is said.
     private func announce() {
         let previous = announcedThroughM
         let current = snapshot.distanceM
         guard current > previous else { return }
         announcedThroughM = current
         onDistanceAdvanced?(previous, current)
-        guard let cues, cues.isEnabled,
-              let index = CueText.splitToAnnounce(previousMeters: previous, currentMeters: current, units: units),
+        guard let cues, cues.isEnabled else { return }
+        if let raceM = RaceFinish.cueMeters(kind: state.kind, goal: goalSource()),
+           RaceFinish.cuesRaceDistance(cueMeters: raceM, previousMeters: previous, currentMeters: current) {
+            cues.speakRaceDistance(meters: raceM, elapsedS: Double(snapshot.elapsedS),
+                                   averagePaceS: snapshot.averagePaceS, units: units)
+            return
+        }
+        guard let index = CueText.splitToAnnounce(previousMeters: previous, currentMeters: current, units: units),
               let split = TrackMath.splits(timeline: timeline, splitMeters: units.splitMeters)
                 .first(where: { $0.index == index && !$0.isPartial })
         else { return }
