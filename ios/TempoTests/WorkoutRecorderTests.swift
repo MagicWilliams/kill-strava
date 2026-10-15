@@ -749,6 +749,28 @@ final class WorkoutRecorderTests: XCTestCase {
         XCTAssertEqual(recorder.state.phase, .saved(workoutID: session.workoutID))
     }
 
+    /// The save screen's splits table (#130) is the one Health will read back: the same
+    /// rescale the save writes. And once the first Save has written the distance, the stepper
+    /// is locked — what is in Health can't be re-corrected by a Retry.
+    func testTheSaveScreenPreviewsTheSplitsTheSaveWrites() async throws {
+        let recorder = await started(.treadmill, units: .km)
+        belt(recorder)
+        endTreadmill(recorder)
+        XCTAssertEqual(recorder.stepEstimateM, 1_250, accuracy: 1e-9)
+        XCTAssertEqual(recorder.treadmillSplits(consoleM: nil), recorder.splits, "untouched: the step count's own")
+
+        let preview = recorder.treadmillSplits(consoleM: 2_000)
+        XCTAssertEqual(preview.filter { !$0.isPartial }.count, 2, "2.00 km on the console is two whole splits")
+        XCTAssertEqual(preview.reduce(0) { $0 + $1.meters }, 2_000, accuracy: 1e-6)
+        XCTAssertFalse(recorder.treadmillSettled)
+
+        session.failFinishes = 1
+        recorder.confirmSave(treadmillConsoleM: 2_000)
+        await recorder.settled()
+        XCTAssertTrue(recorder.treadmillSettled, "the samples are in Health")
+        XCTAssertEqual(session.distanceWritten, 2_000, accuracy: 1e-9)
+    }
+
     /// A correction never outlives its run.
     func testTheNextRunStartsWithNoCorrection() async {
         let recorder = await started(.treadmill)

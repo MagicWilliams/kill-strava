@@ -5,12 +5,13 @@ import UIKit
 /// The post-run save screen (#129): frames 7a (dark) and 7b (light) of the signed-off
 /// "04 · Post-run" page. The run as recorded — map, distance, time, pace, splits — then the
 /// journal: effort, feel and notes, title, photo, shoes. All of it optional; Save is pinned
-/// below and always one tap.
+/// below and always one tap. A treadmill run also gets frame 8, "Treadmill said…" (#130):
+/// the console's distance, which the run is rescaled to before it reaches Health.
 ///
 /// Shown by `runRecorder(...)` whenever `PreRun.screen(for:)` says `.save`. What it shows
 /// inside that is `PostRun.stage`, read off the recorder, so a save in flight, a failed save
 /// with its Retry, a race saving itself and the moment after a save are all the recorder's
-/// call, not this view's. It writes nothing itself: Save is `confirmSave(journal:photo:)`,
+/// call, not this view's. It writes nothing itself: Save is `confirmSave(journal:photo:treadmillConsoleM:)`,
 /// Discard is `.discard(.liveScreen)` behind a second confirmation, and the cover closes
 /// when the recorder is reset.
 struct SaveRunView: View {
@@ -26,9 +27,14 @@ struct SaveRunView: View {
     /// Both final once the clock has stopped, so worked out once rather than every second.
     @State private var route = RunDetail()
     @State private var splitRows: [PostRun.SplitRow] = []
+    /// "Treadmill said…" (#130), in hundredths of his unit; nil until it is prefilled, and on
+    /// anything but a treadmill run.
+    @State private var console: Int?
+    @State private var typingConsole = false
+    @State private var consoleTyped = ""
     @FocusState private var editing: Field?
 
-    private enum Field { case title, notes }
+    private enum Field { case title, notes, console }
 
     var body: some View {
         let stage = PostRun.stage(phase: recorder.state.phase, kind: recorder.state.kind, landing: landing)
@@ -52,6 +58,11 @@ struct SaveRunView: View {
             if closing { recorder.reset() }
         }
         .onChange(of: photoItem) { _, item in loadPhoto(item) }
+        .onChange(of: console) { _, _ in splitRows = currentSplitRows }
+        // Tap-to-type ends however the keyboard goes away: Done, a tap elsewhere, a scroll.
+        .onChange(of: editing) { old, new in
+            if old == .console, new != .console { finishTypingConsole() }
+        }
         .photosPicker(isPresented: $choosingPhoto, selection: $photoItem, matching: .images)
         .fullScreenCover(isPresented: $takingPhoto) {
             CameraPicker { image in
@@ -81,6 +92,7 @@ struct SaveRunView: View {
                         .accessibilityLabel("Route map")
                 }
                 summary
+                if isTreadmill { treadmillCard }
                 if !splitRows.isEmpty { splitsCard }
                 effortCard
                 feelCard
@@ -94,6 +106,16 @@ struct SaveRunView: View {
         }
         .scrollIndicators(.hidden)
         .scrollDismissesKeyboard(.interactively)
+        .toolbar {
+            // The decimal pad has no return key.
+            ToolbarItemGroup(placement: .keyboard) {
+                if editing == .console {
+                    Spacer()
+                    Button("Done") { editing = nil }
+                        .font(Tokens.Font.ui(15, .semibold))
+                }
+            }
+        }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             saveBar(saving: saving, failure: failure)
         }
@@ -127,6 +149,121 @@ struct SaveRunView: View {
                     .font(Tokens.Font.ui(12)).foregroundStyle(Tokens.Palette.textTertiary)
             }
         }
+    }
+
+    // MARK: - Frame 8: "Treadmill said…" (#130)
+
+    /// The console's distance, prefilled with the step count. ±0.01 a tap (hold to repeat),
+    /// or tap the number to type it. Left alone it changes nothing; changed, the summary
+    /// above and the splits below show the run as it will be saved. Locked once the first
+    /// Save has written the distance into Health.
+    private var treadmillCard: some View {
+        let estimate = recorder.stepEstimateM
+        let value = consoleValue
+        let locked = recorder.treadmillSettled
+        return Card {
+            SectionLabel("Treadmill")
+            Text("Treadmill said\u{2026}").font(Tokens.Font.ui(15, .semibold)).foregroundStyle(Tokens.Palette.textPrimary)
+            HStack(spacing: Tokens.Space.md) {
+                stepButton(icon: "minus", delta: -1, label: "Less")
+                Spacer(minLength: 0)
+                consoleNumber(value)
+                Spacer(minLength: 0)
+                stepButton(icon: "plus", delta: 1, label: "More")
+            }
+            Text(PostRun.consoleHint(estimateM: estimate, consoleHundredths: value, units: units))
+                .font(Tokens.Font.ui(12)).foregroundStyle(Tokens.Palette.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+            if value != consolePrefill, !locked {
+                Button {
+                    Haptics.select()
+                    typingConsole = false
+                    editing = nil
+                    console = consolePrefill
+                } label: {
+                    Text("Use the phone's count")
+                        .font(Tokens.Font.ui(13, .semibold))
+                        .foregroundStyle(Tokens.Palette.accentText)
+                }
+                .buttonStyle(Pressable(haptic: false))
+            }
+        }
+        .disabled(locked)
+        .opacity(locked ? 0.6 : 1)
+    }
+
+    /// The number itself; tap it to type. Roboto Mono, like every number on this screen.
+    private func consoleNumber(_ value: Int) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 4) {
+            if typingConsole {
+                TextField("", text: $consoleTyped)
+                    .keyboardType(.decimalPad)
+                    .focused($editing, equals: .console)
+                    .font(Tokens.Font.mono(34))
+                    .foregroundStyle(Tokens.Palette.textPrimary)
+                    .multilineTextAlignment(.center)
+                    .frame(minWidth: 96)
+                    .fixedSize()
+                    .onAppear { editing = .console }
+                    .accessibilityLabel("Treadmill distance")
+            } else {
+                Button {
+                    consoleTyped = PostRun.consoleText(value)
+                    typingConsole = true
+                } label: {
+                    Text(PostRun.consoleText(value))
+                        .font(Tokens.Font.mono(34))
+                        .foregroundStyle(Tokens.Palette.textPrimary)
+                        .contentTransition(.numericText())
+                }
+                .buttonStyle(Pressable(haptic: false))
+                .accessibilityLabel("Treadmill distance")
+                .accessibilityValue(PostRun.consoleText(value) + " " + units.name(plural: true))
+                .accessibilityHint("Double-tap to type it")
+                .accessibilityAdjustableAction { direction in
+                    switch direction {
+                    case .increment: step(by: 1)
+                    case .decrement: step(by: -1)
+                    @unknown default: break
+                    }
+                }
+            }
+            Text(units.abbreviation).font(Tokens.Font.ui(14, .medium)).foregroundStyle(Tokens.Palette.textSecondary)
+        }
+    }
+
+    private func stepButton(icon: String, delta: Int, label: String) -> some View {
+        Button {
+            step(by: delta)
+        } label: {
+            Image(systemName: icon)
+                .font(.system(size: 17, weight: .bold))
+                .foregroundStyle(Tokens.Palette.textPrimary)
+                .frame(width: 48, height: 48)
+                .background(Tokens.Palette.inset, in: Circle())
+                .contentShape(Circle())
+        }
+        .buttonStyle(Pressable(haptic: false))
+        .buttonRepeatBehavior(.enabled)
+        .accessibilityLabel(label)
+    }
+
+    /// Reads the current value, not one captured at render: a held button repeats.
+    private func step(by delta: Int) {
+        if typingConsole { finishTypingConsole() }
+        let value = consoleValue
+        let next = PostRun.stepped(value, by: delta)
+        guard next != value else { return }
+        Haptics.select()
+        console = next
+    }
+
+    /// What he typed, if it reads as a distance; otherwise the number stays as it was.
+    private func finishTypingConsole() {
+        guard typingConsole else { return }
+        typingConsole = false
+        if let typed = PostRun.typedConsole(consoleTyped) { console = typed }
+        if editing == .console { editing = nil }
     }
 
     private var splitsCard: some View {
@@ -373,9 +510,27 @@ struct SaveRunView: View {
         return when + " \u{00B7} " + kind
     }
 
+    /// On a treadmill, the distance as it will be saved: the console's once he has changed it.
     private var summaryNumbers: PostRun.Summary {
         let s = recorder.snapshot
-        return PostRun.summary(distanceM: s.distanceM, movingS: s.movingS, elapsedS: s.elapsedS, units: units)
+        let distance = isTreadmill
+            ? PostRun.shownDistanceM(estimateM: recorder.stepEstimateM, consoleHundredths: consoleValue, units: units)
+            : s.distanceM
+        return PostRun.summary(distanceM: distance, movingS: s.movingS, elapsedS: s.elapsedS, units: units)
+    }
+
+    private var isTreadmill: Bool { recorder.state.kind == .treadmill }
+
+    private var consolePrefill: Int { PostRun.consolePrefill(estimateM: recorder.stepEstimateM, units: units) }
+
+    private var consoleValue: Int { console ?? consolePrefill }
+
+    /// The splits as they will be saved: rescaled to the console on a treadmill (#116).
+    private var currentSplitRows: [PostRun.SplitRow] {
+        let splits = isTreadmill
+            ? recorder.treadmillSplits(consoleM: PostRun.consoleMeters(consoleValue, units: units))
+            : recorder.splits
+        return PostRun.splitRows(splits, splitMeters: units.splitMeters)
     }
 
     private var landing: PostRun.Landing? {
@@ -392,14 +547,18 @@ struct SaveRunView: View {
     private func prepare() {
         if draft.title.isEmpty { draft.title = defaultTitle }
         route.routeSegments = RunDetailLoader.routeSegments(recorder.route)
-        splitRows = PostRun.splitRows(recorder.splits, splitMeters: units.splitMeters)
+        if isTreadmill, console == nil { console = consolePrefill }
+        splitRows = currentSplitRows
     }
 
     private func save() {
+        // A number still being typed is the number he means.
+        finishTypingConsole()
         editing = nil
         let journal = PostRun.journal(draft, defaultTitle: defaultTitle, defaultShoeID: shoes.defaultShoeID)
         Haptics.commit()
-        recorder.confirmSave(journal: journal, photo: photo)
+        recorder.confirmSave(journal: journal, photo: photo,
+                             treadmillConsoleM: isTreadmill ? PostRun.consoleMeters(consoleValue, units: units) : nil)
     }
 
     private func loadPhoto(_ item: PhotosPickerItem?) {

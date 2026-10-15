@@ -293,6 +293,20 @@ final class WorkoutRecorder {
         TrackMath.splits(timeline: timeline, altitudes: track?.altitudes ?? [], splitMeters: units.splitMeters)
     }
 
+    /// A treadmill run's step distance, in metres: what "Treadmill said…" opens on (#130).
+    var stepEstimateM: Double { state.kind == .treadmill ? (treadmill.last?.m ?? 0) : 0 }
+
+    /// A treadmill run's splits as they will be saved with `consoleM` from the save screen:
+    /// the same rescale the save writes (`TreadmillDistance.rescaled`), so the table he looks
+    /// at before Save is the one Health will read back. The step count's own with no
+    /// correction.
+    func treadmillSplits(consoleM: Double?) -> [TrackMath.Split] {
+        let correction = TreadmillDistance.correction(consoleM: consoleM, estimateM: stepEstimateM, units: units)
+        let curve = TreadmillDistance.rescaled(treadmill, by: correction, startedAt: state.startedAt,
+                                               endedAt: state.endedAt, pauses: state.pauses)
+        return TrackMath.splits(timeline: curve, splitMeters: units.splitMeters)
+    }
+
     // Collaborators
     private let makeSession: (RecorderState.RunKind) throws -> WorkoutSessionDriving
     private let location: RunLocationStreaming
@@ -329,7 +343,10 @@ final class WorkoutRecorder {
     /// The correction the workout was written with. Settled at the first Save: from then on
     /// samples are in Health, and a Retry must finish the same run, not a re-corrected one.
     @ObservationIgnored private var treadmillCorrection: TreadmillDistance.Correction?
-    @ObservationIgnored private var treadmillSettled = false
+    /// Whether the console reading is settled (the first Save has run). Observed: the save
+    /// screen locks its "Treadmill said…" stepper from then on, so a Retry never shows a
+    /// number other than the one in Health (#130).
+    private(set) var treadmillSettled = false
     @ObservationIgnored private var routeGate = RouteGate<CLLocation>()
     @ObservationIgnored private var routeBatch: [CLLocation] = []
     @ObservationIgnored private var distanceFlushed = BestEfforts.Point(t: 0, m: 0)
