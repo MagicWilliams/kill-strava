@@ -221,6 +221,99 @@ final class RunDedupeTests: XCTestCase {
         XCTAssertEqual(result.droppedUnknownUUID, 2)
     }
 
+    // MARK: - A retired row still owns its uuid (#97)
+
+    /// The incident: from 2026-10-09 every sync proposed the same 47 runs, all dated
+    /// 2021-12-26 → 2025-04-27, and the database took none of them (#94). They were the
+    /// duplicates migrations 0008/0009 retired — timezone re-imports a whole number of hours
+    /// from their keepers. Retiring sets `superseded_by` and leaves the row, so each one still
+    /// held its `(user_id, source, external_id)` key; but the live archive is all dedupe was
+    /// given, and nothing live starts within five minutes of a row that sits hours away.
+    private let firstStuck = ISO8601DateFormatter().date(from: "2021-12-26T14:00:00Z")!
+    private let lastStuck = ISO8601DateFormatter().date(from: "2025-04-27T13:00:00Z")!
+
+    /// The 47, spread across the real window: each a live keeper with HR plus its retired
+    /// twin `hoursOff` hours away (0008 matched offsets up to 12 h; 0009 saw up to 8).
+    private func stuckFortySeven() -> (live: [RunSummary], retiredIDs: Set<String>, healthKit: [RunSummary]) {
+        let step = lastStuck.timeIntervalSince(firstStuck) / 46
+        var live: [RunSummary] = [], retiredIDs = Set<String>(), healthKit: [RunSummary] = []
+        for i in 0..<47 {
+            let keeperStart = firstStuck.addingTimeInterval(Double(i) * step)
+            let hoursOff = Double(1 + i % 8)
+            var keeper = RunSummary(id: UUID(), start: keeperStart, distanceM: 10461,
+                                    durationS: 3508, avgHR: 148)
+            keeper.externalID = UUID().uuidString
+            var twin = RunSummary(id: UUID(), start: keeperStart.addingTimeInterval(hoursOff * 3600),
+                                  distanceM: 10461, durationS: 3508, avgHR: nil)
+            twin.externalID = UUID().uuidString
+
+            live.append(keeper)
+            retiredIDs.insert(twin.externalID!)
+            // HealthKit never heard that Tempo retired anything: it offers both workouts,
+            // under the uuids they were stored with.
+            healthKit.append(keeper)
+            healthKit.append(twin)
+        }
+        return (live, retiredIDs, healthKit)
+    }
+
+    func testTheFortySevenRetiredDuplicatesAreNoLongerProposed() {
+        let (live, retiredIDs, healthKit) = stuckFortySeven()
+
+        // The mechanism, as it was: the live archive alone cannot recognize them.
+        let before = RunDedupe.reconcile(candidates: healthKit, existing: live)
+        XCTAssertEqual(before.inserts.count, 47, "the doomed upsert, every refresh since 2026-10-09")
+
+        let result = RunDedupe.reconcile(candidates: healthKit, existing: live,
+                                         retiredExternalIDs: retiredIDs)
+        XCTAssertTrue(result.inserts.isEmpty, "a retired row's uuid is already stored — nothing to write")
+        XCTAssertEqual(result.droppedAlreadyStored, 94, "47 keepers + 47 retired twins, all ours")
+        XCTAssertEqual(result.droppedUnknownUUID, 0, "a retired row is not a Garmin re-export")
+    }
+
+    func testARetiredTwinInsideTheWindowIsAlreadyStoredNotAReExport() {
+        // The 0009 shape: the retired clock started within a minute of its keeper, so the
+        // window always dropped it — but as an unknown uuid, nudging the re-export signal
+        // with a workout we have held since 2021.
+        let keeper = clocked(0, meters: 10461, durationS: 3508)
+        var retired = clocked(40, meters: 10461, durationS: 3746)
+        retired.externalID = "retired-elapsed-copy"
+
+        let result = RunDedupe.reconcile(candidates: [retired], existing: [keeper],
+                                         retiredExternalIDs: ["retired-elapsed-copy"])
+        XCTAssertTrue(result.inserts.isEmpty)
+        XCTAssertEqual(result.droppedAlreadyStored, 1)
+        XCTAssertEqual(result.droppedUnknownUUID, 0)
+    }
+
+    func testARetiredWorkoutCannotShadowOrAmendAGenuinelyNewRun() {
+        // A retired workout must not take a new run's place in the batch — HealthKit order
+        // is not ours to choose — nor fold its clock into a run it is not part of.
+        var retired = clocked(0, meters: 10461, durationS: 3746)
+        retired.externalID = "retired"
+        var fresh = clocked(30, meters: 10461, durationS: 3508)
+        fresh.externalID = "never-seen"
+
+        for batch in [[retired, fresh], [fresh, retired]] {
+            let result = RunDedupe.reconcile(candidates: batch, existing: [],
+                                             retiredExternalIDs: ["retired"])
+            XCTAssertEqual(result.inserts.map(\.externalID), ["never-seen"])
+            XCTAssertNil(result.inserts.first?.elapsedS, "a retired copy carries nothing into a new row")
+            XCTAssertEqual(result.droppedAlreadyStored, 1)
+            XCTAssertEqual(result.droppedUnknownUUID, 0)
+        }
+    }
+
+    func testAStoredUUIDNeverReachesTheUpsertEvenWithNothingNearIt() {
+        // The rule #97 asks for, stated generally: only a uuid the database has never held
+        // may be written. A live row whose start no longer lines up with HealthKit's is the
+        // same conflict as a retired one.
+        let row = stored(0, externalID: "held")
+        let result = RunDedupe.reconcile(candidates: [candidate(60, externalID: "held")], existing: [row])
+        XCTAssertTrue(result.inserts.isEmpty)
+        XCTAssertEqual(result.droppedAlreadyStored, 1)
+    }
+
     func testAPlainReExportStillCarriesNothingNew() {
         // Same distance, same duration: migration 0008's class. Nothing to learn.
         let stored = clocked(0, meters: 10461, durationS: 3508)

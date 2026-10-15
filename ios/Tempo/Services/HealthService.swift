@@ -103,12 +103,14 @@ final class HealthService {
     /// 348 recomputed on every launch. Nothing that queries HealthKit may run before the
     /// upsert; enrichment happens after it, capped, in `backfillMissingHR`. See `SyncPass`.
     @discardableResult
-    func sync(_ summaries: [RunSummary], existing: [RunSummary]) async throws -> Int {
+    func sync(_ summaries: [RunSummary], existing: [RunSummary],
+              retiredExternalIDs: Set<String> = []) async throws -> Int {
         guard let userID = Supa.userID?.uuidString, !summaries.isEmpty else { return 0 }
 
         // Dedupe rule lives in RunDedupe (pure + unit-tested) — see that file for why
-        // the uuid constraint alone is not enough.
-        let reconciled = RunDedupe.reconcile(candidates: summaries, existing: existing)
+        // the uuid constraint alone is not enough, and why retired uuids count as stored.
+        let reconciled = RunDedupe.reconcile(candidates: summaries, existing: existing,
+                                             retiredExternalIDs: retiredExternalIDs)
         let kept = reconciled.inserts
 
         reportDedupeDrops(reconciled, candidates: summaries.count, kept: kept.count)
