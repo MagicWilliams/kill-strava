@@ -46,9 +46,9 @@ enum RaceFinish {
     /// The link to write once a race is saved, or nil for none.
     ///
     /// - Parameters:
-    ///   - savedRunID: the `runs` row the save produced. Nil when there isn't one yet (queued
-    ///     offline, too short): nothing to link, and the date-and-distance guess still finds
-    ///     the run once the sync lands it.
+    ///   - savedRunID: the `runs` row the save produced. Nil when there isn't one: queued
+    ///     offline (the retry links it when the row lands, `RecordedRunSave.raceLink`, #178),
+    ///     or too short (never a row, so never a race).
     ///   - startedAt: when the race started. Eligibility is checked again against it, so a
     ///     race-kind run that reaches a save by another road (a relaunch after a kill, a goal
     ///     replaced mid-run) never files an ordinary day as the block's race.

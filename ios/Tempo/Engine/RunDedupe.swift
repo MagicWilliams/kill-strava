@@ -89,16 +89,33 @@ enum RunDedupe {
     /// the *longer* duration, then history has been storing elapsed as moving, and fixing it
     /// means rewriting a number the athlete has been looking at for years. This reports it
     /// and changes nothing.
+    ///
+    /// - Parameter retiredExternalIDs: HealthKit uuids of rows retired as duplicates
+    ///   (`superseded_by is not null`). See "A retired row still owns its uuid" below.
     static func reconcile(
         candidates: [RunSummary],
         existing: [RunSummary],
+        retiredExternalIDs: Set<String> = [],
         window: TimeInterval = windowSeconds
     ) -> Reconciliation {
         var result = Reconciliation()
-        // Which candidates are already ours by uuid. The DB's unique constraint catches
-        // these anyway; knowing *which* drops they were is what keeps the re-export signal
-        // from firing on a perfectly healthy refresh.
-        let knownIDs = Set(existing.compactMap(\.externalID))
+        // Which candidates are already ours by uuid — live or retired. Knowing *which* drops
+        // they were is what keeps the re-export signal from firing on a perfectly healthy
+        // refresh.
+        //
+        // A retired row still owns its uuid. Migrations 0008/0009 and the overlap review
+        // retire a duplicate by setting `superseded_by`, never by deleting it, so its
+        // `(user_id, source, external_id)` key still occupies the unique constraint. But
+        // `existing` is the live archive only, and a retired row's start can sit hours from
+        // its keeper (0008/0009 matched timezone re-imports offset by whole hours), well
+        // outside `window`. HealthKit never hears that Tempo retired anything and re-offers
+        // the workout every refresh; with nothing near it in `existing` it was kept, sent to
+        // an upsert the constraint rejected, and `ignoreDuplicates` swallowed — forever. That
+        // was 47 runs, 2021-12-26 → 2025-04-27, on every sync (#94, #97).
+        //
+        // Retired rows feed this set and nothing else: they are not runs any more, so they
+        // never join `existing`, never match the time window, never reach a screen.
+        let knownIDs = Set(existing.compactMap(\.externalID)).union(retiredExternalIDs)
 
         for candidate in candidates {
             let isNear = { (other: RunSummary) in
@@ -114,6 +131,16 @@ enum RunDedupe {
                         result.suspectedElapsedStored.append(match.id)
                     }
                 }
+                result.countDrop(candidate, knownIDs: knownIDs)
+                continue
+            }
+
+            // Nothing live is near it, but the database already holds this exact workout —
+            // retired, or a live row whose start no longer lines up. The unique constraint
+            // would reject the insert anyway; dropping it here is what stops the doomed write
+            // being proposed on every refresh. Checked before the in-batch merge so a stored
+            // workout can never seed, or fold a clock into, a run we are about to write.
+            if let ext = candidate.externalID, knownIDs.contains(ext) {
                 result.countDrop(candidate, knownIDs: knownIDs)
                 continue
             }

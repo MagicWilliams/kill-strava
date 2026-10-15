@@ -153,10 +153,12 @@ final class RunStore: ObservableObject {
         var response = await readRuns()
         if !ingested.isEmpty {
             var inserted = 0
+            let retired = await readRetiredExternalIDs()
             do {
-                inserted = try await health.sync(ingested, existing: response.knownRows ?? runs)
+                inserted = try await health.sync(ingested, existing: response.knownRows ?? runs,
+                                                 retiredExternalIDs: retired)
             } catch {
-                Telemetry.error("sync.insert_failed", error)
+                Telemetry.errorUnlessCancelled("sync.insert_failed", error)
             }
             if inserted > 0 {
                 switch await readRuns() {
@@ -475,7 +477,7 @@ final class RunStore: ObservableObject {
         do {
             latestRead = try await TakeawayService.latestRead()
         } catch {
-            Telemetry.error("takeaway.latest_unreadable", error)
+            Telemetry.errorUnlessCancelled("takeaway.latest_unreadable", error)
         }
     }
 
@@ -518,7 +520,7 @@ final class RunStore: ObservableObject {
         do {
             return .rows(try await fetchFromSupabase())
         } catch {
-            Telemetry.error("sync.runs_unreadable", error)
+            Telemetry.errorUnlessCancelled("sync.runs_unreadable", error)
             return .unreachable
         }
     }
@@ -640,6 +642,42 @@ final class RunStore: ObservableObject {
                 )
             )
         }
+    }
+
+    /// HealthKit uuids of retired rows — `superseded_by is not null` — for ingest dedupe only.
+    ///
+    /// A retired duplicate is soft-deleted, so its uuid still holds the unique key, but the
+    /// archive read above never returns it. Without this, HealthKit's copy of every retired
+    /// row that sits hours from its keeper is proposed as new on every refresh and silently
+    /// rejected (#97). These ids go to `RunDedupe` and nowhere else: never into `runs`,
+    /// never onto a screen.
+    ///
+    /// Paged like the archive: 119 rows today, but the overlap review retires more, and the
+    /// 1,000-row cap does not announce itself. A failed read degrades to the old behavior
+    /// (doomed inserts the constraint rejects) rather than holding up the sync.
+    private func readRetiredExternalIDs() async -> Set<String> {
+        struct Row: Decodable { let external_id: String? }
+        var ids = Set<String>()
+        var offset = 0
+        do {
+            while true {
+                let page: [Row] = try await Supa.client
+                    .from("runs")
+                    .select("external_id")
+                    .not("superseded_by", operator: .is, value: "null")
+                    .order("id")
+                    .range(from: offset, to: offset + RunFetch.pageSize - 1)
+                    .execute()
+                    .value
+                ids.formUnion(page.compactMap(\.external_id))
+                if page.count < RunFetch.pageSize { break }
+                offset += RunFetch.pageSize
+                if offset >= RunFetch.maxRuns { break }
+            }
+        } catch {
+            Telemetry.error("sync.retired_ids_unreadable", error)
+        }
+        return ids
     }
 
     /// Read the profile row and report which of the three launch outcomes it is.

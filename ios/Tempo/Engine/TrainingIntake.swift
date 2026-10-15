@@ -509,7 +509,8 @@ struct PlanRequest: Encodable, Equatable {
     /// Same race date → same block, so carry it all, with the mid-block week advanced by the
     /// weeks since the current plan started (the athlete who said "week 9" three weeks ago is
     /// in week 12 now). A different race date is a different race, and its distance and
-    /// course are unknown here; it goes out bare, as it always has.
+    /// course are unknown here; it goes out bare. A create_plan card supplies the distance
+    /// itself (`fromChatProposal`), and `plan` refuses a new race that has none (#184).
     static func carryingForward(
         goal: GoalInfo?,
         planStartDate: String?,
@@ -539,14 +540,56 @@ struct PlanRequest: Encodable, Equatable {
     /// over the carried one; "finish" drops any time, because a finish goal with a time is a
     /// time goal wearing the wrong label. Nil when there's still no time and the goal isn't
     /// "just finish" — `plan` would only refuse it.
-    static func fromChatProposal(_ carried: PlanRequest, goalType: String?) -> PlanRequest? {
+    ///
+    /// The card's `distance` / `distance_m` (#184) replace the carried pair together, never
+    /// one of them: a "5k" beside a carried-over 42,195 m would resolve to a marathon, since
+    /// `plan` reads the metres first. A known label with no metres gets the label's metres,
+    /// the same ones the intake would have stamped; "custom" without metres goes out as is,
+    /// and `plan` refuses it.
+    static func fromChatProposal(
+        _ carried: PlanRequest,
+        goalType: String?,
+        distance: String? = nil,
+        distanceM: Int? = nil
+    ) -> PlanRequest? {
         var r = carried
         if let goalType { r.goal_type = goalType }
+        if distance != nil || distanceM != nil {
+            r.distance = distance
+            r.distance_m = distanceM ?? distance.flatMap { IntakeAnswers.Distance(rawValue: $0)?.meters }
+        }
         if r.goal_type == IntakeAnswers.GoalType.finish.rawValue {
             r.goal_time_s = nil
             return r
         }
         return r.goal_time_s == nil && IntakeAnswers.requiresTargetTime(r.goal_type) ? nil : r
+    }
+
+    /// The request a create_plan card sends, or nil when the card can't be built on. One
+    /// function for both Confirm and the card's distance line, so what the card shows is what
+    /// Confirm sends.
+    ///
+    /// The intake stamp outranks the card's payload: it is what the athlete tapped, and the
+    /// payload is the model's echo of it. Without a stamp, the payload's distance outranks
+    /// whatever carries over from a same-date goal; with neither, the request names no
+    /// distance and `plan` answers `distance_required` rather than build a marathon (#184).
+    static func forCreatePlanCard(
+        _ action: ProposedAction,
+        goal: GoalInfo?,
+        planStartDate: String?,
+        today: Date,
+        calendar: Calendar
+    ) -> PlanRequest? {
+        guard let raceDate = action.race_date else { return nil }
+        if let stamp = action.intake {
+            guard stamp.accepts(goalTimeS: action.goal_time_s) else { return nil }
+            return .fromIntake(stamp, goalTimeS: action.goal_time_s, raceName: action.race_name, raceDate: raceDate)
+        }
+        let carried = carryingForward(
+            goal: goal, planStartDate: planStartDate, goalTimeS: action.goal_time_s,
+            raceName: action.race_name, raceDate: raceDate, today: today, calendar: calendar
+        )
+        return fromChatProposal(carried, goalType: action.goal_type, distance: action.distance, distanceM: action.distance_m)
     }
 
     /// Whether the active goal can be rebuilt after a settings change: it needs a race date,
@@ -570,6 +613,52 @@ struct PlanRequest: Encodable, Equatable {
         let parts = iso.split(separator: "-").compactMap { Int($0) }
         guard parts.count == 3 else { return nil }
         return calendar.date(from: DateComponents(year: parts[0], month: parts[1], day: parts[2], hour: 12))
+    }
+}
+
+// MARK: - What a create_plan card is about to build (#184)
+
+extension PlanRequest {
+
+    /// `plan`'s answer to a new race with no distance. The app shows it as a card that is
+    /// missing something, because that is exactly what it is.
+    static let distanceRequired = "distance_required"
+
+    /// The race distance this request names, as the card shows it; nil when it names none.
+    /// Metres first, as `plan` reads them, and only metres `plan` would accept.
+    var distanceLabel: String? {
+        if let m = distance_m, (400...100_000).contains(m) {
+            let known = IntakeAnswers.Distance.allCases.first { d in
+                d.meters.map { abs(Double(m - $0)) / Double($0) < 0.01 } ?? false
+            }
+            return known?.label ?? "\(m.formatted(.number.locale(Locale(identifier: "en_US")))) m"
+        }
+        guard let d = distance.flatMap(IntakeAnswers.Distance.init(rawValue:)), d != .custom else { return nil }
+        return d.label
+    }
+
+    /// "5K · Turkey Trot 2026 · Nov 5" — the race the card will save, read from the request
+    /// rather than from the coach's summary. On 2026-10-15 the summary said 5K and the payload
+    /// said nothing, and the only place that disagreement could have been seen was the card.
+    func cardLine(calendar: Calendar) -> String {
+        let name = race_name?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let day = Self.parseDay(race_date, calendar: calendar).map { date -> String in
+            let f = DateFormatter()
+            f.locale = Locale(identifier: "en_US_POSIX")
+            f.calendar = calendar
+            f.timeZone = calendar.timeZone
+            f.dateFormat = "MMM d"
+            return f.string(from: date)
+        }
+        return [distanceLabel, name?.isEmpty == false ? name : nil, day]
+            .compactMap { $0 }
+            .joined(separator: " · ")
+    }
+
+    /// The `error` string of a `plan` error body (`{ "error": "distance_required" }`), or nil.
+    static func refusal(inErrorBody data: Data) -> String? {
+        struct Body: Decodable { let error: String? }
+        return (try? JSONDecoder().decode(Body.self, from: data))?.error
     }
 }
 

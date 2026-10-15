@@ -30,11 +30,17 @@ enum RecordedRunSaver {
     ///
     /// Holds a background-task assertion for the duration: the moment after Save is exactly
     /// when the phone goes back in a pocket.
+    ///
+    /// `kind` and `goalID` ride along in the queue (#178). This save does not link a race
+    /// itself — the recorder does that with the outcome — but if it is queued, the retry that
+    /// lands it is the only one left to.
     @discardableResult
     static func save(
         _ workout: WorkoutRow.Workout,
         journal: RunJournalEntry = RunJournalEntry(),
         photo: UIImage? = nil,
+        kind: RecorderState.RunKind? = nil,
+        goalID: UUID? = nil,
         store: RunStore
     ) async -> Outcome {
         let assertion = UIApplication.shared.beginBackgroundTask(withName: "recorded-run-save")
@@ -45,7 +51,9 @@ enum RecordedRunSaver {
             workout: workout,
             journal: journal,
             photoJPEG: photo.flatMap(RunJournal.jpegForUpload),
-            queuedAt: .now
+            queuedAt: .now,
+            kind: kind,
+            goalID: goalID
         )
         PendingQueue.update { RecordedRunSave.enqueue(pending, into: $0) }
 
@@ -59,12 +67,19 @@ enum RecordedRunSaver {
     ///
     /// By then the sync has usually ingested the run from Health already — same mapping, same
     /// row — so the retry finds it (`.alreadyStored`) and all that is left is the journal.
+    ///
+    /// A race that lands here is filed as its block's race now (#178), the link the recorder
+    /// could not write with no row to point at — through the same `RaceLinker` write.
     static func retryPending(store: RunStore) async {
         let queue = PendingQueue.load()
         guard !queue.isEmpty else { return }
         var landed: [UUID] = []
         for pending in queue {
-            if case .saved(let runID) = await attempt(pending, photo: nil) { landed.append(runID) }
+            guard case .saved(let runID) = await attempt(pending, photo: nil) else { continue }
+            landed.append(runID)
+            if let link = RecordedRunSave.raceLink(for: pending, savedRunID: runID, goal: store.goal) {
+                await RaceLinker.link(link, store: store)
+            }
         }
         Telemetry.info("recorder.queue_retried", context: ["queued": "\(queue.count)",
                                                            "landed": "\(landed.count)"])

@@ -17,8 +17,23 @@
 //    rebuild the block as a marathon and drop every preference. So when the request names
 //    the SAME race date as the active goal, whatever the request leaves out is carried over
 //    from that goal. A different race date is a different race: nothing carries.
+//
+// And one rule (#184): a new race with no distance is refused, never guessed. Until
+// 2026-10-15 it resolved to a marathon. A coach card whose summary read "5K at Turkey Trot"
+// but whose payload named no distance was saved as a 42,195 m goal with a marathon
+// projection, and nothing anywhere noticed.
 
-import { LEGACY_DISTANCE_LABELS, mondayOf, resolveDistance, type ResolvedDistance } from "./generator.ts";
+import { LEGACY_DISTANCE_LABELS, mondayOf, namedDistance, resolveDistance, type ResolvedDistance } from "./generator.ts";
+
+/// The request names no distance (or one that doesn't resolve) and there is no same-race goal
+/// to inherit one from. index.ts answers it with 400 `{ error: "distance_required" }`.
+export class DistanceRequired extends Error {
+  readonly code = "distance_required";
+  constructor() {
+    super("distance_required");
+    this.name = "DistanceRequired";
+  }
+}
 
 export interface GoalFields {
   distance_m: unknown;
@@ -60,6 +75,7 @@ export function advanceStartedWeek(startedWeek: number, since: string | null | u
   return startedWeek + Math.max(elapsed, 0);
 }
 
+/// Throws `DistanceRequired` rather than guess the distance of a new race (#184).
 export function resolveGoal(
   body: Record<string, unknown>,
   active: Record<string, unknown> | null,
@@ -70,10 +86,18 @@ export function resolveGoal(
 
   // A request that names a distance by label alone must not inherit the old goal's metres —
   // "5k" with a carried-over 42195 would resolve to a marathon.
+  //
+  // What the request names must resolve on its own: an unknown label is not a distance, and
+  // quietly using the inherited one instead would build a block for a race nobody named.
+  // Only an inherited goal may fall back to the marathon, because that is a row being read,
+  // and every goal row before #102 was a marathon.
   const bodyNamesDistance = given(body.distance) || given(body.distance_m);
   const distance = bodyNamesDistance
-    ? resolveDistance(body.distance, body.distance_m)
-    : resolveDistance(pick("distance"), pick("distance_m"));
+    ? namedDistance(body.distance, body.distance_m)
+    : inherit
+    ? resolveDistance(active!.distance, active!.distance_m)
+    : null;
+  if (!distance) throw new DistanceRequired();
 
   let started_week = weekNo(body.started_week);
   if (started_week === null && inherit) {

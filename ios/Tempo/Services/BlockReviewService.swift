@@ -35,7 +35,7 @@ enum BlockReviewService {
                 .execute()
                 .value
         } catch {
-            Telemetry.error("block.past_unreadable", error)
+            Telemetry.errorUnlessCancelled("block.past_unreadable", error)
             return nil
         }
     }
