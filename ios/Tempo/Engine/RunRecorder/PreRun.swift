@@ -272,12 +272,20 @@ enum PreRun {
         /// instant after a save or a discard when only the cover is left to close
         /// (`PostRun.stage`).
         case save
+        /// "We kept your run" (#115): launch picked up a run iOS had killed, and he has not
+        /// seen it yet. Shown in the same cover, in place of the live or save screen, until
+        /// he answers it (`WorkoutRecorder.acknowledgeRecovery`) or the run is reset.
+        case recovered
     }
 
-    static func screen(for phase: RecorderState.Phase) -> Screen {
+    /// `recovered` is `WorkoutRecorder.recovered != nil`. It outranks the phase for any run
+    /// that exists — a rescued run in `.recovering` has only the prompt's two ways out — and
+    /// never conjures a cover for a recorder that is idle.
+    static func screen(for phase: RecorderState.Phase, recovered: Bool = false) -> Screen {
         switch phase {
         case .idle: .none
         case .countdown: .countdown
+        case _ where recovered: .recovered
         case .running, .paused, .recovering: .live
         case .ending, .saved, .discarded: .save
         }

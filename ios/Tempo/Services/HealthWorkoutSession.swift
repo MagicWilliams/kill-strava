@@ -67,8 +67,9 @@ final class HealthWorkoutSession: NSObject, WorkoutSessionDriving {
     // MARK: - Recovery hook (#115)
 
     /// The workout session that was running when iOS killed Tempo, if there is one. Nil when
-    /// nothing was running. Kill recovery (#115) calls this on launch and matches the
-    /// session to its checkpoint by `recordingID`.
+    /// nothing was running. Kill recovery (#115) calls this on launch
+    /// (`WorkoutRecorder.recoverAtLaunch`) and matches the session to its snapshot by
+    /// `recordingID`.
     static func recoverActive(store: HKHealthStore) async throws -> HealthWorkoutSession? {
         guard let session = try await store.recoverActiveWorkoutSession() else { return nil }
         return HealthWorkoutSession(store: store, recovered: session)
@@ -82,6 +83,33 @@ final class HealthWorkoutSession: NSObject, WorkoutSessionDriving {
     /// Whether the recovered session was paused when it was recovered — `.recovered`'s
     /// argument.
     var isPaused: Bool { session.state == .paused }
+
+    /// The builder's cumulative distance in metres, if it has one. Outdoors that is exactly
+    /// the samples Tempo wrote before the kill; on a treadmill, HealthKit's own total.
+    var distanceM: Double? {
+        builder.statistics(for: HKQuantityType(.distanceWalkingRunning))?
+            .sumQuantity()?.doubleValue(for: .meter())
+    }
+
+    /// What `InProgressRun.recover` needs to know about this session.
+    var recovery: InProgressRun.SessionRecovery {
+        InProgressRun.SessionRecovery(id: recordingID, isPaused: isPaused, distanceM: distanceM)
+    }
+
+    /// The workout a Tempo recording became, if it is already in Health.
+    ///
+    /// For the one kill no session survives with the run already saved: Tempo died between
+    /// `finishWorkout` and clearing its snapshot, and comes back on the save screen with
+    /// Retry. Without this, Retry would save the run to Health a second time.
+    static func savedWorkout(recordingID: UUID, store: HKHealthStore) async -> FinishedWorkout? {
+        let predicate = HKQuery.predicateForObjects(
+            withMetadataKey: RecordingMetadata.recordingIDKey,
+            allowedValues: [recordingID.uuidString])
+        let query = HKSampleQueryDescriptor(
+            predicates: [.workout(predicate)], sortDescriptors: [], limit: 1)
+        guard let workout = try? await query.result(for: store).first else { return nil }
+        return FinishedWorkout(id: workout.uuid, row: WorkoutRow.Workout(workout))
+    }
 
     // MARK: - WorkoutSessionDriving
 
@@ -115,7 +143,11 @@ final class HealthWorkoutSession: NSObject, WorkoutSessionDriving {
                 }
             }
         }
-        try await builder.endCollection(at: date)
+        // A session recovered on the save screen (#115) may already have ended collection
+        // before the kill; ending it twice throws, and the save would read that as a failure.
+        if builder.endDate == nil {
+            try await builder.endCollection(at: date)
+        }
     }
 
     func addRoute(_ locations: [CLLocation]) async throws {
