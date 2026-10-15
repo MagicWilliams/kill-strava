@@ -60,4 +60,52 @@ enum CoachAcknowledgement {
             return !(onboardingMode && onboardingAutoApplyTypes.contains(actionType))
         }
     }
+
+    // MARK: - What the acknowledgement is asked about
+
+    /// One turn as the `coach` function receives it. Kept here rather than reusing
+    /// `ChatStore.WireMessage` so the shaping below stays pure and testable without the store.
+    struct Turn: Equatable {
+        enum Role: String { case user, assistant }
+        let role: Role
+        let content: String
+    }
+
+    /// The label the narration carries once it is folded into the athlete's turn. It marks
+    /// the line as the result of the tap, so the coach reads it as what the plan engine did
+    /// rather than something the athlete typed.
+    static let narrationLabel = "What changed: "
+
+    /// The wire history for an acknowledgement, given the transcript as it reads on screen.
+    ///
+    /// After a plan confirm the transcript is "Confirmed — …" (the athlete) and then "Plan is
+    /// live: 16 weeks…" (the app, in the coach's bubble), in that order on purpose — the tap,
+    /// then what it did (#39). Sent as-is, that history ends in an `assistant` turn and the
+    /// model rejects it as prefill: every `create_plan` / `update_plan_settings`
+    /// acknowledgement 502'd (#193). The server now drops a trailing assistant turn (#194),
+    /// but dropping it means the coach acknowledges a plan change without ever seeing the
+    /// sentence that says what was built (#195).
+    ///
+    /// So the trailing coach turns are folded into the user turn before them — on the wire
+    /// only. The transcript keeps its two bubbles; the coach gets one user turn carrying both
+    /// the tap and its result, and the history ends where the model needs it to.
+    ///
+    /// A history that already ends in a user turn (every dismiss, every confirm that does not
+    /// narrate) passes through untouched. One with no user turn to fold into is also left
+    /// alone: inventing a user turn would put words in the athlete's mouth, and the server's
+    /// trailing-turn drop still covers it.
+    static func wireHistory(_ transcript: [Turn]) -> [Turn] {
+        guard transcript.last?.role == .assistant,
+              let lastUser = transcript.lastIndex(where: { $0.role == .user }) else {
+            return transcript
+        }
+        let narration = transcript[(lastUser + 1)...]
+            .map { $0.content.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        let confirmation = transcript[lastUser].content
+        let folded = narration.isEmpty
+            ? confirmation
+            : confirmation + "\n\n" + narrationLabel + narration.joined(separator: "\n\n")
+        return Array(transcript[..<lastUser]) + [Turn(role: .user, content: folded)]
+    }
 }

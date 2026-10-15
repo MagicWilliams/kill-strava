@@ -375,11 +375,14 @@ final class ChatStore: ObservableObject {
         ) else { return }
         isThinking = true
         defer { isThinking = false }
-        let history = messages.suffix(24).map {
-            WireMessage(role: $0.role == .user ? "user" : "assistant", content: $0.text)
-        }
+        // A plan confirm puts its narration *after* the "Confirmed — …" turn, so the raw
+        // transcript ends on a coach line — a history the model rejects as prefill (#193).
+        // It is folded into the confirm turn on the wire; the bubbles on screen are untouched.
+        let history = CoachAcknowledgement.wireHistory(messages.suffix(24).map {
+            CoachAcknowledgement.Turn(role: $0.role == .user ? .user : .assistant, content: $0.text)
+        }).map { WireMessage(role: $0.role.rawValue, content: $0.content) }
         if let reply = await requestReply(
-            history: Array(history),
+            history: history,
             context: runStore.coachContext(onboarding: onboardingMode)
         ) {
             // `handleReply` may attach a card of its own — legitimate — but it never asks for
