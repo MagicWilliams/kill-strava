@@ -309,7 +309,7 @@ final class RunCorrectionTests: XCTestCase {
     }
 
     func testNewRunCardHasNoBefore() throws {
-        let card = try action(#"{"type":"add_run","start_time":"2026-10-14T12:00:00Z","unit":"km","distance":8,"time":"40:00"}"#)
+        let card = try action(#"{"type":"add_run","start_time":"2026-10-14T12:00:00Z","unit":"km","run_distance":8,"run_time":"40:00"}"#)
         XCTAssertEqual(RunCorrection.cardPreview(for: card, run: nil, units: .km), .computed(
             rows: [
                 .init(label: "Distance", before: nil, after: "8.00 km"),

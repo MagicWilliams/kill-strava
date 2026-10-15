@@ -10,7 +10,9 @@
 //    tweak would rebuild their block as a marathon and drop every intake answer.
 
 import { assert, assertEquals, assertThrows } from "jsr:@std/assert@^1";
-import { advanceStartedWeek, goalInsertRow, isFinishGoal, isMissingColumnError, requiresTargetTime, resolveGoal } from "./goal.ts";
+import {
+  advanceStartedWeek, DistanceRequired, goalInsertRow, isFinishGoal, isMissingColumnError, requiresTargetTime, resolveGoal,
+} from "./goal.ts";
 
 const NOW = new Date("2026-10-14T15:00:00Z"); // a Wednesday
 const BODY = { goal_time_s: 1200, race_name: "Turkey Trot", race_date: "2026-11-26" };
@@ -23,12 +25,57 @@ const ACTIVE_5K = {
   created_at: "2026-09-30T09:00:00Z",
 };
 
-Deno.test("#104: a request with no intake fields is a marathon, exactly as before", () => {
-  const g = resolveGoal({ ...BODY }, null, NOW);
+Deno.test("#104: a marathon request with no other intake fields is the plain marathon goal", () => {
+  const g = resolveGoal({ ...BODY, distance: "marathon" }, null, NOW);
   assertEquals(g.distance.label, "marathon");
   assertEquals(g.distance.meters, 42195);
   assertEquals([g.course_type, g.goal_type, g.started_week, g.preferences], [null, null, null, null]);
   assertEquals(g.inherited, false);
+});
+
+// ── #184: a new race names its distance, or it is refused ────────────────────
+
+/// The active goal on 2026-10-15: Chicago, already run, still active.
+const ACTIVE_CHICAGO = {
+  id: "g9", race_date: "2026-10-11", distance: "marathon", distance_m: 42195,
+  goal_type: "time", created_at: "2026-06-01T09:00:00Z",
+};
+
+Deno.test("#184: the Turkey Trot card (no distance, new race date) is refused, not saved as a marathon", () => {
+  // The body ChatStore built from the card David confirmed on 2026-10-15. Its summary said
+  // "5K at Turkey Trot"; the payload named no distance; the goal row came out 42,195 m.
+  const body = { goal_time_s: null, race_name: "Turkey Trot 2026", race_date: "2026-11-05", goal_type: "unsure" };
+  const err = assertThrows(() => resolveGoal(body, ACTIVE_CHICAGO, NOW), DistanceRequired);
+  assertEquals(err.code, "distance_required", "the string index.ts returns and the app maps");
+  assertThrows(() => resolveGoal(body, null, NOW), DistanceRequired, undefined, "no active goal at all");
+});
+
+Deno.test("#184: no distance on the same race date inherits the active goal's", () => {
+  // A days-per-week change regenerates with only time, name and date (applyPlanSettings).
+  const g = resolveGoal({ goal_time_s: 1200, race_date: ACTIVE_5K.race_date }, ACTIVE_5K, NOW);
+  assertEquals([g.distance.label, g.distance.meters], ["5k", 5000]);
+  // A same-date goal from before #102 has only its label, and it was a marathon.
+  const legacy = { race_date: "2026-11-26", distance: "marathon" };
+  assertEquals(resolveGoal({ ...BODY }, legacy, NOW).distance.meters, 42195);
+});
+
+Deno.test("#184: an explicit 5k on a new race is 5,000 m", () => {
+  const g = resolveGoal({ goal_time_s: null, race_name: "Turkey Trot 2026", race_date: "2026-11-05", distance: "5k" }, ACTIVE_CHICAGO, NOW);
+  assertEquals([g.distance.label, g.distance.meters], ["5k", 5000]);
+  assertEquals(g.distance.profile.key, "5k");
+  assertEquals(g.inherited, false);
+  // Metres alone are enough; custom metres are a custom race.
+  assertEquals(resolveGoal({ ...BODY, distance_m: 10000 }, null, NOW).distance.label, "10k");
+  assertEquals(resolveGoal({ ...BODY, distance: "custom", distance_m: 8000 }, null, NOW).distance.meters, 8000);
+});
+
+Deno.test("#184: a distance the request names but that resolves to nothing is refused", () => {
+  // Not substituted with the marathon, and not with the inherited goal's distance either:
+  // the request said something, and it wasn't a race distance.
+  for (const bad of [{ distance: "ultra" }, { distance: "custom" }, { distance_m: 0 }, { distance: "5K!" }]) {
+    assertThrows(() => resolveGoal({ ...BODY, ...bad }, null, NOW), DistanceRequired, undefined, JSON.stringify(bad));
+    assertThrows(() => resolveGoal({ ...BODY, ...bad }, ACTIVE_5K, NOW), DistanceRequired, undefined, JSON.stringify(bad));
+  }
 });
 
 Deno.test("#104: intake fields in the request shape the goal", () => {
@@ -54,9 +101,10 @@ Deno.test("#104: regenerating the same race carries the intake over (settings ch
 });
 
 Deno.test("#104: a different race date is a different race — nothing carries", () => {
-  const g = resolveGoal({ ...BODY, race_date: "2027-04-20" }, ACTIVE_5K, NOW);
+  const g = resolveGoal({ ...BODY, race_date: "2027-04-20", distance: "marathon" }, ACTIVE_5K, NOW);
   assertEquals(g.inherited, false);
   assertEquals(g.distance.label, "marathon");
+  assertEquals(g.course_type, null);
   assertEquals(g.preferences, null);
   assertEquals(g.started_week, null);
 });
@@ -87,7 +135,7 @@ Deno.test("#104: started_week advances by whole weeks, never backwards", () => {
 
 Deno.test("#104: nonsense started_week is ignored, not trusted", () => {
   for (const bad of [0, -2, 3.5, 60, "nine", null]) {
-    assertEquals(resolveGoal({ ...BODY, started_week: bad }, null, NOW).started_week, null, String(bad));
+    assertEquals(resolveGoal({ ...BODY, distance: "5k", started_week: bad }, null, NOW).started_week, null, String(bad));
   }
 });
 
@@ -108,8 +156,8 @@ Deno.test("#104: before 0013 the legacy row names no column the old schema lacks
   const row = goalInsertRow(BASE, resolveGoal({ ...BODY, distance: "half", course_type: "hilly" }, null, NOW), true);
   for (const c of NEW_COLUMNS) assert(!(c in row), `legacy row names ${c}`);
   assertEquals(row, { ...BASE, distance: "half" });
-  // The default request — every request today — still writes exactly what it always did.
-  assertEquals(goalInsertRow(BASE, resolveGoal({ ...BODY }, null, NOW), true).distance, "marathon");
+  // A marathon request still writes exactly the row it always did.
+  assertEquals(goalInsertRow(BASE, resolveGoal({ ...BODY, distance: "marathon" }, null, NOW), true).distance, "marathon");
 });
 
 Deno.test("#104: a mile goal refuses the legacy row rather than being saved as a marathon", () => {

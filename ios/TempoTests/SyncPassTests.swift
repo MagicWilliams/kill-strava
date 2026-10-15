@@ -100,6 +100,68 @@ final class SyncPassTests: XCTestCase {
         XCTAssertEqual(report, SyncPass.WriteReport(count: 0, oldest: nil, newest: nil))
     }
 
+    // MARK: - The report comes from the server's answer, not the client's intent (#94)
+
+    func testAPassWhereEveryCandidateConflictsReportsNothingWritten() {
+        // The exact shape of #94. Six passes across three days and three app builds each
+        // emitted `count=47 oldest=2021-12-26 newest=2025-04-27`; `runs` gained zero rows.
+        // All 47 were archive runs already stored under a different `external_id`, and
+        // `ignoreDuplicates: true` discards a conflicting row with no error and nothing
+        // returned. So: 47 proposed, the server confirms none, the report says none.
+        let proposed = (0..<47).map { row(daysAgo: 400 + Double($0)) }
+        let written = SyncPass.confirmedWrites(proposed: proposed, writtenExternalIDs: [])
+
+        XCTAssertTrue(written.isEmpty)
+        XCTAssertEqual(SyncPass.writeReport(for: written),
+                       SyncPass.WriteReport(count: 0, oldest: nil, newest: nil),
+                       "a pass that wrote nothing must not report the set it hoped to write")
+    }
+
+    func testOnlyTheRowsTheDatabaseTookReachTheReport() {
+        // A partial pass is the case that makes "count" worth trusting: some candidates are
+        // genuinely new, the rest collide. The span must describe the two that landed, not
+        // the five that were offered.
+        let proposed = (0..<5).map { row(daysAgo: Double($0) * 100) }
+        let taken = [proposed[1], proposed[3]]
+        let written = SyncPass.confirmedWrites(
+            proposed: proposed,
+            writtenExternalIDs: taken.map(\.id.uuidString)
+        )
+
+        XCTAssertEqual(written.map(\.id), taken.map(\.id))
+        let report = SyncPass.writeReport(for: written)
+        XCTAssertEqual(report.count, 2)
+        XCTAssertEqual(report.oldest, "2026-03-21")   // 300 days before the fixed clock
+        XCTAssertEqual(report.newest, "2026-10-07")   // 100 days before it
+    }
+
+    func testEveryCandidateLandingIsStillReportedInFull() {
+        let proposed = (0..<47).map { row(daysAgo: 1 + Double($0)) }
+        let written = SyncPass.confirmedWrites(proposed: proposed,
+                                               writtenExternalIDs: proposed.map(\.id.uuidString))
+        XCTAssertEqual(SyncPass.writeReport(for: written).count, 47)
+    }
+
+    func testIDCasingCannotSilentlyZeroTheCount() {
+        // `UUID.uuidString` is uppercase; the column is plain text. A round trip that
+        // lowercased it would match nothing and report 0 writes on a pass that wrote
+        // everything — the same lie as #94 with the sign flipped.
+        let proposed = (0..<3).map { row(daysAgo: Double($0)) }
+        let lowercased = proposed.map { $0.id.uuidString.lowercased() }
+        XCTAssertEqual(SyncPass.confirmedWrites(proposed: proposed, writtenExternalIDs: lowercased).count, 3)
+    }
+
+    func testAnIDWeNeverProposedIsNotCountedAsOurWrite() {
+        // Defensive: the report summarises rows from *this* pass. An id we cannot account
+        // for inflates nothing, because the count comes from the matched summaries.
+        let proposed = [row(daysAgo: 1)]
+        let written = SyncPass.confirmedWrites(
+            proposed: proposed,
+            writtenExternalIDs: [proposed[0].id.uuidString, UUID().uuidString]
+        )
+        XCTAssertEqual(written.count, 1)
+    }
+
     // MARK: - When a drop is worth saying out loud
 
     func testAStandingConditionIsReportedOnceRatherThanEveryRefresh() {

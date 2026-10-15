@@ -279,6 +279,93 @@ final class RecordedRunSaveTests: XCTestCase {
                        "and a queued correction survives a relaunch")
     }
 
+    // MARK: - A race saved in a dead spot (#178)
+
+    /// The device's zone, because `GoalInfo.raceDay` parses `race_date` in it and the race
+    /// window is counted in calendar days of that zone (as in `RaceFinishTests`).
+    private let cal: Calendar = {
+        var c = Calendar(identifier: .iso8601)
+        c.timeZone = .current
+        return c
+    }()
+
+    /// The block this run is the race for: Chicago, the same Sunday as `start`.
+    private func raceGoal() -> GoalInfo {
+        var g = GoalInfo(id: UUID(), race_name: "Chicago", race_date: "2026-10-11", goal_time_seconds: 11_700,
+                         distance: "marathon")
+        g.distance_m = 42_195
+        return g
+    }
+
+    private func queued(_ kind: RecorderState.RunKind?, goalID: UUID?) -> RecordedRunSave.Pending {
+        RecordedRunSave.Pending(workout: workout(), journal: RunJournalEntry(), photoJPEG: nil,
+                                queuedAt: start.addingTimeInterval(2_760), kind: kind, goalID: goalID)
+    }
+
+    /// The finish line has no signal: the race is in Health, the row is queued, and the
+    /// recorder had nothing to link. Before #178 the queue forgot it was a race, so when the
+    /// row landed at the next refresh `race_run_id` stayed empty and the recap fell back to
+    /// guessing from date and distance. The queue now carries it across a relaunch, and the
+    /// retry files it.
+    func testAQueuedRaceLinksWhenTheRetryLandsIt() throws {
+        let goal = raceGoal(), row = UUID()
+        let original = queued(.race, goalID: goal.id)
+        let relaunched = try JSONDecoder().decode([RecordedRunSave.Pending].self,
+                                                  from: JSONEncoder().encode([original]))
+        XCTAssertEqual(relaunched, [original])
+        XCTAssertEqual(RecordedRunSave.raceLink(for: relaunched[0], savedRunID: row, goal: goal, calendar: cal),
+                       RaceFinish.Link(goalID: goal.id, runID: row))
+    }
+
+    /// An ordinary run on race morning — the shakeout, or the race run without Race mode — is
+    /// never filed as the block's race, queued or not. Only Race mode says "this is the race".
+    func testAQueuedOutdoorRunNeverLinks() {
+        let goal = raceGoal()
+        for kind in [.outdoor, .treadmill] as [RecorderState.RunKind] {
+            XCTAssertNil(RecordedRunSave.raceLink(for: queued(kind, goalID: nil), savedRunID: UUID(),
+                                                  goal: goal, calendar: cal), "\(kind)")
+            XCTAssertNil(RecordedRunSave.raceLink(for: queued(kind, goalID: goal.id), savedRunID: UUID(),
+                                                  goal: goal, calendar: cal), "\(kind), even naming the goal")
+        }
+    }
+
+    /// The goal it was raced for was replaced while the row sat in the queue: the new block
+    /// is not handed a race it never had. And with no active goal there is nothing to file.
+    func testAQueuedRaceOnlyLinksToTheGoalItWasRunFor() {
+        let raced = raceGoal(), replacement = raceGoal()
+        let pending = queued(.race, goalID: raced.id)
+        XCTAssertNil(RecordedRunSave.raceLink(for: pending, savedRunID: UUID(), goal: replacement, calendar: cal))
+        XCTAssertNil(RecordedRunSave.raceLink(for: pending, savedRunID: UUID(), goal: nil, calendar: cal))
+        XCTAssertNil(RecordedRunSave.raceLink(for: queued(.race, goalID: nil), savedRunID: UUID(),
+                                              goal: raced, calendar: cal))
+    }
+
+    /// A run queued by the build before #178 is on someone's disk right now, written without
+    /// `kind` or `goalID`. It must still decode — it may be the only copy of a journal — and
+    /// still retry. It just never links, which is what that build would have done.
+    func testARunQueuedBeforeRaceLinkingStillDecodesAndRetries() throws {
+        // What the previous build wrote: `JSONEncoder` defaults, dates as seconds since 2001,
+        // the photo as base64, no `kind`, no `goalID`.
+        let json = """
+        [{"workout":{"uuid":"A1B2C3D4-E5F6-4789-ABCD-EF0123456789","start":813418200,"end":813420900,\
+        "distanceM":8046.72,"movingS":2520.9,"avgHR":151.5,"indoor":false},\
+        "journal":{"rpe":7,"feelTags":["windy"],"notes":"Dead spot under the bridge."},\
+        "photoJPEG":"/9j/","queuedAt":813420960}]
+        """
+        let decoded = try JSONDecoder().decode([RecordedRunSave.Pending].self, from: Data(json.utf8))
+        XCTAssertEqual(decoded, [RecordedRunSave.Pending(
+            workout: workout(),
+            journal: RunJournalEntry(rpe: 7, feelTags: ["windy"], notes: "Dead spot under the bridge."),
+            photoJPEG: Data([0xFF, 0xD8, 0xFF]),
+            queuedAt: start.addingTimeInterval(2_760))])
+        XCTAssertNil(decoded[0].kind)
+        XCTAssertNil(decoded[0].goalID)
+        guard case .insert = RecordedRunSave.decide(decoded[0].workout, nearby: [], userID: user) else {
+            return XCTFail("the old entry still writes its row on retry")
+        }
+        XCTAssertNil(RecordedRunSave.raceLink(for: decoded[0], savedRunID: UUID(), goal: raceGoal(), calendar: cal))
+    }
+
     func testOnlyANotNowStaysQueued() {
         // No answer at all is the dead spot at the end of a run — the case the queue is for.
         for status in [nil, 408, 429, 500, 503] as [Int?] {

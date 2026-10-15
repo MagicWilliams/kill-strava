@@ -42,6 +42,31 @@ enum SyncPass {
         )
     }
 
+    /// The subset of a pass's proposed rows that the database confirmed it took.
+    ///
+    /// #94: `writeReport` was being handed `kept` — the set dedupe *proposed* — so the
+    /// event named "runs written" reported intent. Six passes over three days claimed 47
+    /// runs each and the table gained nothing: all 47 were archive runs already stored
+    /// under a different `external_id`, and `ignoreDuplicates: true` drops a conflicting
+    /// row server-side with no error and no row returned. Nothing on the client could tell
+    /// that pass apart from one that inserted all 47.
+    ///
+    /// The server's answer is the only honest source, so the write asks for it
+    /// (`.upsert(...).select("external_id")`) and hands the returned ids here. A row the
+    /// upsert ignored is absent from that list and therefore absent from the report.
+    ///
+    /// Matching is case-insensitive: Swift's `UUID.uuidString` is uppercase, the column is
+    /// plain text, and a round trip that lowercased it would silently match nothing — which
+    /// is this same bug with the sign flipped. Order follows `proposed`, so the report's
+    /// date span is unaffected by whatever order PostgREST returns.
+    static func confirmedWrites(proposed: [RunSummary], writtenExternalIDs: [String]) -> [RunSummary] {
+        guard !writtenExternalIDs.isEmpty else { return [] }
+        let confirmed = Set(writtenExternalIDs.map { $0.lowercased() })
+        // `external_id` is built from the summary's own id (`WorkoutRow.insert`), not from
+        // `externalID` — that field is nil on the ingest path.
+        return proposed.filter { confirmed.contains($0.id.uuidString.lowercased()) }
+    }
+
     // MARK: - Work that follows the write
 
     /// How many HR lookups one refresh may make. Small on purpose: a backlog drains over a

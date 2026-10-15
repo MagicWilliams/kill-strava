@@ -6,6 +6,27 @@ tags: [tempo, decision-log]
 
 Newest first. One entry per session that ships features or makes a product decision.
 
+## 2026-10-15 (later): Drift Detector PRD, revised after the repo audit
+
+### Decisions
+- **Positioning:** Tempo is the private, cross-platform layer that answers "Am I on track?" on top of whatever a runner already uses. Core v1 feature: the Drift Detector. See [[prd-02-drift-detector]].
+- **Drift is measured against Tempo's own expected curve** toward the goal time, not against the goal itself. Tiers: on track < 2%, drifting 2–< 5%, off track ≥ 5%. Thresholds are tunable config.
+- **Money: free for now; pricing later.** The planning session leaned toward paid coaching. That's deferred, and the free decision above stands.
+- **The privacy claim is removed for now.** "We never store or sell your data" isn't true of the current backend. No privacy copy ships until it maps to a real data flow.
+- **The plan engine stays.** The Drift Detector judges progress; a drift alert never rewrites a plan by itself.
+- **Rule 3 holds: numbers from code, words from the model.** Existing violations are tracked: run corrections (#206), goal time and plan volume (#207, needs David).
+- **Apple Health only.** No Strava API. #106 (auto-upload to Strava) closed as not planned.
+- **The work queue is GitHub Issues**, not Linear.
+
+### Shipped
+- PRD-02 filed with the repo audit (§14). README corrected: Health-only data and no paywall.
+- Issues filed and building: #204 (coach prompt hard-coded to David), #205 (made-up projection when no run qualifies), #206 (run corrections computed in code).
+
+### Next up
+- Go/no-go on the Drift Detector issue list (PRD §9, adjusted by the audit) and on the §11 `CLAUDE.md` rules.
+- #207: decide on goal time and plan volume under rule 3.
+- Figma design-system link before the hero chart (the Figma connector needs authorizing).
+
 ## 2026-10-15: Tempo stays free; intake v2 drafted from Runna
 
 ### Decisions

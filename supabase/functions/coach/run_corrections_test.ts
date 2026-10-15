@@ -69,12 +69,13 @@ Deno.test("#206: a fact with the wrong JSON type is dropped rather than failing 
   const shaped = shapeRunInput("add_run", {
     start_time: "2026-10-14T12:00:00Z",
     unit: "km",
-    distance: "8", // a string where the app decodes a number would fail the whole reply
-    time: 2400, // a number where the app decodes a clock string
-    pace: "5:00",
+    run_distance: "8", // a string where the app decodes a number would fail the whole reply
+    run_time: 2400, // a number where the app decodes a clock string
+    run_pace: "5:00",
+    distance: 8, // create_plan's race key (#184), a string in the app: never on a run card
     stated_avg_hr: 151.6,
   }, true);
-  assertEquals(shaped, { start_time: "2026-10-14T12:00:00Z", unit: "km", pace: "5:00", stated_avg_hr: 152 });
+  assertEquals(shaped, { start_time: "2026-10-14T12:00:00Z", unit: "km", run_pace: "5:00", stated_avg_hr: 152 });
 });
 
 Deno.test("#206: legacy clients and other tools pass through untouched", () => {

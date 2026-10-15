@@ -70,7 +70,7 @@ const FACTS_RULES = `- Runs in <athlete_context> carry an "id". When the athlete
   - "The watch stopped 14 minutes early": added_time "14:00", plus added_distance or added_pace if they said it. With only a time, the app counts it at the run's recorded pace and says so.
   - "It was really 6.0 miles", "it took 52:10": actual_distance, actual_time.
   - stated_avg_hr only for an average heart rate they read off another device. For added running, leave heart rate out: the app keeps the recorded average and labels it.
-- For a run that was never recorded at all, propose add_run with whichever two of distance, time and pace they gave.
+- For a run that was never recorded at all, propose add_run with whichever two of run_distance, run_time and run_pace they gave.
 - A run card's summary names the facts, not totals: "Add 1.2 mi at 8:30/mi to Tuesday's run". Do not quote corrected totals in your message either; the card shows them.`;
 
 const UNIT = {
@@ -114,9 +114,11 @@ const FACT_TOOLS = [
       properties: {
         start_time: { type: "string", description: "ISO 8601 datetime the run started." },
         unit: UNIT,
-        distance: { type: "number", description: "Distance, in unit." },
-        time: CLOCK("Moving time"),
-        pace: CLOCK("Average pace, per unit"),
+        // run_*, not distance/time/pace: the app's card is one flat shape across tools, and
+        // create_plan already sends `distance` as a race key (#184).
+        run_distance: { type: "number", description: "Distance, in unit." },
+        run_time: CLOCK("Moving time"),
+        run_pace: CLOCK("Average pace, per unit"),
         stated_avg_hr: { type: "integer", description: "Only if the athlete stated it. Never an estimate." },
         note: { type: "string", description: "Provenance: why this is being added manually." },
         summary: { type: "string", description: "One line for the confirm card naming the facts, e.g. 'Log Saturday's 5 mi treadmill run, 42:30'." },
@@ -133,18 +135,36 @@ export function runEditing(features: unknown) {
     : { rules: LEGACY_RULES, tools: LEGACY_TOOLS };
 }
 
-// `based_on` is the app's pinned base (ChatStore.applyAmend), never the model's to send.
-const DROPPED = ["distance_m", "duration_s", "avg_hr", "based_on"];
-const NUMBERS = ["added_distance", "actual_distance", "distance", "stated_avg_hr"];
-const STRINGS = ["unit", "added_time", "added_pace", "actual_time", "time", "pace"];
+type Schema = { name: string; input_schema: { properties: Record<string, { type: string }> } };
+
+/** Each facts tool's own keys and their JSON types: everything a facts card may carry. */
+const FACT_KEYS: Record<string, Record<string, string>> = Object.fromEntries(
+  (FACT_TOOLS as unknown as Schema[]).map((t) => [
+    t.name,
+    Object.fromEntries(Object.entries(t.input_schema.properties).map(([k, v]) => [k, v.type])),
+  ]),
+);
+
+const fits = (value: unknown, type: string) => {
+  switch (type) {
+    case "string":
+      return typeof value === "string";
+    case "number":
+    case "integer":
+      return typeof value === "number" && Number.isFinite(value);
+    default:
+      return true;
+  }
+};
 
 /**
- * The tool input as it goes to the app. For a facts client, a run card is scrubbed of any
- * total the model produced despite the schema — the app would take a lone total as a
- * pre-#206 card and write it, which is exactly the model arithmetic this exists to stop —
- * and of any fact with the wrong JSON type, which would otherwise fail the app's decode of
- * the whole reply. A scrubbed card the app can't compute shows why on the card instead.
- * Other tools, and every legacy client, pass through untouched.
+ * The tool input as it goes to the app. For a facts client, a run card keeps only its own
+ * schema's keys, each with the JSON type the schema says. That drops any total the model
+ * produced anyway (the app would take a lone total as a pre-#206 card and write it, which
+ * is exactly the model arithmetic this exists to stop), a `based_on` (the app's pinned
+ * base, never the model's), and any value of the wrong type, which would otherwise fail the
+ * app's decode of the whole reply. A scrubbed card the app can't compute says why on the
+ * card instead. Other tools, and every legacy client, pass through untouched.
  */
 export function shapeRunInput(
   name: string | undefined,
@@ -152,12 +172,10 @@ export function shapeRunInput(
   facts: boolean,
 ): Record<string, unknown> {
   if (!facts || (name !== "amend_run" && name !== "add_run")) return input;
+  const keys = FACT_KEYS[name];
   const out: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(input)) {
-    if (DROPPED.includes(key)) continue;
-    if (NUMBERS.includes(key) && (typeof value !== "number" || !Number.isFinite(value))) continue;
-    if (STRINGS.includes(key) && typeof value !== "string") continue;
-    out[key] = value;
+    if (key in keys && fits(value, keys[key])) out[key] = value;
   }
   if (typeof out.stated_avg_hr === "number") out.stated_avg_hr = Math.round(out.stated_avg_hr);
   return out;

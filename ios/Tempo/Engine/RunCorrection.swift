@@ -367,9 +367,9 @@ extension RunCorrection {
     static func newRun(of action: ProposedAction) -> NewRun {
         NewRun(
             unit: unit(of: action),
-            distance: action.distance,
-            time: action.time,
-            pace: action.pace,
+            distance: action.run_distance,
+            time: action.run_time,
+            pace: action.run_pace,
             statedAvgHR: action.stated_avg_hr
         )
     }
