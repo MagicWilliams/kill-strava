@@ -40,7 +40,7 @@ final class RaceFinishTests: XCTestCase {
         return g
     }
 
-    private func run(_ id: UUID = UUID(), meters: Int = 42_700) -> RunSummary {
+    private func stored(_ id: UUID = UUID(), meters: Int = 42_700) -> RunSummary {
         RunSummary(id: id, start: day("2026-10-11", hour: 7), distanceM: meters, durationS: 11_900, avgHR: 162)
     }
 
@@ -135,8 +135,8 @@ final class RaceFinishTests: XCTestCase {
     /// A race with a row lands on its recap (frame 9b). Every other save closes onto Today,
     /// including a race whose row isn't in the store: a recap opened on nothing is blank.
     func testARaceLandsOnItsRecapAndEverythingElseOnToday() {
-        let race = run()
-        let runs = [run(meters: 6_000), race]
+        let race = stored()
+        let runs = [stored(meters: 6_000), race]
         let recorded = UUID()
         XCTAssertEqual(RaceFinish.destination(.init(recordingID: recorded, kind: .race, runID: race.id), runs: runs),
                        .raceRecap(race))
