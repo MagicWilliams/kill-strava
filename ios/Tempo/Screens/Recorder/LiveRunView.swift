@@ -504,7 +504,8 @@ private extension RecorderSnapshot {
         snap.completedSplits = 3
         snap.hasTarget = true
         snap.target = targetShown
-            ? Target(title: "6 mi tempo", type: "tempo", distanceM: 9_656, paceS: 450, deltaS: 18)
+            ? Target(title: "\(Units.mi.formatDistance(meters: 9_656, decimals: 0)) tempo",
+                     type: "tempo", distanceM: 9_656, paceS: 450, deltaS: 18)
             : nil
         snap.gpsLocked = true
         return snap

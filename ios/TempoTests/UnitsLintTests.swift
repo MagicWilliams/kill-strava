@@ -30,8 +30,7 @@ final class UnitsLintTests: XCTestCase {
         var files = 0
         for dir in scanned {
             let url = iosRoot.appendingPathComponent(dir)
-            let names = try FileManager.default.contentsOfDirectory(atPath: url.path).filter { $0.hasSuffix(".swift") }
-            for name in names {
+            for name in try Self.swiftFiles(under: url) {
                 files += 1
                 let text = try String(contentsOf: url.appendingPathComponent(name), encoding: .utf8)
                 for (n, line) in text.components(separatedBy: "\n").enumerated() {
@@ -43,6 +42,26 @@ final class UnitsLintTests: XCTestCase {
         }
         XCTAssertGreaterThan(files, 20, "the scan found the view sources")
         XCTAssertTrue(violations.isEmpty, "Route these through Units (Engine/UnitsDisplay.swift):\n" + violations.joined(separator: "\n"))
+    }
+
+    /// Every `.swift` file under `root`, at any depth, as a path relative to it
+    /// (`Recorder/RecorderScreen.swift`).
+    ///
+    /// This used to be `contentsOfDirectory`, which is one level deep. When the recorder
+    /// screens moved into `Screens/Recorder/` (#126) they left the lint without anyone
+    /// noticing, because a scan that skips a folder still passes (#172).
+    static func swiftFiles(under root: URL) throws -> [String] {
+        guard let walk = FileManager.default.enumerator(atPath: root.path) else {
+            throw CocoaError(.fileReadNoSuchFile, userInfo: [NSFilePathErrorKey: root.path])
+        }
+        return walk.compactMap { $0 as? String }.filter { $0.hasSuffix(".swift") }.sorted()
+    }
+
+    /// The walk reaches into subfolders: the recorder screens are scanned, not just the
+    /// files sitting directly in `Screens/`.
+    func testTheScanReachesIntoSubfolders() throws {
+        let screens = try Self.swiftFiles(under: iosRoot.appendingPathComponent("Tempo/Screens"))
+        XCTAssertTrue(screens.contains { $0.hasPrefix("Recorder/") }, "Screens/Recorder is scanned: \(screens)")
     }
 
     /// The scanner itself, against the shapes it has to catch and the ones it must not.
