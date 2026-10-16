@@ -164,11 +164,40 @@ final class ChangeLedgerTests: XCTestCase {
         XCTAssertEqual(entry.summary, "Finish setup")
     }
 
+    /// #87 gave `remember` a case of its own. It used to be this file's example of an
+    /// unknown type, which is the better illustration of why the default branch exists: the
+    /// ledger has to list a change it does not recognise, because the alternative is a write
+    /// that happened and is nowhere.
+    func testRememberIsAYouEntryCarryingTheFactItself() throws {
+        let entry = try only([record("""
+            {"type":"remember","summary":"Remember: hates the track",
+             "fact":"Will not do track intervals; road and trail repeats only, said 2026-10-16."}
+            """, text: "Noted — I'll keep repeats off the track.")])
+        XCTAssertEqual(entry.kind, .you)
+        XCTAssertEqual(entry.title, "Remembered")
+        XCTAssertEqual(entry.target, .profile)
+        XCTAssertEqual(
+            entry.beforeAfter,
+            "Fact Will not do track intervals; road and trail repeats only, said 2026-10-16.",
+            "the fact, not the card's one-liner: the fact is what the coach is handed back"
+        )
+    }
+
+    /// Two facts are two standing statements, not an edit of one. A chained "before" would
+    /// claim the coach had replaced what it knew.
+    func testASecondFactDoesNotReadAsAnEditOfTheFirst() throws {
+        let entries = ChangeLedger.entries(from: [
+            try record(#"{"type":"remember","summary":"a","fact":"Races best off 5 days."}"#, at: 0),
+            try record(#"{"type":"remember","summary":"b","fact":"Hates the track."}"#, at: 60),
+        ])
+        XCTAssertEqual(entries.map(\.beforeAfter), ["Fact Hates the track.", "Fact Races best off 5 days."])
+    }
+
     func testAnUnknownTypeIsStillListed() throws {
         // Applied by a newer build, read by an older one. "Every applied change" means every.
-        let entry = try only([record(#"{"type":"remember","summary":"Remember: hates track"}"#)])
+        let entry = try only([record(#"{"type":"log_body","summary":"Left calf, 6/10"}"#)])
         XCTAssertEqual(entry.target, .unlinked)
-        XCTAssertEqual(entry.summary, "Remember: hates track")
+        XCTAssertEqual(entry.summary, "Left calf, 6/10")
     }
 
     // MARK: - Once each, newest first

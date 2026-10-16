@@ -53,6 +53,12 @@ struct ProposedAction: Codable, Equatable {
     let detail: String?
     let session_status: String?  // planned | skipped
 
+    // remember
+    /// The durable fact the coach wants carried into every later conversation (#87). The
+    /// summary is what the card says; this is what `coach_memory` stores and what the coach
+    /// is handed back months later, so it is the one that has to read cold.
+    let fact: String?
+
     /// create_plan only: what the athlete tapped in the intake (#102). Stamped by the app,
     /// never sent by the model — see `IntakeHandoff.stamping`.
     var intake: IntakeStamp? = nil
@@ -84,18 +90,44 @@ struct ChatMessage: Identifiable, Equatable {
     var actionState: ActionState = .pending
 }
 
-/// Drives the Coach tab: history persists in Supabase (`coach_messages`),
+/// Drives one coach conversation: history persists in Supabase (`coach_messages`),
 /// replies come from the `coach` Edge Function — Claude grounded in the
 /// athlete's real recent training via `CoachContext`.
 ///
 /// The coach can PROPOSE data edits (tool calls). The function never writes;
 /// this store executes the write client-side (RLS-scoped) after the athlete
 /// taps Confirm.
+///
+/// One store is one **thread** (#87). The transcript it loads, the rows it inserts and the
+/// window it sends the model are all scoped to `threadID`; what outlives the thread is
+/// `coach_memory`, carried in on `CoachContext.memory` so a fact stated 200 messages ago is
+/// still known.
 @MainActor
 final class ChatStore: ObservableObject {
     @Published private(set) var messages: [ChatMessage] = []
     @Published private(set) var isThinking = false
     @Published var errorText: String?
+
+    /// The conversation this store is reading and writing.
+    ///
+    /// Set by the Coach tab before `load`. Nil means "whichever one is live" — `load`
+    /// resolves it through `CoachThreadService.ensureThread`, which is the path the
+    /// onboarding interview and any deep link into the tab take. It stays nil only if that
+    /// resolution fails, and then nothing is scoped: see `load`.
+    var threadID: UUID?
+
+    /// What the coach carries into this thread from outside it: the durable facts in
+    /// `coach_memory` and the recap of the previous conversation.
+    ///
+    /// Published because the thread shows the athlete the same two values the model is
+    /// given — the "Picking up from" note is not a separate summary of the context, it *is*
+    /// the context.
+    struct Carried: Equatable {
+        var facts: [String] = []
+        var previousSummary: String?
+        var previousEndedAt: Date?
+    }
+    @Published private(set) var carried = Carried()
 
     /// Setup-interview mode: facts auto-apply silently (the athlete's answer IS the
     /// confirmation); only create_plan still gets a confirm card.
@@ -123,6 +155,7 @@ final class ChatStore: ObservableObject {
     private struct MessageInsert: Encodable {
         let id: String
         let user_id: String
+        let thread_id: String?
         let role: String
         let content: String
         let proposed_action: ProposedAction?
@@ -139,9 +172,21 @@ final class ChatStore: ObservableObject {
     func load(context: CoachContext) async {
         guard !loaded else { return }
         loaded = true
-        if let rows: [HistoryRow] = try? await Supa.client
-            .from("coach_messages")
-            .select()
+        // The thread first: every read and write below is scoped to it, and a message
+        // inserted with a null thread_id is invisible to the list that is now the Coach tab.
+        if threadID == nil {
+            threadID = try? await CoachThreadService.ensureThread()
+            if threadID == nil {
+                // No thread and no way to make one — an unreachable server, or no session.
+                // The conversation still works; it is this turn's history that can't be
+                // scoped, so it is loaded unscoped rather than shown as empty.
+                Telemetry.warn("coach.thread_unresolved", "sending in an unscoped conversation")
+            }
+        }
+        await loadCarried()
+        var query = Supa.client.from("coach_messages").select()
+        if let threadID { query = query.eq("thread_id", value: threadID.uuidString) }
+        if let rows: [HistoryRow] = try? await query
             .order("created_at", ascending: false)
             .order("id", ascending: false)   // a stable tie order, so the page edge can't skip one
             .limit(ChatHistory.pageSize)
@@ -305,6 +350,7 @@ final class ChatStore: ObservableObject {
             case "update_plan_settings": narration = try await applyPlanSettings(action, runStore: runStore)
             case "update_session":     try await applyUpdateSession(action, runStore: runStore)
             case "complete_onboarding": await applyCompleteOnboarding(runStore: runStore)
+            case "remember":           try await applyRemember(action)
             default:
                 messages[idx].actionState = .failed
                 persist(.failed, for: messageID)
@@ -683,6 +729,23 @@ final class ChatStore: ObservableObject {
         await runStore.markOnboarded()
     }
 
+    /// Record a durable fact in `coach_memory` (#87).
+    ///
+    /// `fact` and not `summary`: the summary is a line for the card ("Remember: races best
+    /// off 5 days a week"), while the fact is what the coach is handed back, cold, months
+    /// later. Falling back to the summary would quietly store the shorter of the two, and
+    /// nothing on screen would disagree.
+    ///
+    /// The fact is added to `carried` immediately rather than waiting for the next load, so
+    /// the coach's acknowledgement turn — which happens seconds later, with a context built
+    /// at call time — already knows what it has just been told to remember.
+    private func applyRemember(_ action: ProposedAction) async throws {
+        guard let fact = action.fact?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !fact.isEmpty else { throw ActionError.badParams }
+        try await CoachThreadService.remember(fact, threadID: threadID)
+        carried.facts.insert(fact, at: 0)
+    }
+
     /// `message` is what the athlete reads under a card that didn't go through. A bare
     /// "didn't go through" left David tapping Confirm on a card that could never succeed.
     private enum ActionError: Error {
@@ -774,7 +837,35 @@ final class ChatStore: ObservableObject {
         }
     }
 
+    /// This conversation's memory, as the coach is given it. Nil when there is nothing to
+    /// carry: an empty `memory` key would read as "this athlete has no history", the same
+    /// distinction `bestEffortsContext` draws.
+    private var memoryContext: CoachContext.MemoryCtx? {
+        guard !carried.facts.isEmpty || carried.previousSummary != nil else { return nil }
+        return CoachContext.MemoryCtx(facts: carried.facts, picking_up: carried.previousSummary)
+    }
+
+    /// Read the facts and the previous conversation's recap once per thread.
+    ///
+    /// Failures are quiet and additive: no memory means the coach reasons from the data
+    /// alone, which is what it did before #87. Saying "couldn't reach the server" over a
+    /// conversation that is working would be the wrong trade.
+    private func loadCarried() async {
+        let facts = (try? await CoachThreadService.memory()) ?? []
+        var previous: CoachThreads.Row?
+        if let rows = try? await CoachThreadService.threads() {
+            previous = CoachThreads.predecessor(of: threadID, in: rows)
+        }
+        carried = Carried(
+            facts: facts,
+            previousSummary: previous?.summary,
+            previousEndedAt: previous?.lastMessageAt
+        )
+    }
+
     private func requestReply(history: [WireMessage], context: CoachContext) async -> CoachReply? {
+        var context = context
+        context.memory = memoryContext
         do {
             let reply: CoachReply = try await Supa.client.functions.invoke(
                 "coach",
@@ -794,12 +885,17 @@ final class ChatStore: ObservableObject {
         let row = MessageInsert(
             id: id.uuidString,
             user_id: uid,
+            thread_id: threadID?.uuidString,
             role: role.rawValue,
             content: text,
             proposed_action: action,
             action_state: action == nil ? nil : ChatMessage.ActionState.pending.rawValue
         )
         Task { try? await Supa.client.from("coach_messages").insert(row).execute() }
+        // The thread sorts by its last message and the idle clock runs from it, so every
+        // message moves it — including the coach's, which is what keeps a conversation the
+        // athlete is reading from being summarized out from under them.
+        if let threadID { CoachThreadService.touch(threadID) }
     }
 
     /// Mirror a card's resolution into the row that proposed it, so a relaunch replays the
