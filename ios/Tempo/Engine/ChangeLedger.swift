@@ -224,6 +224,15 @@ enum ChangeLedger {
                 title = "Session changed"
             }
 
+        case "remember":
+            kind = .you
+            title = "Remembered"
+            target = .profile
+            // Keyed on the message, not on "profile": each fact is its own standing
+            // statement, so a second one is a new line and not an edit of the first. A
+            // "before" would imply the coach had replaced what it knew.
+            set("memory:\(record.messageID.uuidString)", "Fact", a.fact)
+
         case "complete_onboarding":
             kind = .you
             title = "Setup finished"
