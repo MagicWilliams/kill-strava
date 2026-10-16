@@ -161,6 +161,16 @@ final class CoachThreadsTests: XCTestCase {
         )
     }
 
+    /// "Has this been written up" has one definition. A whitespace summary read as written
+    /// by the queue and as blank by the list would leave the thread permanently recap-less.
+    func testAWhitespaceSummaryIsStillOwedARecap() {
+        let blank = row(title: "Pacing", summary: "   ", startedHoursAgo: 30, lastHoursAgo: 28, messages: 4)
+
+        XCTAssertNil(CoachThreads.recapText(blank))
+        XCTAssertEqual(CoachThreads.awaitingSummary([blank], now: now).map(\.id), [blank.id])
+        XCTAssertNil(CoachThreads.predecessor(of: UUID(), in: [blank]))
+    }
+
     // MARK: - Which conversation a thread picks up from
 
     func testAThreadPicksUpFromTheWrittenUpConversationBeforeIt() {

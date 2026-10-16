@@ -51,6 +51,19 @@ enum CoachThreads {
 
     // MARK: - The list
 
+    /// The recap a row actually has, or nil.
+    ///
+    /// One definition, used by everything that asks "has this been written up yet" — the
+    /// list, the summary queue, and the thread that picks up from it. A whitespace-only
+    /// summary is no summary: `summary.ts` will not return one, but a row that somehow held
+    /// one would otherwise be treated as written up by the queue and as blank by the list,
+    /// and the thread would never get a real recap.
+    static func recapText(_ row: Row) -> String? {
+        guard let summary = row.summary?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !summary.isEmpty else { return nil }
+        return summary
+    }
+
     /// Newest conversation first.
     ///
     /// By `lastMessageAt`, not `startedAt`: a thread opened on Monday and replied to on
@@ -93,7 +106,7 @@ enum CoachThreads {
         let ordered = inListOrder(rows)
         let qualifying = ordered.enumerated().filter {
             let row = $0.element
-            guard row.summary == nil else { return false }
+            guard recapText(row) == nil else { return false }
             guard (row.messageCount ?? 1) > 0 else { return false }
             // Index 0 is the newest thread: anything behind it has been superseded by a
             // newer conversation, which is the "next one starts" trigger.
@@ -116,7 +129,7 @@ enum CoachThreads {
     /// that is not itself: there is nothing better to compare against, and the interview is
     /// always the newest conversation anyway.
     static func predecessor(of id: UUID?, in rows: [Row]) -> Row? {
-        let written = inListOrder(rows).filter { $0.id != id && ($0.summary?.isEmpty == false) }
+        let written = inListOrder(rows).filter { $0.id != id && recapText($0) != nil }
         guard let mine = rows.first(where: { $0.id == id }) else { return written.first }
         return written.first { $0.lastMessageAt <= mine.startedAt }
     }
@@ -143,10 +156,7 @@ enum CoachThreads {
     /// summarize round trip hasn't landed (or failed). Neither is allowed to read like a
     /// recap of what was said.
     static func recap(_ row: Row, isActive: Bool) -> String {
-        if let summary = row.summary?.trimmingCharacters(in: .whitespacesAndNewlines),
-           !summary.isEmpty {
-            return summary
-        }
+        if let summary = recapText(row) { return summary }
         if row.messageCount == 0 { return "Nothing said yet." }
         return isActive ? "Still going." : "Recap not written yet."
     }
