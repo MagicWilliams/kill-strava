@@ -60,7 +60,7 @@ final class BodyReportService {
                 .from("body_reports")
                 .select("id,area,sensation,severity,status,opened_at,cleared_at,source_message_id")
                 .order("opened_at", ascending: false)
-                .limit(limit)
+                .limit(Self.limit)
                 .execute()
                 .value
             return Snapshot(reports: rows.map(\.report), available: true)
@@ -93,9 +93,9 @@ final class BodyReportService {
             let status: String
             let source_message_id: String?
         }
-        // `status` is never 'cleared' on an insert: the table's own check constraint ties
-        // that status to a `cleared_at`, and a report that arrives already resolved is not
-        // a report.
+        // Never 'cleared' on an insert: the table's own check constraint ties that status to
+        // a `cleared_at`, and a report that arrives already resolved is not a report.
+        let opening: BodyReport.Status = status == .cleared ? .open : status
         let row: Row = try await Supa.client
             .from("body_reports")
             .insert(Insert(
@@ -103,7 +103,7 @@ final class BodyReportService {
                 area: area,
                 sensation: sensation,
                 severity: severity,
-                status: (status == .cleared ? .open : status).rawValue,
+                status: opening.rawValue,
                 source_message_id: sourceMessageID?.uuidString
             ))
             .select("id,area,sensation,severity,status,opened_at,cleared_at,source_message_id")

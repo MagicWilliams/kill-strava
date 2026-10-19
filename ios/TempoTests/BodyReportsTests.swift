@@ -16,9 +16,9 @@ final class BodyReportsTests: XCTestCase {
 
     private func report(
         _ severity: Int,
-        status: BodyReport.Status = .open,
         area: String = "left calf",
         sensation: String = "tight",
+        status: BodyReport.Status = .open,
         openedDaysAgo: Double = 0,
         clearedDaysAgo: Double? = nil
     ) -> BodyReport {
