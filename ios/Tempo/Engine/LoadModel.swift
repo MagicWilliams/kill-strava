@@ -38,9 +38,25 @@ struct FitnessMetrics {
 
 enum LoadModel {
 
-    /// Compute current metrics from real runs. `checkInOK == false` caps readiness —
-    /// the athlete's own report outranks the math.
-    static func compute(runs: [RunSummary], checkInOK: Bool?, now: Date = .now) -> FitnessMetrics? {
+    /// The ceiling the athlete's own word puts on readiness. Named because two separate
+    /// reports now impose it — a negative check-in and a body report at or above
+    /// `BodyReports.capSeverity` (#89) — and because the body card quotes the number back
+    /// to the athlete.
+    static let reportedCap = 40
+
+    /// Compute current metrics from real runs. `checkInOK == false` caps readiness, and so
+    /// does a live body report the athlete rated at `BodyReports.capSeverity` or worse — the
+    /// athlete's own report outranks the math, whichever way they gave it.
+    ///
+    /// `bodyReports` defaults to none so the 2,000-run history and every test that predates
+    /// #89 keep calling this unchanged; which of them count is decided in
+    /// `BodyReports.capsReadiness`, not here.
+    static func compute(
+        runs: [RunSummary],
+        checkInOK: Bool?,
+        bodyReports: [BodyReport] = [],
+        now: Date = .now
+    ) -> FitnessMetrics? {
         guard !runs.isEmpty else { return nil }
         let cal = Calendar.current
         let today = cal.startOfDay(for: now)
@@ -78,7 +94,12 @@ enum LoadModel {
         // Readiness: form relative to fitness, centered at 55.
         let formPct = (ctl - atl) / max(ctl, 0.5)
         var readiness = Int((55 + formPct * 90).rounded())
-        if checkInOK == false { readiness = min(readiness, 40) }   // athlete's word wins
+        // The athlete's word wins — said as a check-in or as a body report (#89). One cap,
+        // not two: a bad check-in and a 7/10 calf on the same day is one athlete saying the
+        // same thing twice, and stacking them would put readiness below what either means.
+        if checkInOK == false || BodyReports.capsReadiness(bodyReports) {
+            readiness = min(readiness, reportedCap)
+        }
         readiness = min(max(readiness, 5), 98)
 
         return FitnessMetrics(

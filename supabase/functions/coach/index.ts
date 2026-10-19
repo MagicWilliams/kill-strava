@@ -64,6 +64,14 @@ Editing training data:
 - Alongside any tool call, write a short text message saying what you're proposing. The athlete sees a confirm card; the change only happens after they confirm.
 - One tool call per correction. Never invent ids.
 
+The athlete's body:
+- body_reports in <athlete_context> is what they have told you about their body and not yet cleared: area, sensation, severity (THEIR 0–10 number), status, since, and caps_readiness. Carry them in mind the way you carry a check-in — they are the athlete's word, and they outrank the math.
+- When they report tightness, soreness, pain, illness or a niggle, call log_body in the same message. Use the severity they gave; if they did not give one, ask for it in that message rather than guessing, and log it once they answer. Never inflate or soften their number.
+- One report per distinct area. If body_reports already holds the thing they are describing, do not log it again — speak to the open report, and propose log_body only when the severity has actually changed.
+- When they say it has gone, call clear_body with that report's id from body_reports. Never invent an id.
+- caps_readiness says which reports are holding readiness down. Say what it actually does: a report at or above the app's threshold caps readiness until it is cleared, and one below it is recorded and watched but does not move the number. Do not claim a 3/10 cost them readiness, and do not tell them a 7/10 is cosmetic.
+- Logging is not treating. Alongside the card, coach the thing: what you would change this week, and what would make you say stop. If it is a 7/10 or climbing, say plainly that running through it is the wrong call.
+
 The plan:
 - If <athlete_context> has no plan and the athlete wants one (or asks where to start), assess their data honestly and PROPOSE a goal: what you'd target and why, grounded in the features you see. When they agree, call create_plan — the plan engine builds the actual schedule from their real history.
 - If the data supports a different goal than they stated, say so and propose what it supports; they own the final call (their risk dial applies).
@@ -229,6 +237,41 @@ const TOOLS = [
         summary: { type: "string", description: "One line for the confirm card." },
       },
       required: ["summary"],
+    },
+  },
+  {
+    name: "log_body",
+    description:
+      "Propose logging what the athlete just told you about their body — where it is, what it feels like, and their own 0–10 severity. Call it the moment they report tightness, soreness, pain, illness or a niggle. It persists the report so readiness can respond to it and so you still know about it in a week.",
+    input_schema: {
+      type: "object",
+      properties: {
+        area: { type: "string", description: "The body part, in the athlete's own words. e.g. 'left calf'." },
+        sensation: { type: "string", description: "What it feels like, in their words. e.g. 'tight', 'sore', 'sharp pain'." },
+        severity: { type: "integer", minimum: 0, maximum: 10, description: "The athlete's own 0–10 number. Theirs, not yours: never inflate or soften it." },
+        body_status: {
+          type: "string",
+          enum: ["open", "watching"],
+          description: "'watching' when you intend to track it across the next sessions; 'open' otherwise. Neither changes what it does to readiness — severity decides that. (Named body_status because the app's action shape already carries session_status.)",
+        },
+        note: { type: "string", description: "What they said, condensed — when it started, what brings it on." },
+        summary: { type: "string", description: "One line for the confirm card. e.g. 'Log: left calf tight, 3/10'." },
+      },
+      required: ["area", "sensation", "severity", "summary"],
+    },
+  },
+  {
+    name: "clear_body",
+    description:
+      "Propose clearing a body report the athlete says has resolved. Readiness recovers once they confirm.",
+    input_schema: {
+      type: "object",
+      properties: {
+        report_id: { type: "string", description: "The report's id, exactly as it appears in body_reports in <athlete_context>. Never invent one." },
+        note: { type: "string", description: "What they said about it resolving." },
+        summary: { type: "string", description: "One line for the confirm card. e.g. 'Clear: left calf tight, 3/10'." },
+      },
+      required: ["report_id", "summary"],
     },
   },
   {
