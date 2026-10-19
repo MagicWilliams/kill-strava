@@ -63,6 +63,30 @@ final class ProposedActionPersistenceTests: XCTestCase {
         XCTAssertEqual(neither.displaySummary, "Proposed set_risk_tolerance", "still never blank")
     }
 
+    /// The body tools (#89). `body_status` is not `status` on purpose: this shape is flat
+    /// across every tool and `session_status` already owns that word, so a `log_body` card
+    /// and an `update_session` card can't read each other's field.
+    func testBodyActionsSurviveARoundTrip() throws {
+        let log = try decode("""
+        {"type":"log_body","area":"left calf","sensation":"tight","severity":3,
+         "body_status":"watching","note":"Came on after Tuesday's strides. Not painful.",
+         "summary":"Log: left calf tight, 3/10"}
+        """)
+        let reheated = try JSONDecoder().decode(ProposedAction.self, from: JSONEncoder().encode(log))
+
+        XCTAssertEqual(reheated, log, "what comes back out of jsonb must be what went in")
+        XCTAssertEqual(reheated.severity, 3, "the athlete's own number is the whole point")
+        XCTAssertEqual(reheated.body_status, "watching")
+        XCTAssertNil(reheated.session_status, "a body report is not a session change")
+
+        let clear = try decode("""
+        {"type":"clear_body","report_id":"9C1E2F33-0000-4000-8000-00000000BEEF",
+         "summary":"Clear: left calf tight, 3/10"}
+        """)
+        XCTAssertEqual(clear.report_id, "9C1E2F33-0000-4000-8000-00000000BEEF")
+        XCTAssertNil(clear.severity, "clearing says nothing about how bad it was")
+    }
+
     // MARK: - State machine
 
     func testResolvedStatesPersistAsThemselves() {

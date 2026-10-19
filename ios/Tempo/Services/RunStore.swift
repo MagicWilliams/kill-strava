@@ -83,6 +83,12 @@ final class RunStore: ObservableObject {
     /// `BestEffortsService` for why an absent table is reported rather than shown as zero.
     @Published private(set) var bestEfforts = BestEffortsService.Snapshot()
 
+    /// What the athlete has told the coach about their body (#89) — live and cleared.
+    /// Empty, and the Body section hidden, until migration 0020 is applied; see
+    /// `BodyReportService` for why an absent table is reported rather than shown as
+    /// "nothing's wrong".
+    @Published private(set) var bodyReports = BodyReportService.Snapshot()
+
     /// Overlapping pairs still waiting for the athlete's ruling (#30), newest first. Empty —
     /// and the review row hidden — until migration 0012 is applied.
     @Published private(set) var overlaps: [RunDedupe.OverlapPair] = []
@@ -92,6 +98,7 @@ final class RunStore: ObservableObject {
 
     private let health = HealthService()
     private let effortsService = BestEffortsService()
+    private let bodyService = BodyReportService()
     private let overlapService = OverlapReviewService()
     private var effortsBackfill: Task<Void, Never>?
 
@@ -208,7 +215,10 @@ final class RunStore: ObservableObject {
         await matchRunsToSessions()
         await autoAdaptMissedQuality()
         await recomputeProjection()
-        fitness = LoadModel.compute(runs: runs, checkInOK: todayCheckIn?.feelsOk)
+        // Before the load model, not after: a live body report caps readiness (#89), so
+        // reading them second would publish an uncapped number and then quietly replace it.
+        await refreshBodyReports()
+        fitness = computeFitness()
         await loadTodayTakeaway()
         await loadLatestRead()
         publishWidgetSnapshot()   // #76 — the widgets show exactly what this refresh produced
@@ -238,7 +248,7 @@ final class RunStore: ObservableObject {
         recomputeOverlaps()
 
         await matchRunsToSessions()
-        fitness = LoadModel.compute(runs: runs, checkInOK: todayCheckIn?.feelsOk)
+        fitness = computeFitness()
         // Today's session: shows the cached read, or generates it and republishes widgets.
         await loadTodayTakeaway()
         publishWidgetSnapshot()
@@ -270,7 +280,75 @@ final class RunStore: ObservableObject {
         guard let i = runs.firstIndex(where: { $0.id == runID }), runs[i].journal != entry else { return }
         let rpeChanged = runs[i].journal.rpe != entry.rpe
         runs[i].journal = entry
-        if rpeChanged { fitness = LoadModel.compute(runs: runs, checkInOK: todayCheckIn?.feelsOk) }
+        if rpeChanged { fitness = computeFitness() }
+    }
+
+    // MARK: - Body reports (#89)
+
+    /// Readiness with everything the athlete has reported folded in — today's
+    /// check-in and any live body report. One place, because three call sites used to pass
+    /// `checkInOK` by hand and a fourth input is exactly how one of them would end up
+    /// computing an uncapped number.
+    private func computeFitness() -> FitnessMetrics? {
+        LoadModel.compute(
+            runs: runs,
+            checkInOK: todayCheckIn?.feelsOk,
+            bodyReports: bodyReports.reports
+        )
+    }
+
+    /// Whether this database has the body-reports table (migration 0020). Before it does,
+    /// the Body section stays hidden rather than offering a Clear that cannot save.
+    var bodyReportsAvailable: Bool { bodyReports.available }
+
+    func refreshBodyReports() async {
+        let snapshot = await bodyService.snapshot()
+        // A failed read keeps what we already hold rather than flipping the feature off
+        // mid-session; before 0020 is applied there is nothing held, so it stays off.
+        if snapshot.available { bodyReports = snapshot }
+    }
+
+    /// Log what the athlete told the coach, once they have confirmed the card.
+    ///
+    /// The row goes on screen here rather than at the next refresh, and readiness is
+    /// recomputed on the spot: a 6/10 calf just confirmed has to move the number while the
+    /// card that said it would is still on screen.
+    func logBodyReport(
+        area: String,
+        sensation: String,
+        severity: Int,
+        status: BodyReport.Status,
+        sourceMessageID: UUID?
+    ) async throws {
+        let report = try await bodyService.log(
+            area: area, sensation: sensation, severity: severity,
+            status: status, sourceMessageID: sourceMessageID
+        )
+        // The write landed, so the table exists — whatever the last read concluded.
+        bodyReports.available = true
+        bodyReports.reports.removeAll { $0.id == report.id }
+        bodyReports.reports.insert(report, at: 0)
+        fitness = computeFitness()
+    }
+
+    /// Mark a report resolved — from the coach's clear_body card or the Body section's Clear.
+    /// Readiness recovers here, for the same reason it caps there.
+    func clearBodyReport(_ id: UUID, now: Date = .now) async throws {
+        try await bodyService.clear(id, now: now)
+        if let i = bodyReports.reports.firstIndex(where: { $0.id == id }) {
+            let was = bodyReports.reports[i]
+            bodyReports.reports[i] = BodyReport(
+                id: was.id,
+                area: was.area,
+                sensation: was.sensation,
+                severity: was.severity,
+                status: .cleared,
+                openedAt: was.openedAt,
+                clearedAt: now,
+                sourceMessageID: was.sourceMessageID
+            )
+        }
+        fitness = computeFitness()
     }
 
     // MARK: - Training blocks (#100)
@@ -935,6 +1013,21 @@ struct CoachContext: Encodable {
         let known: [String: String]   // facts already on file — confirm, don't re-ask
     }
 
+    /// A live body report (#89) — what the athlete told the coach about their body and has
+    /// not cleared. Worst first. The `id` is what `clear_body` names, so the coach can close
+    /// one out when the athlete says it has gone.
+    struct BodyCtx: Encodable {
+        let id: String
+        let area: String
+        let sensation: String
+        let severity: Int
+        let status: String
+        let since: String
+        /// Whether this one is holding readiness down, so the coach never has to re-derive
+        /// the threshold — and never says a 4/10 capped the number.
+        let caps_readiness: Bool
+    }
+
     /// The athlete's standing sub-distance PRs — the fastest 5 K *inside* a run, not the
     /// fastest 5 K+ run (#25). Seven rows at most, so the payload grows by a few hundred
     /// tokens and not by a list per distance.
@@ -980,6 +1073,8 @@ struct CoachContext: Encodable {
     let fitness: FitnessCtx?
     let onboarding: OnboardingCtx? // present only while the setup interview runs
     let check_in_today: String?
+    /// Live body reports (#89); nil when there are none, or before migration 0020 lands.
+    let body_reports: [BodyCtx]?
     let recent_runs: [RunCtx]      // last 21 days
     let weekly_mileage: [WeekCtx]  // last 8 weeks, oldest first
     let best_efforts: BestEffortsCtx?   // nil until migration 0011 is applied
@@ -1028,6 +1123,7 @@ extension RunStore {
             },
             onboarding: onboarding ? onboardingContext() : nil,
             check_in_today: todayCheckIn.map { $0.feelsOk ? "feeling okay" + ($0.note.map { " — \($0)" } ?? "") : "something's off" + ($0.note.map { " — \($0)" } ?? "") },
+            body_reports: bodyContext(day: day),
             recent_runs: recentRuns(days: 21).map {
                 CoachContext.RunCtx(
                     id: $0.id.uuidString,
@@ -1055,6 +1151,27 @@ extension RunStore {
                 h.stamp.map { IntakeCoachContext($0, situation: h.answers.situation) }
             }
         )
+    }
+
+    /// Live body reports for the coach, or nothing at all.
+    ///
+    /// Nil rather than `[]` when there is nothing live, for the same reason the journal's
+    /// fields are absent when unanswered: an empty list in the payload reads as "I asked and
+    /// they said nothing hurts", and absence here only ever means nothing has been reported.
+    private func bodyContext(day: Date.FormatStyle) -> [CoachContext.BodyCtx]? {
+        let live = BodyReports.live(bodyReports.reports)
+        guard !live.isEmpty else { return nil }
+        return live.map {
+            CoachContext.BodyCtx(
+                id: $0.id.uuidString,
+                area: $0.area,
+                sensation: $0.sensation,
+                severity: $0.severity,
+                status: $0.status.rawValue,
+                since: $0.openedAt.formatted(day),
+                caps_readiness: BodyReports.capsReadiness([$0])
+            )
+        }
     }
 
     /// Sub-distance PRs for the coach, or nothing at all.
