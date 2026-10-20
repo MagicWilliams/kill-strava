@@ -23,14 +23,21 @@ final class RunFetchTests: XCTestCase {
         )
     }
 
-    /// The same run as HealthKit still holds it — raw, pre-correction.
-    private func raw(_ minutesFromEpoch: Int, miles: Double, id: UUID = UUID()) -> RunSummary {
+    /// The same run as HealthKit still holds it — raw, pre-correction. `externalID` is the
+    /// HKWorkout uuid, which is what identifies a candidate as one Tempo already stored.
+    private func raw(
+        _ minutesFromEpoch: Int,
+        miles: Double,
+        id: UUID = UUID(),
+        externalID: String? = nil
+    ) -> RunSummary {
         RunSummary(
             id: id,
             start: Date(timeIntervalSince1970: TimeInterval(minutesFromEpoch * 60)),
             distanceM: Int(miles * 1609.34),
             durationS: Int(miles * 9 * 60),
-            avgHR: nil
+            avgHR: nil,
+            externalID: externalID
         )
     }
 
@@ -158,6 +165,55 @@ final class RunFetchTests: XCTestCase {
         XCTAssertEqual(decision.runs ?? [], [row])
         XCTAssertEqual(decision.freshness, .current)
         XCTAssertNil(decision.warning)
+    }
+
+    /// #202. The graft's blind spot, same shape as the one #97 closed for the sync.
+    ///
+    /// A retired duplicate is soft-deleted, so it never comes back in `rows` — but HealthKit
+    /// has never heard that Tempo retired anything and re-offers the workout on every
+    /// refresh. The 47 timezone re-imports (2021-12-26 → 2025-04-27) sit *hours* from their
+    /// keepers, so the start-time window cannot catch them; only the retired uuid can. Grafted
+    /// in, each one shows up next to the run it duplicates and double-counts it in History
+    /// totals, weekly mileage and load until the next clean refresh.
+    func testIncompleteReadDropsTheHealthKitCopyOfARetiredRun() {
+        let keeper = corrected(0, miles: 8.0)                       // the live row
+        let retiredTwin = raw(600, miles: 8.0, externalID: "retired-uuid")  // ten hours later
+
+        XCTAssertGreaterThan(
+            abs(retiredTwin.start.timeIntervalSince(keeper.start)),
+            RunDedupe.windowSeconds,
+            "the premise: the window alone cannot catch this one"
+        )
+
+        let decision = RunFetch.resolve(
+            .incomplete([keeper]),
+            ingested: [retiredTwin],
+            onScreen: [keeper],
+            retiredExternalIDs: ["retired-uuid"]
+        )
+
+        XCTAssertEqual(decision.runs ?? [], [keeper], "a retired row must never reach a screen")
+        XCTAssertEqual(decision.freshness, .current, "nothing is missing, so nothing to announce")
+        XCTAssertNil(decision.warning)
+    }
+
+    func testIncompleteReadStillGraftsThisMorningsRunWhileDroppingARetiredOne() {
+        // Over-dropping would be the other half of the bug: the retired set must not cost the
+        // athlete the run they just finished, which is the whole reason the graft exists.
+        let keeper = corrected(0, miles: 8.0)
+        let retiredTwin = raw(600, miles: 8.0, externalID: "retired-uuid")
+        let thisMorning = raw(2_000, miles: 6.0, externalID: "brand-new-uuid")
+
+        let decision = RunFetch.resolve(
+            .incomplete([keeper]),
+            ingested: [retiredTwin, thisMorning],
+            onScreen: [keeper],
+            retiredExternalIDs: ["retired-uuid"]
+        )
+
+        XCTAssertEqual(decision.runs?.map(\.id), [thisMorning.id, keeper.id], "newest first")
+        XCTAssertEqual(decision.freshness, .missingRecent)
+        XCTAssertEqual(decision.warning, RunFetch.Copy.missingRecent)
     }
 
     // MARK: The takeaway cache — a failed read must not cost a Claude call
