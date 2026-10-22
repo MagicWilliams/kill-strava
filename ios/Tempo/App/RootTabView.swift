@@ -46,10 +46,6 @@ final class TabRouter: ObservableObject {
     /// A coach message to scroll to when the Coach tab next shows — set by "See in chat"
     /// on a What changed entry, consumed (cleared) by `CoachView`.
     @Published var coachFocus: UUID?
-    /// Text to drop into the Coach input when the tab next shows — set by "Train for
-    /// something", consumed (cleared) by `CoachView`. Prefilled, never sent: the athlete
-    /// gets to read it, change it, or back out.
-    @Published var coachDraft: String?
     /// The training intake (#102), presented over the whole app by `.trainingIntake(...)`.
     @Published var trainingIntakeShown = false
     /// The pre-run sheet (#126), presented over the whole app by `.runRecorder(...)`.

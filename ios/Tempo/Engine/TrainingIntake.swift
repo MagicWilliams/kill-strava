@@ -253,9 +253,11 @@ struct IntakeAnswers: Equatable {
     /// Seconds per mile a goal time may imply. 3:00/mi is faster than the mile world record;
     /// 30:00/mi is a walk. Anything outside is a typo, not a goal.
     static let plausiblePace = 180.0...1_800.0
-    /// The `plan` function refuses a race whose week index from this Monday is under 2
-    /// (`racePlacement(...).weekIndex < 2`). Mirrored here so the form says so up front
-    /// instead of the confirm card failing after the coach has already proposed the plan.
+    /// The `plan` function refuses to *build* a race whose week index from this Monday is
+    /// under 2 (`raceTooCloseForPlan`). Mirrored here so the form says so up front instead
+    /// of the confirm card failing after the coach has already proposed the plan — and, like
+    /// the function since #140, only when a plan is being built: "No plan, just coaching"
+    /// writes no weeks, so no race is too close for it.
     static let minPlanWeeks = 2
 
     func issues(on step: Step, today: Date, calendar: Calendar) -> [Issue] {
@@ -822,15 +824,24 @@ struct GoalDetailCoachContext: Encodable, Equatable {
 }
 
 extension TodayMode {
-    /// `CoachContext.mode`, given the goal as well as the plan.
+    /// `CoachContext.mode`, given the goal and where its block stands, as well as the plan.
     ///
     /// "No plan, just coaching" (#102) saves a race and no plan. Today has no sessions to show,
     /// so it rightly takes the feed — but `coachMode` alone would then tell the coach
     /// "just_running", whose prompt rule is *don't ask about a race*, about an athlete who
     /// is training for one. A goal that chose no plan is training.
-    static func coachMode(_ mode: TodayMode, goal: GoalInfo?) -> String {
+    ///
+    /// Until the race is behind them. That override had no end date, and `TodayMode` could not
+    /// supply one: `.racePassed` is only reachable with a plan in hand, so a coaching-only block
+    /// never left `.justRunning` and the coach was still told "training" the morning after the
+    /// race — the exact case `race_passed` exists to stop (#100). The phase does know, because
+    /// `BlockLifecycle` reads a plan-less goal's race date perfectly well, so ask it (#140).
+    ///
+    /// - Parameter phase: `RunStore.blockPhase`. Only `.racePassed` changes the answer, which is
+    ///   the same rule `TodayMode.resolve` follows — race week is still training.
+    static func coachMode(_ mode: TodayMode, goal: GoalInfo?, phase: BlockLifecycle.Phase? = nil) -> String {
         if mode == .justRunning, goal?.preferences?.plan_style == IntakeAnswers.PlanStyle.none.rawValue {
-            return TodayMode.training.coachMode
+            return phase == .racePassed ? TodayMode.racePassed.coachMode : TodayMode.training.coachMode
         }
         return mode.coachMode
     }
