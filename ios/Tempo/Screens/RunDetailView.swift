@@ -773,6 +773,8 @@ struct RunDistanceHeroRow: View {
     }
 }
 
+/// The one row of the five the probe caught drifting, and it drifts at widths real phones
+/// hand it — four parts in the sum instead of two, since the legend is two dots of its own.
 struct PaceHRHeaderRow: View {
     var body: some View {
         HStack {
@@ -781,6 +783,9 @@ struct PaceHRHeaderRow: View {
             LegendDot(color: Tokens.Palette.accentText, label: "PACE")
             LegendDot(color: Tokens.Zone.z5, label: "HR")
         }
+        // Both bounds given, so the frame takes the offered width outright instead of
+        // deferring to the HStack's drifted sum — the same one-liner as #74.
+        .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
     }
 }
 

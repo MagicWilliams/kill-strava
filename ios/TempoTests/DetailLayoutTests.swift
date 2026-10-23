@@ -17,6 +17,12 @@ import SwiftUI
 /// CI runs `xcodebuild -quiet`, which keeps assertion messages out of the log and prints only
 /// the names of the tests that failed — so which band an overrun lands in has to be in the
 /// name, or the one thing the run needs to tell us is the one thing it can't.
+///
+/// What the sweep found, 2026-10: of the six rows #81 named, only `PaceHRHeaderRow` overruns,
+/// and it does so at widths real phones hand it — so that one carries the fix and the other
+/// five are pinned clean. The distance hero drifted in one state that looked real and wasn't:
+/// "0.00" with a "0:00" clock, which no run on file can produce. Both of the no-pace states a
+/// run can actually reach measure clean.
 @MainActor
 final class DetailLayoutTests: XCTestCase {
 
