@@ -313,4 +313,63 @@ final class RunDetailJournalTests: XCTestCase {
         XCTAssertEqual(RunDetailJournal.failureMessage(plan, fieldsSaved: false, photo: .failed),
                        "Couldn't save your changes or the photo. Check your connection and try again.")
     }
+    // MARK: - The object left behind
+
+    /// A replaced photo leaves its object in `run-photos`; nothing else ever names it again.
+    /// Before #179 it stayed there forever, one per edit, in a bucket nobody can see into.
+    func testReplacingAPhotoOrphansTheOneItReplaced() {
+        let old = RunJournalPayload.photoPath(userID: uid, runID: runID, photoID: photoID)
+        let new = RunJournalPayload.photoPath(userID: uid, runID: runID, photoID: UUID())
+        XCTAssertEqual(RunDetailJournal.orphanedObjectKey(previous: old, photo: .attached(new), userID: uid), old)
+    }
+
+    func testRemovingAPhotoOrphansIt() {
+        let old = RunJournalPayload.photoPath(userID: uid, runID: runID, photoID: photoID)
+        XCTAssertEqual(RunDetailJournal.orphanedObjectKey(previous: old, photo: .removed, userID: uid), old)
+    }
+
+    /// The delete runs after the row write and only if it landed. A photo write that failed
+    /// leaves `photo_path` naming the old object — deleting it there is deleting the photo
+    /// that is still on screen.
+    func testAFailedOrUntouchedPhotoWriteDeletesNothing() {
+        let old = RunJournalPayload.photoPath(userID: uid, runID: runID, photoID: photoID)
+        XCTAssertNil(RunDetailJournal.orphanedObjectKey(previous: old, photo: .failed, userID: uid))
+        XCTAssertNil(RunDetailJournal.orphanedObjectKey(previous: old, photo: .untouched, userID: uid))
+    }
+
+    /// `attachPhoto` uploads with `upsert: true` and retries on the same path, so a landed
+    /// attempt whose response was lost ends with the new key *being* the old one. Deleting
+    /// then would delete the photo that just succeeded.
+    func testAnUpsertOntoItsOwnKeyDeletesNothing() {
+        let same = RunJournalPayload.photoPath(userID: uid, runID: runID, photoID: photoID)
+        XCTAssertNil(RunDetailJournal.orphanedObjectKey(previous: same, photo: .attached(same), userID: uid))
+        // Same object, written down with the bucket in front: still the same object.
+        XCTAssertNil(RunDetailJournal.orphanedObjectKey(previous: same,
+                                                        photo: .attached("run-photos/" + same),
+                                                        userID: uid))
+    }
+
+    /// Nothing was there: a first photo orphans nothing.
+    func testAFirstPhotoOrphansNothing() {
+        let new = RunJournalPayload.photoPath(userID: uid, runID: runID, photoID: photoID)
+        XCTAssertNil(RunDetailJournal.orphanedObjectKey(previous: nil, photo: .attached(new), userID: uid))
+        XCTAssertNil(RunDetailJournal.orphanedObjectKey(previous: "   ", photo: .attached(new), userID: uid))
+    }
+
+    /// A delete is the one operation that cannot be taken back, so it gets the same gate the
+    /// signed read gets: only a path inside this athlete's own prefix. A stored path that is
+    /// someone else's, or not a path this build wrote, is left alone rather than guessed at.
+    func testOnlyTheAthletesOwnPathIsEverDeleted() {
+        let theirs = RunJournalPayload.photoPath(userID: UUID(), runID: runID, photoID: photoID)
+        XCTAssertNil(RunDetailJournal.orphanedObjectKey(previous: theirs, photo: .removed, userID: uid))
+
+        let ours = RunJournalPayload.photoPath(userID: uid, runID: runID, photoID: photoID)
+        XCTAssertNil(RunDetailJournal.orphanedObjectKey(previous: ours, photo: .removed, userID: nil))
+
+        // Normalized the same way the read normalizes it, so the key handed to Storage is
+        // the key Storage holds — not `run-photos/run-photos/…`.
+        XCTAssertEqual(RunDetailJournal.orphanedObjectKey(previous: "run-photos/" + ours,
+                                                          photo: .removed, userID: uid),
+                       ours)
+    }
 }

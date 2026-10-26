@@ -153,9 +153,12 @@ enum RunJournal {
         }
     }
 
-    /// Take the photo off a run (#124): `photo_path` written as null. The object stays in the
-    /// bucket — an orphan in a private bucket costs nothing, and deleting it first would
-    /// leave a row naming a missing object if the null write then failed.
+    /// Take the photo off a run (#124): `photo_path` written as null.
+    ///
+    /// The null write comes first and the object goes afterwards, never the other way round:
+    /// deleting first would leave a row naming a missing object if the null write then
+    /// failed. The caller sweeps the object once this returns true — see
+    /// `RunDetailJournal.orphanedObjectKey` and `deletePhotoObject` below.
     static func detachPhoto(fromRun runID: UUID) async -> Bool {
         do {
             try await withRetry("journal.photo_detach_failed") {
@@ -167,6 +170,32 @@ enum RunJournal {
             }
             return true
         } catch {
+            return false
+        }
+    }
+
+    /// Delete an object nothing names any more (#179): the photo a replace or a remove left
+    /// behind. Which key is safe to delete — and that the row has already moved off it — is
+    /// decided in `RunDetailJournal.orphanedObjectKey`; this only carries it out.
+    ///
+    /// Best effort, and deliberately not retried. By the time this runs the row is already
+    /// right, so a failure costs one orphan in a private bucket: nothing on screen, nothing
+    /// to tell the athlete, and nothing worth holding the save bar open for. It is logged, so
+    /// a bucket that is quietly refusing every delete is visible in `app_events` rather than
+    /// only in the storage bill.
+    @discardableResult
+    static func deletePhotoObject(objectKey: String) async -> Bool {
+        do {
+            _ = try await Supa.client.storage
+                .from(RunJournalPayload.bucket)
+                .remove(paths: [objectKey])
+            Telemetry.info("journal.photo_orphan_deleted")
+            return true
+        } catch {
+            // The key is the athlete's own `<uid>/<run>/<photo>.jpg` — no free text in it —
+            // but the error could still be a Postgrest one, so report it by code like the
+            // rest of this file does rather than by description.
+            report("journal.photo_orphan_delete_failed", error, context: [:])
             return false
         }
     }

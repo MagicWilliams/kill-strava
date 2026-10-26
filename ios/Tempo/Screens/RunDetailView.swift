@@ -21,6 +21,7 @@ struct RunDetailView: View {
     @StateObject private var model = RunDetailStore()
     @StateObject private var shoes = ShoeStore()
     @State private var showFullMap = false
+    @State private var showFullPhoto = false
     @State private var editingJournal = false
     @State private var scrub: RunDetail.SeriesPoint?
 
@@ -88,6 +89,7 @@ struct RunDetailView: View {
         .task { await shoes.load() }
         .task(id: photoKey) { await model.loadPhoto(key: photoKey) }
         .fullScreenCover(isPresented: $showFullMap) { fullMap }
+        .fullScreenCover(isPresented: $showFullPhoto) { fullPhoto }
         .sheet(isPresented: $editingJournal) {
             RunJournalEditSheet(runID: run.id, journal: journal, fallbackHeading: dateHeading,
                                 initialPhoto: model.photo, shoes: shoes) { landed, image in
@@ -143,7 +145,11 @@ struct RunDetailView: View {
     }
 
     /// His photo in the map's place. The route is one tap away on it, into the same full
-    /// map the route hero opens.
+    /// map the route hero opens; the photo itself is one tap from full screen (#179).
+    ///
+    /// The hero crops to fill 340 pt, so a tall photo is shown with its top and bottom cut
+    /// off. That is the right crop for a page header and the wrong one for looking at the
+    /// photo — hence the expand glyph, bottom-leading, clear of the Route capsule.
     private func photoHero(routeButton: Bool) -> some View {
         ZStack {
             Tokens.Palette.inset
@@ -156,7 +162,23 @@ struct RunDetailView: View {
         .frame(height: 340)
         .frame(maxWidth: .infinity)
         .clipped()
+        .contentShape(Rectangle())
+        .onTapGesture { if model.photo != nil { showFullPhoto = true } }
         .accessibilityLabel("Run photo")
+        .accessibilityAddTraits(.isButton)
+        .accessibilityHint("Opens the photo full screen")
+        .overlay(alignment: .bottomLeading) {
+            if model.photo != nil {
+                Image(systemName: "arrow.down.left.and.arrow.up.right")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Tokens.Palette.textSecondary)
+                    .padding(8)
+                    .background(.ultraThinMaterial, in: Circle())
+                    .padding(.leading, 16)
+                    .padding(.bottom, 34)   // clear the content sheet's 22 pt overlap
+                    .allowsHitTesting(false)
+            }
+        }
         .overlay(alignment: .bottomTrailing) {
             if routeButton {
                 Button { showFullMap = true } label: {
@@ -211,6 +233,53 @@ struct RunDetailView: View {
         // Follows system appearance, like the hero map it expands from: tapping a light
         // hero shouldn't flip the route to a dark map. The close button stays legible
         // because its token and material adapt together.
+    }
+
+    /// His photo, full screen and uncropped, with the share sheet one tap away (#179).
+    ///
+    /// Black ground in both themes, unlike `fullMap` which follows the system: the photo is
+    /// the content here, and the light canvas would both tint it and fight it for attention.
+    private var fullPhoto: some View {
+        ZStack(alignment: .topTrailing) {
+            Color.black.ignoresSafeArea()
+            if let photo = model.photo {
+                Image(uiImage: photo)
+                    .resizable()
+                    .scaledToFit()
+                    .accessibilityLabel("Run photo")
+            }
+            HStack(spacing: 10) {
+                if let photo = model.photo {
+                    // The photo as it is held in memory — the resized JPEG the upload wrote,
+                    // not the original off the camera roll, which the app never had.
+                    ShareLink(item: Image(uiImage: photo),
+                              preview: SharePreview(shareTitle, image: Image(uiImage: photo))) {
+                        Image(systemName: "square.and.arrow.up")
+                            .font(.system(size: 15, weight: .bold))
+                            .foregroundStyle(Tokens.Palette.textPrimary)
+                            .frame(width: 40, height: 40)
+                            .background(.ultraThinMaterial, in: Circle())
+                    }
+                    .accessibilityLabel("Share photo")
+                }
+                Button { showFullPhoto = false } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 15, weight: .bold))
+                        .foregroundStyle(Tokens.Palette.textPrimary)
+                        .frame(width: 40, height: 40)
+                        .background(.ultraThinMaterial, in: Circle())
+                }
+                .accessibilityLabel("Close photo")
+            }
+            .padding(20)
+        }
+        // The share sheet's own chrome is the system's; the dark ground behind it is ours.
+        .preferredColorScheme(.dark)
+    }
+
+    /// What the share sheet calls the photo: his title for the run, else its date.
+    private var shareTitle: String {
+        RunDetailJournal.heading(journal.title) ?? dateHeading
     }
 
     private var backButton: some View {
