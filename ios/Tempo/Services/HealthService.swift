@@ -166,8 +166,63 @@ final class HealthService {
                                  "proposed": "\(kept.count)",
                                  "oldest": report.oldest ?? "-",
                                  "newest": report.newest ?? "-"])
+
+        // After the write, never before it (#37), and only over what this pass wrote.
+        await correctUnrecordedStops(written)
         return written.count
     }
+
+    /// Put the two clocks of a just-written, pause-less workout in the right columns (#237).
+    ///
+    /// A source that writes no pause events reports its whole wall-clock span as duration,
+    /// so the row lands with moving = elapsed = however long the watch was left running —
+    /// 10h24m for 8.1 mi on 15 Oct. The distance samples know better. This reads them for
+    /// the runs this sync just inserted and, when `SampleMovingTime.correctedDurations` says
+    /// the gap is a real stop rather than noise, rewrites those two columns and the pace.
+    ///
+    /// New rows only, by construction: `written` is what the server confirmed it took this
+    /// pass, so a stored run is never re-read on a later refresh, and the archive is part 2's
+    /// review card, not this. Capped by `SampleMovingTime.ingestTargets`; a first sync that
+    /// writes the whole archive checks the newest few and reports how many it skipped.
+    ///
+    /// The update is guarded on `duration_s` still being the value just written, so an edit
+    /// that landed in between is never overwritten. A failure leaves the row as inserted —
+    /// wrong in the old way, not a new way.
+    private func correctUnrecordedStops(_ written: [RunSummary]) async {
+        let targets = SampleMovingTime.ingestTargets(written: written)
+        guard !targets.isEmpty else { return }
+        struct Patch: Encodable { let duration_s: Int; let elapsed_duration_s: Int?; let avg_pace_sec: Int? }
+        var fixed: [UUID] = []
+        for run in targets {
+            let moving = await sampleReader.sampleMovingSeconds(workoutID: run.id)
+            guard let corrected = SampleMovingTime.corrected(run, sampleMoving: moving) else { continue }
+            let patch = Patch(duration_s: corrected.durationS,
+                              elapsed_duration_s: corrected.elapsedS,
+                              avg_pace_sec: corrected.paceSecPerMile)
+            // `.select` for the same reason as the upsert's (#94): an update that matched
+            // nothing returns no error, and only the returned rows say it landed.
+            struct Updated: Decodable { let external_id: String }
+            let updated: [Updated]? = try? await Supa.client.from("runs").update(patch)
+                .eq("source", value: WorkoutRow.source)
+                .eq("external_id", value: run.id.uuidString)
+                .eq("duration_s", value: run.durationS)
+                .select("external_id")
+                .execute()
+                .value
+            if updated?.isEmpty == false { fixed.append(run.id) }
+        }
+        let eligible = SampleMovingTime.ingestTargets(written: written, limit: .max).count
+        guard !fixed.isEmpty || eligible > targets.count else { return }
+        // Counts and HealthKit uuids only — no pace, no duration.
+        Telemetry.info("sync.moving_time_corrected", "pause-less workouts given sample moving time",
+                       context: ["count": "\(fixed.count)",
+                                 "checked": "\(targets.count)",
+                                 "unchecked": "\(eligible - targets.count)",
+                                 "ids": fixed.map(\.uuidString).joined(separator: ",")])
+    }
+
+    /// Reads one workout's distance samples, and nothing else, for `correctUnrecordedStops`.
+    private let sampleReader = RunDetailLoader()
 
     /// The Garmin re-export signature — reported only when it is actually news.
     ///

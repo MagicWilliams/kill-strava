@@ -46,7 +46,10 @@ struct RunDetail {
 
     // Time accounting (Garmin-style trio)
     var timerS: Int = 0          // workout duration as recorded
-    var movingS: Int = 0         // derived: sample intervals actually moving
+    var movingS: Int = 0         // derived: sample intervals actually moving (timer when no samples)
+    /// `SampleMovingTime.movingSeconds`, rounded; nil when the workout had no distance
+    /// samples. The Time card compares it with the stored moving time (#237).
+    var sampleMovingS: Int?
     var elapsedS: Int = 0        // wall clock start → end
 
     var miles: Double = 0
@@ -122,6 +125,29 @@ final class RunDetailLoader {
                 meters: $0.quantity.doubleValue(for: meterUnit)
             )
         })
+    }
+
+    /// Moving time by the distance samples, for one workout the sync just wrote (#237).
+    ///
+    /// One workout lookup and one distance query — no HR, no route, no steps. Nil when the
+    /// workout is gone or wrote no distance samples; the caller then keeps the stored clocks.
+    func sampleMovingSeconds(workoutID: UUID) async -> Int? {
+        guard let workout = try? await workout(uuid: workoutID) else { return nil }
+        let samples = (try? await quantitySamples(.distanceWalkingRunning, for: workout)) ?? []
+        return SampleMovingTime.movingSeconds(Self.movingTimeSamples(samples, start: workout.startDate))
+            .map { Int($0.rounded()) }
+    }
+
+    /// HealthKit distance samples in the engine's shape: seconds from the workout start.
+    private static func movingTimeSamples(_ samples: [HKQuantitySample], start: Date) -> [SampleMovingTime.Sample] {
+        let meterUnit = HKUnit.meter()
+        return samples.map {
+            SampleMovingTime.Sample(
+                start: $0.startDate.timeIntervalSince(start),
+                end: $0.endDate.timeIntervalSince(start),
+                meters: $0.quantity.doubleValue(for: meterUnit)
+            )
+        }
     }
 
     // MARK: - Queries
@@ -219,21 +245,17 @@ final class RunDetailLoader {
             .sumQuantity()?.doubleValue(for: .kilocalorie())).map { Int($0.rounded()) }
 
         // ── Cumulative distance timeline ──────────────────────────────────────
-        // (t seconds from start, cumulative meters); also per-interval speed for moving time.
+        // (t seconds from start, cumulative meters).
+        let samples = Self.movingTimeSamples(distance, start: start)
         var timeline: [(t: Double, m: Double)] = [(0, 0)]
         var cum = 0.0
-        var movingS = 0.0
-        for s in distance {
-            let t0 = s.startDate.timeIntervalSince(start)
-            let t1 = s.endDate.timeIntervalSince(start)
-            let meters = s.quantity.doubleValue(for: meterUnit)
-            let dt = max(t1 - t0, 0.01)
-            // Gaps between samples (paused watch) contribute no distance and no moving time.
-            if meters / dt > 0.45 { movingS += dt }   // slower than ~60:00/mi counts as stopped
-            cum += meters
-            timeline.append((t1, cum))
+        for s in samples {
+            cum += s.meters
+            timeline.append((s.end, cum))
         }
-        d.movingS = distance.isEmpty ? d.timerS : Int(movingS.rounded())
+        // Moving vs stopped is decided in one place, shared with ingest (#237).
+        d.sampleMovingS = SampleMovingTime.movingSeconds(samples).map { Int($0.rounded()) }
+        d.movingS = d.sampleMovingS ?? d.timerS
         if !distance.isEmpty {
             d.cumulativeTimesS = timeline.map(\.t)
             d.cumulativeMeters = timeline.map(\.m)

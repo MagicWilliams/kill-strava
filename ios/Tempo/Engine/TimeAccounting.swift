@@ -68,6 +68,42 @@ enum TimeAccounting {
         return Clocks(movingS: moving, elapsedS: elapsedS)
     }
 
+    // MARK: - What the Time card says
+
+    /// The line under the detail page's Time card.
+    enum CardNote: Equatable {
+        /// A stop worth showing: the moving, elapsed and stopped columns.
+        case stops
+        /// The two clocks agree to the second.
+        case continuous
+        /// The clocks differ, but by less than `noiseFloorSeconds`.
+        case withinNoise
+        /// The record shows no stop, but the distance samples show a long one (#237): a
+        /// source that wrote no pauses, stored before ingest learned to read the samples.
+        case unrecordedStop(sampleMovingS: Int)
+    }
+
+    /// Which note the Time card shows.
+    ///
+    /// The 15 Oct 2026 run is why this is a decision and not an `if`: stored 8.1 mi over
+    /// 10h24m on both clocks, the card said "Ran continuously — moving and elapsed time are
+    /// the same", and the AVG SPEED tile beside it read 4.8 mph off the samples. The card was
+    /// repeating the record back, and the record was wrong. When the samples disagree by
+    /// enough that ingest would now correct the run (`SampleMovingTime.correctedDurations`),
+    /// the card says so instead. The stored clocks still stand — rewriting an archived run
+    /// is the athlete's call, not the page's.
+    ///
+    /// - Parameter sampleMovingS: moving time by the distance samples, or nil when there are
+    ///   none or the run is corrected (the athlete's numbers outrank the samples).
+    static func cardNote(_ clocks: Clocks, sampleMovingS: Int?) -> CardNote {
+        if clocks.hasMeaningfulStop { return .stops }
+        if let sampleMovingS,
+           SampleMovingTime.correctedDurations(stored: clocks.movingS, sampleMoving: sampleMovingS) != nil {
+            return .unrecordedStop(sampleMovingS: sampleMovingS)
+        }
+        return clocks.stoppedS == 0 ? .continuous : .withinNoise
+    }
+
     /// Seconds per mile over a given clock. Nil for distances too short to divide by.
     ///
     /// The same guard as `RunSummary.paceSecPerMile` — a 0.02 mi GPS blip produces a pace
