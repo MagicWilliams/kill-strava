@@ -18,6 +18,13 @@ export interface RunRow {
 /// The shortest run that counts as a sustained effort to extrapolate a race from.
 export const QUALIFYING_MI = 2.5;
 
+/// The slowest average pace (s/mi) that counts as a running effort. Slower is a walk, or a
+/// watch left recording after the run: on 15 Oct 2026 an 8.1 mi workout with a 10h24m wall
+/// clock (77:00/mi) was the only run in the window, and it set a 36-hour projection (#227).
+/// Here it would also have set the plan's training paces. Mirrors
+/// `ProjectionHistory.maxQualifyingPaceSecPerMile` in the app.
+export const MAX_QUALIFYING_PACE_S = 1200;
+
 export type Features = ReturnType<typeof extractFeatures>;
 
 export function extractFeatures(runs: RunRow[], raceMi: number, now: Date = new Date()) {
@@ -49,13 +56,14 @@ export function extractFeatures(runs: RunRow[], raceMi: number, now: Date = new 
   const recent = runs.filter((r) => new Date(r.start_time) >= eightWeeksAgo);
   const longestRecentMi = Math.max(0, ...recent.map((r) => r.distance_m / MI));
 
-  // Best sustained effort (≥ 2.5 mi) in the last 8 weeks → Riegel current marathon fitness.
+  // Best sustained effort (≥ 2.5 mi, no slower than 20:00/mi) in the last 8 weeks → Riegel current marathon fitness.
   let bestPace = Infinity;
   let bestMiles = 0;
   for (const r of recent) {
     const mi = r.distance_m / MI;
     if (mi >= QUALIFYING_MI) {
       const pace = r.duration_s / mi;
+      if (pace > MAX_QUALIFYING_PACE_S) continue;
       if (pace < bestPace) {
         bestPace = pace;
         bestMiles = mi;

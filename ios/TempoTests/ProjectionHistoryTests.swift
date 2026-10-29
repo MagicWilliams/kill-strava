@@ -109,6 +109,45 @@ final class ProjectionHistoryTests: XCTestCase {
         XCTAssertNil(ProjectionHistory.projection(onlyStrides, asOf: now, raceMeters: marathon, calendar: cal))
     }
 
+    // MARK: - The walking ceiling (#227)
+
+    /// The incident itself: on 15 Oct 2026 the only run of 2.5 mi or more in six weeks was
+    /// 8.1 mi with a 10h24m wall clock — a watch left recording. "Fastest qualifying run"
+    /// picked it because it was the only one, and the marathon projection read 36:06:09.
+    func testAWatchLeftRunningCannotSetTheProjection() {
+        let leftRunning = RunSummary(
+            id: UUID(), start: date("2026-08-20"), distanceM: 13_047, durationS: 37_459, avgHR: nil
+        )
+        XCTAssertEqual(leftRunning.paceSecPerMile, 4_620, "77:00/mi, as stored")
+
+        XCTAssertNil(ProjectionHistory.settingRun([leftRunning], asOf: now, calendar: cal))
+        XCTAssertNil(
+            ProjectionHistory.projection([leftRunning], asOf: now, raceMeters: marathon, calendar: cal),
+            "no plausible effort means no projection, not a 36-hour one"
+        )
+    }
+
+    /// Both sides of the ceiling. 20:00/mi exactly still counts — a run-walk is a run.
+    func testTheCeilingIsInclusiveAtTwentyMinutesAMile() {
+        let atCeiling = run("2026-08-24", miles: 3, paceSec: 1_200)
+        let justOver = run("2026-08-25", miles: 3, paceSec: 1_201)
+
+        XCTAssertEqual(ProjectionHistory.settingRun([atCeiling], asOf: now, calendar: cal)?.id, atCeiling.id)
+        XCTAssertNil(ProjectionHistory.settingRun([justOver], asOf: now, calendar: cal))
+    }
+
+    /// The ceiling only removes a run from the pool; a real run in the same window still wins.
+    func testAWalkInTheWindowLeavesTheRealRunInCharge() {
+        let walk = run("2026-08-26", miles: 8, paceSec: 1_500)
+        let easy = run("2026-08-20", miles: 5, paceSec: 580)
+
+        let replay = ProjectionHistory.series(
+            runs: [walk, easy], from: date("2026-08-13"), to: now, raceMeters: marathon, calendar: cal
+        )
+        XCTAssertFalse(replay.isEmpty)
+        XCTAssertTrue(replay.allSatisfy { $0.runID == easy.id }, "the chart never plots the walk either")
+    }
+
     // MARK: - The extrapolation
 
     /// A known effort to a known marathon time. Ten miles at 7:00/mi — the shape of a
