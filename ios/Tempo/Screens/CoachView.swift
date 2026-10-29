@@ -381,6 +381,15 @@ struct CoachView: View {
             if action.type == "create_plan" {
                 planGoalLine(for: action, state: state)
             }
+            // What Confirm will close, said by code (#238). Only while it is still an offer:
+            // once applied there is no goal left to name, and the summary is the record.
+            if action.type == GoalRetirement.actionType,
+               [ChatMessage.ActionState.pending, .failed, .applying].contains(state) {
+                Text(GoalRetirement.cardLine(goal: store.goal, plan: store.plan))
+                    .font(Tokens.Font.ui(13, .semibold))
+                    .foregroundStyle(store.goal == nil && store.plan == nil
+                                     ? Tokens.Palette.danger : Tokens.Palette.textSecondary)
+            }
 
             // A run card's numbers, worked out by code from the run as stored (#206): what
             // Confirm will write, shown before the tap. Only while the card is still an offer;
@@ -477,6 +486,7 @@ struct CoachView: View {
         case "add_run": return "Log run"
         case "set_risk_tolerance": return "Training mode"
         case "remember": return "Remember this"
+        case GoalRetirement.actionType: return "End goal"
         default: return "Proposed change"
         }
     }

@@ -22,7 +22,8 @@ struct YouView: View {
     private var subtitle: String? {
         guard let goal = store.goal, let day = goal.raceDay else { return "No goal yet" }
         let weeks = max((Calendar.current.dateComponents([.day], from: .now, to: day).day ?? 0) / 7, 0)
-        return "\(goal.raceName ?? "Race") · \(weeks) weeks out"
+        let role = goal.raceRole.label.map { " · \($0)" } ?? ""
+        return "\(goal.raceName ?? "Race")\(role) · \(weeks) weeks out"
     }
 
     @ViewBuilder private var goal: some View {
@@ -30,6 +31,9 @@ struct YouView: View {
             HStack {
                 SectionLabel("Your goal", color: Tokens.Palette.accentText)
                 Spacer()
+                if let role = store.goal?.raceRole.label {
+                    Tag(text: role)
+                }
                 if let projected = store.plan?.projected_finish_s,
                    let target = store.goal?.goalTimeSeconds {
                     if projected <= target {

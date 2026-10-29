@@ -16,6 +16,7 @@
 import { sanitizeHistory, type WireMessage } from "./history.ts";
 import { RACE_DISTANCES } from "./distances.ts";
 import { runEditing, shapeRunInput, speaksRunFacts } from "./run_corrections.ts";
+import { goalLifecycle, RACE_ROLE_PROPERTY } from "./goal_lifecycle.ts";
 import { parseThreadSummary } from "./summary.ts";
 
 const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
@@ -41,8 +42,9 @@ const SAMPLING = {
   output_config: { effort: "medium" },
 } as const;
 
-// The run-editing lines differ by client (#206): see run_corrections.ts.
-const persona = (runEditRules: string) => `You are Coach, the in-app running coach for Tempo — a marathon training app.
+// The run-editing lines differ by client (#206): see run_corrections.ts. So do the goal
+// lifecycle lines (#238): see goal_lifecycle.ts.
+const persona = (runEditRules: string, goalRules: string) => `You are Coach, the in-app running coach for Tempo — a marathon training app.
 
 Voice: calm expert. Measured, specific, honest. No hype, no exclamation marks, no emoji.
 You are talking to the athlete whose data is in <athlete_context>. Do not assume their name or gender.
@@ -80,6 +82,7 @@ The plan:
 - If <athlete_context> has no plan and the athlete wants one (or asks where to start), assess their data honestly and PROPOSE a goal: what you'd target and why, grounded in the features you see. When they agree, call create_plan — the plan engine builds the actual schedule from their real history.
 - If the data supports a different goal than they stated, say so and propose what it supports; they own the final call (their risk dial applies).
 - create_plan states the race distance in its payload (distance, plus distance_m for "custom"), not only in summary. For any race other than the active goal's race date it is required, and the card shows the athlete what the payload says, so the payload and the summary must name the same distance. Never assume a marathon.
+${goalRules}
 - "Just finish" is a legitimate goal, not a gap to fill. When the athlete wants to finish rather than hit a time, call create_plan with goal_type "finish" and no goal_time_s, and do not push a target time on them; the plan engine sets paces from current fitness. You can mention what the data says they could run if they ask.
 - When the athlete wants to change plan structure in chat ("drop me to 5 days", "move my long run to Saturday"), call update_plan_settings. It regenerates the plan forward from this week and recomputes the projection — say that plainly.
 - Conversation alone NEVER changes the plan. If the athlete's feedback means the plan should actually change — a single workout via update_session, structure via update_plan_settings, a different goal or a reshaped block via create_plan — call the tool in the same message. Never say you'll adjust something without a tool call; nothing happens unless a card is confirmed.
@@ -183,6 +186,7 @@ const OTHER_TOOLS = [
         },
         race_name: { type: "string" },
         race_date: { type: "string", description: "ISO date (yyyy-mm-dd)." },
+        race_role: RACE_ROLE_PROPERTY,
         rationale: { type: "string", description: "Why this goal fits the data — shown to the athlete." },
         summary: { type: "string", description: "One line for the confirm card, e.g. 'Build my plan: 3:15:00 at Chicago, Oct 11'." },
       },
@@ -274,7 +278,9 @@ Deno.serve(async (req) => {
     // else (every build installed before it) keeps the totals schema it was written against.
     const facts = speaksRunFacts(features);
     const runTools = runEditing(features);
-    const TOOLS = [...runTools.tools, ...OTHER_TOOLS];
+    // #238: end_goal only for a build that can apply it, the same handshake as run_facts.
+    const goalTools = goalLifecycle(features);
+    const TOOLS = [...runTools.tools, ...OTHER_TOOLS, ...goalTools.tools];
 
     // Takeaway mode: one-shot per-run read, cached by the app in runs.coach_takeaway.
     // Block review mode: one-shot block retrospective, cached by the app in goals.review.
@@ -290,7 +296,7 @@ Deno.serve(async (req) => {
       return Response.json({ error: "messages required" }, { status: 400 });
     }
 
-    let system = `${persona(runTools.rules)}\n\n<athlete_context>\n${JSON.stringify(context ?? {}, null, 1)}\n</athlete_context>`;
+    let system = `${persona(runTools.rules, goalTools.rules)}\n\n<athlete_context>\n${JSON.stringify(context ?? {}, null, 1)}\n</athlete_context>`;
     let wireMessages: WireMessage[] = messages ?? [];
     if (takeaway) {
       system += `\n\n<run_detail>\n${JSON.stringify(run ?? {}, null, 1)}\n</run_detail>`;

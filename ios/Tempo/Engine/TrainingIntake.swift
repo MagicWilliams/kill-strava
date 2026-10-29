@@ -385,6 +385,10 @@ struct GoalPreferences: Codable, Hashable {
     var focus: [String]?
     var quality: [String]?
     var notes: String?
+    /// "goal" | "tune_up" (#238), set from the coach's create_plan card rather than the intake.
+    /// Kept here, as a string, so a regeneration that carries these preferences forward
+    /// carries the role with them. Read it through `RaceRole.of`.
+    var race_role: String? = nil
 }
 
 /// What an intake-born create_plan card carries, persisted inside `coach_messages
@@ -455,6 +459,9 @@ struct PlanRequest: Encodable, Equatable {
     var started_week: Int?
     var start_mileage: Double?
     var preferences: GoalPreferences?
+    /// The create_plan card's own race_role (#238). `plan` folds it into the goal's
+    /// preferences; a regeneration's carried preferences already hold it.
+    var race_role: String?
 
     init(goal_time_s: Int?, race_name: String?, race_date: String) {
         self.goal_time_s = goal_time_s
@@ -464,7 +471,7 @@ struct PlanRequest: Encodable, Equatable {
 
     private enum CodingKeys: String, CodingKey {
         case goal_time_s, race_name, race_date, distance, distance_m, course_type, goal_type
-        case started_week, start_mileage, preferences
+        case started_week, start_mileage, preferences, race_role
     }
 
     /// `goal_time_s` always goes out, as an explicit null when there is no target: absent
@@ -482,6 +489,7 @@ struct PlanRequest: Encodable, Equatable {
         try c.encodeIfPresent(started_week, forKey: .started_week)
         try c.encodeIfPresent(start_mileage, forKey: .start_mileage)
         try c.encodeIfPresent(preferences, forKey: .preferences)
+        try c.encodeIfPresent(race_role, forKey: .race_role)
     }
 
     /// A create_plan confirmed off the intake: the coach's goal, the athlete's everything else.
@@ -583,15 +591,21 @@ struct PlanRequest: Encodable, Equatable {
         calendar: Calendar
     ) -> PlanRequest? {
         guard let raceDate = action.race_date else { return nil }
+        // The tune-up question is the card's alone: the intake never asks it (#238).
+        let role = RaceRole(wire: action.race_role)?.rawValue
         if let stamp = action.intake {
             guard stamp.accepts(goalTimeS: action.goal_time_s) else { return nil }
-            return .fromIntake(stamp, goalTimeS: action.goal_time_s, raceName: action.race_name, raceDate: raceDate)
+            var r = PlanRequest.fromIntake(stamp, goalTimeS: action.goal_time_s, raceName: action.race_name, raceDate: raceDate)
+            r.race_role = role
+            return r
         }
         let carried = carryingForward(
             goal: goal, planStartDate: planStartDate, goalTimeS: action.goal_time_s,
             raceName: action.race_name, raceDate: raceDate, today: today, calendar: calendar
         )
-        return fromChatProposal(carried, goalType: action.goal_type, distance: action.distance, distanceM: action.distance_m)
+        var r = fromChatProposal(carried, goalType: action.goal_type, distance: action.distance, distanceM: action.distance_m)
+        r?.race_role = role
+        return r
     }
 
     /// Whether the active goal can be rebuilt after a settings change: it needs a race date,
@@ -639,9 +653,16 @@ extension PlanRequest {
         return d.label
     }
 
+    /// What this request will store as the race's role: the card's own, else the one its
+    /// carried preferences hold, else `.goal`. The same order `plan` resolves it in.
+    var raceRole: RaceRole {
+        RaceRole(wire: race_role) ?? RaceRole.of(preferences)
+    }
+
     /// "5K · Turkey Trot 2026 · Nov 5" — the race the card will save, read from the request
     /// rather than from the coach's summary. On 2026-10-15 the summary said 5K and the payload
     /// said nothing, and the only place that disagreement could have been seen was the card.
+    /// A tune-up says so at the end (#238): "5K · Turkey Trot · Nov 27 · tune-up".
     func cardLine(calendar: Calendar) -> String {
         let name = race_name?.trimmingCharacters(in: .whitespacesAndNewlines)
         let day = Self.parseDay(race_date, calendar: calendar).map { date -> String in
@@ -652,7 +673,7 @@ extension PlanRequest {
             f.dateFormat = "MMM d"
             return f.string(from: date)
         }
-        return [distanceLabel, name?.isEmpty == false ? name : nil, day]
+        return [distanceLabel, name?.isEmpty == false ? name : nil, day, raceRole.label]
             .compactMap { $0 }
             .joined(separator: " · ")
     }

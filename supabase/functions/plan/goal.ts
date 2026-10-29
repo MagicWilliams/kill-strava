@@ -18,6 +18,11 @@
 //    the SAME race date as the active goal, whatever the request leaves out is carried over
 //    from that goal. A different race date is a different race: nothing carries.
 //
+// 3. What the race is for (#238): `race_role` ("goal" | "tune_up") lives in preferences, and
+//    rides into the request either top-level (a create_plan card's own field) or inside
+//    preferences (a regeneration's carried copy). A same-race regeneration from a build that
+//    predates it sends preferences with no race_role, so the active goal's carries over.
+//
 // And one rule (#184): a new race with no distance is refused, never guessed. Until
 // 2026-10-15 it resolved to a marathon. A coach card whose summary read "5K at Turkey Trot"
 // but whose payload named no distance was saved as a 42,195 m goal with a marathon
@@ -50,7 +55,10 @@ export interface ResolvedGoal {
   course_type: string | null;
   goal_type: string | null;
   started_week: number | null;
+  /// Always reflects `race_role` when one is known (#238).
   preferences: Record<string, unknown> | null;
+  /// `preferences.race_role`, or null when nobody said. Null reads as "goal".
+  race_role: RaceRole | null;
   /// True when fields were carried over from the active goal (a regeneration).
   inherited: boolean;
 }
@@ -63,6 +71,20 @@ const weekNo = (v: unknown) => {
   return Number.isInteger(n) && n >= 1 && n <= 52 ? n : null;
 };
 const given = (v: unknown) => v !== undefined && v !== null;
+
+/// What a race is for (#238, #232 1A). "goal" is the race the block exists for; "tune_up" is
+/// one run on the way to a bigger goal. A goal with neither is "goal".
+export const RACE_ROLES = ["goal", "tune_up"] as const;
+export type RaceRole = typeof RACE_ROLES[number];
+
+/// A race_role as written by the model or read off a row, or null. "tune-up" and "Tune up"
+/// are the same answer; anything else is not a role, and is dropped rather than stored.
+export function raceRole(v: unknown): RaceRole | null {
+  const t = typeof v === "string" ? v.trim().toLowerCase().replace(/[^a-z]+/g, "_") : "";
+  if (t === "goal") return "goal";
+  if (t === "tune_up" || t === "tuneup") return "tune_up";
+  return null;
+}
 
 /// `started_week` means "the block week I was in when I said so". Carried onto a new goal
 /// row weeks later, it must move forward by the whole weeks that have passed, or a
@@ -105,12 +127,25 @@ export function resolveGoal(
     started_week = carried === null ? null : advanceStartedWeek(carried, str(active!.created_at), now);
   }
 
+  // The card's own field outranks the preferences it rides beside, and a same-race
+  // regeneration that names no role keeps the one the goal already has.
+  let preferences = obj(pick("preferences"));
+  const race_role = raceRole(body.race_role) ?? raceRole(preferences?.race_role) ??
+    (inherit ? raceRole(obj(active!.preferences)?.race_role) : null);
+  if (race_role) {
+    preferences = { ...(preferences ?? {}), race_role };
+  } else if (preferences && "race_role" in preferences) {
+    const { race_role: _unreadable, ...rest } = preferences;
+    preferences = rest;
+  }
+
   return {
     distance,
     course_type: str(pick("course_type")),
     goal_type: str(pick("goal_type")),
     started_week,
-    preferences: obj(pick("preferences")),
+    preferences,
+    race_role,
     inherited: inherit,
   };
 }

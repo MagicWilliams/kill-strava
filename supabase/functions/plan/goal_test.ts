@@ -199,3 +199,49 @@ Deno.test("only a time goal (or an untyped legacy goal) requires a target time",
   // 2026-10-14: an "unsure" intake right after Chicago could never be confirmed.
   for (const t of ["finish", "just finish", "pr", "unsure", "Not sure"]) assert(!requiresTargetTime(t), String(t));
 });
+
+// ── #238: what the race is for ───────────────────────────────────────────────
+
+/// The Turkey Trot as the coach saved it on 15 Oct: a tune-up, with nothing to say so.
+const TURKEY_TROT = { goal_time_s: null, race_name: "Turkey Trot", race_date: "2026-11-27", distance: "5k", goal_type: "unsure" };
+
+Deno.test("#238: race_role on a create_plan card round-trips into goals.preferences", () => {
+  const goal = resolveGoal({ ...TURKEY_TROT, race_role: "tune_up" }, ACTIVE_CHICAGO, NOW);
+  assertEquals(goal.race_role, "tune_up");
+  const row = goalInsertRow({ ...BASE, race_date: TURKEY_TROT.race_date }, goal, false);
+  assertEquals(row.preferences, { race_role: "tune_up" }, "a chat card has no intake preferences to ride beside");
+  // Read back off the row it wrote, the next regeneration still knows.
+  const again = resolveGoal({ race_date: TURKEY_TROT.race_date }, row, NOW);
+  assertEquals(again.race_role, "tune_up");
+  assertEquals(again.preferences, { race_role: "tune_up" });
+});
+
+Deno.test("#238: the card's race_role joins the intake's preferences rather than replacing them", () => {
+  const goal = resolveGoal({ ...TURKEY_TROT, race_role: "tune_up", preferences: { v: 1, plan_style: "weekly" } }, null, NOW);
+  assertEquals(goal.preferences, { v: 1, plan_style: "weekly", race_role: "tune_up" });
+});
+
+Deno.test("#238: a regeneration from a build that predates race_role keeps the goal's", () => {
+  // An installed build's GoalPreferences has no race_role, so a "drop me to 5 days" sends the
+  // goal's preferences back without it. The tune-up must survive the settings change.
+  const active = { ...ACTIVE_5K, preferences: { ...ACTIVE_5K.preferences, race_role: "tune_up" } };
+  const goal = resolveGoal({ ...BODY, preferences: ACTIVE_5K.preferences }, active, NOW);
+  assertEquals(goal.race_role, "tune_up");
+  assertEquals(goal.preferences, active.preferences);
+});
+
+Deno.test("#238: a role can be set back to goal, and a new race starts with none", () => {
+  const active = { ...ACTIVE_5K, preferences: { race_role: "tune_up" } };
+  assertEquals(resolveGoal({ ...BODY, race_role: "goal" }, active, NOW).race_role, "goal");
+  const next = resolveGoal({ ...BODY, race_date: "2027-04-20", distance: "marathon" }, active, NOW);
+  assertEquals([next.race_role, next.preferences], [null, null], "missing means goal; nothing carries to a new race");
+});
+
+Deno.test("#238: race_role spellings are one answer, and nonsense is dropped, not stored", () => {
+  for (const v of ["tune_up", "tune-up", "Tune up", "tuneup"]) {
+    assertEquals(resolveGoal({ ...TURKEY_TROT, race_role: v }, null, NOW).race_role, "tune_up", v);
+  }
+  const bad = resolveGoal({ ...TURKEY_TROT, race_role: "warmup", preferences: { plan_style: "full", race_role: 7 } }, null, NOW);
+  assertEquals(bad.race_role, null);
+  assertEquals(bad.preferences, { plan_style: "full" });
+});
