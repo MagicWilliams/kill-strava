@@ -12,6 +12,7 @@ import { MARATHON_MI, MI, paceBasis } from "./generator.ts";
 
 const NOW = new Date("2026-10-15T12:00:00Z");
 const GOAL_3_30 = 3.5 * 3600;
+const FIVE_K_MI = 5000 / MI;
 
 const daysAgo = (d: number) => new Date(NOW.getTime() - d * 86400_000).toISOString();
 const run = (d: number, miles: number, paceS: number): RunRow => ({
@@ -43,4 +44,22 @@ Deno.test("#205: a qualifying run still projects — Riegel from the run, at the
   const expected = Math.round(6.0 * 500 * Math.pow(MARATHON_MI / 6.0, 1.06));
   assertEquals(projectedFinishS(features), expected);
   assertEquals(projectedFinishS(features), features.riegel_current_race_s);
+});
+
+// #227 — a watch left recording for 10h24m over 8.1 mi (77:00/mi) was the only run in the
+// window, and it set a 36-hour projection and would have set the plan's paces.
+Deno.test("#227: a watch left running is not an effort → no projection, paces from the goal", () => {
+  const leftRunning: RunRow = { start_time: daysAgo(9), distance_m: 13047, duration_s: 37459, avg_hr: null };
+  const features = extractFeatures([leftRunning], MARATHON_MI, NOW);
+  assertEquals(features.best_effort, null);
+  assertEquals(projectedFinishS(features), null);
+  assertEquals(paceBasis(GOAL_3_30, MARATHON_MI, features.riegel_current_race_s).source, "goal");
+});
+
+Deno.test("#227: the ceiling is inclusive at 20:00/mi, and a walk never outranks a real run", () => {
+  assertNotEquals(extractFeatures([run(4, 3, 1200)], MARATHON_MI, NOW).best_effort, null);
+  assertEquals(extractFeatures([run(4, 3, 1201)], MARATHON_MI, NOW).best_effort, null);
+
+  const features = extractFeatures([run(2, 8, 1500), run(6, 5, 580)], FIVE_K_MI, NOW);
+  assertEquals(features.riegel_current_race_s, Math.round(5 * 580 * Math.pow(FIVE_K_MI / 5, 1.06)));
 });

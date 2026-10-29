@@ -186,7 +186,7 @@ struct TrainingIntakeView: View {
             field("Distance") {
                 FlowLayout(spacing: 8) {
                     ForEach(IntakeAnswers.Distance.allCases, id: \.self) { d in
-                        Chip(d.label, selected: answers.distance == d) { answers.distance = d }
+                        Chip(d.label, selected: answers.distance == d, ground: .canvas) { answers.distance = d }
                     }
                 }
                 if answers.distance == .custom {
@@ -259,7 +259,7 @@ struct TrainingIntakeView: View {
             field("Course") {
                 FlowLayout(spacing: 8) {
                     ForEach(IntakeAnswers.Course.allCases, id: \.self) { c in
-                        Chip(c.label, selected: answers.course == c) { answers.course = c }
+                        Chip(c.label, selected: answers.course == c, ground: .canvas) { answers.course = c }
                     }
                 }
             }
@@ -267,7 +267,7 @@ struct TrainingIntakeView: View {
             field("Goal") {
                 FlowLayout(spacing: 8) {
                     ForEach(IntakeAnswers.GoalType.allCases, id: \.self) { g in
-                        Chip(g.label, selected: answers.goalType == g) { answers.goalType = g }
+                        Chip(g.label, selected: answers.goalType == g, ground: .canvas) { answers.goalType = g }
                     }
                 }
                 if answers.goalType == .time {
@@ -298,7 +298,7 @@ struct TrainingIntakeView: View {
             field("Days per week") {
                 HStack(spacing: 8) {
                     ForEach(3...7, id: \.self) { n in
-                        Chip("\(n)", selected: answers.daysPerWeek == n, fill: true) { answers.daysPerWeek = n }
+                        Chip("\(n)", selected: answers.daysPerWeek == n, ground: .canvas, fill: true) { answers.daysPerWeek = n }
                     }
                 }
             }
@@ -307,7 +307,8 @@ struct TrainingIntakeView: View {
                 FlowLayout(spacing: 8) {
                     // Monday first, as the plan grid reads; stored 0 = Sunday, as the profile does.
                     ForEach([1, 2, 3, 4, 5, 6, 0], id: \.self) { day in
-                        Chip(String(IntakeAnswers.weekday(day).prefix(3)), selected: answers.longRunDay == day) {
+                        Chip(String(IntakeAnswers.weekday(day).prefix(3)), selected: answers.longRunDay == day,
+                             ground: .canvas) {
                             answers.longRunDay = day
                         }
                     }
@@ -328,7 +329,9 @@ struct TrainingIntakeView: View {
                 field("Workouts you'll actually do") {
                     FlowLayout(spacing: 8) {
                         ForEach(IntakeAnswers.Quality.allCases, id: \.self) { q in
-                            Chip(q.label, selected: answers.quality.contains(q)) { answers.quality.formSymmetricDifference([q]) }
+                            Chip(q.label, selected: answers.quality.contains(q), ground: .canvas) {
+                                answers.quality.formSymmetricDifference([q])
+                            }
                         }
                     }
                     hint("Pick none and your coach chooses the mix.")
@@ -381,7 +384,9 @@ struct TrainingIntakeView: View {
                 field(Self.focusGroups[i].0) {
                     FlowLayout(spacing: 8) {
                         ForEach(Self.focusGroups[i].1, id: \.self) { f in
-                            Chip(f.label, selected: answers.focus.contains(f)) { answers.focus.formSymmetricDifference([f]) }
+                            Chip(f.label, selected: answers.focus.contains(f), ground: .canvas) {
+                                answers.focus.formSymmetricDifference([f])
+                            }
                         }
                     }
                 }
@@ -478,38 +483,6 @@ extension View {
 }
 
 // MARK: - Controls
-
-/// Selectable capsule. Volt fill when on — volt is a fill, so `onVolt` text sits on it.
-private struct Chip: View {
-    let title: String
-    let selected: Bool
-    var fill = false
-    let action: () -> Void
-
-    init(_ title: String, selected: Bool, fill: Bool = false, action: @escaping () -> Void) {
-        self.title = title
-        self.selected = selected
-        self.fill = fill
-        self.action = action
-    }
-
-    var body: some View {
-        Button {
-            Haptics.select()
-            action()
-        } label: {
-            Text(title)
-                .font(Tokens.Font.ui(14, selected ? .semibold : .medium))
-                .foregroundStyle(selected ? Tokens.Palette.onVolt : Tokens.Palette.textSecondary)
-                .padding(.horizontal, 14).padding(.vertical, 9)
-                .frame(maxWidth: fill ? .infinity : nil)
-                .background(selected ? Tokens.Palette.volt : Tokens.Palette.surface)
-                .clipShape(Capsule())
-        }
-        .buttonStyle(Pressable(haptic: false))
-        .accessibilityAddTraits(selected ? .isSelected : [])
-    }
-}
 
 /// A single-choice card: title, one line of what it means, a check when chosen.
 private struct OptionRow: View {

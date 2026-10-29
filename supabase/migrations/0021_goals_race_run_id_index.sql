@@ -1,0 +1,31 @@
+-- Covering index for goals.race_run_id's foreign key to runs (#212).
+--
+-- ⚠️  UNAPPLIED. David applies it. Requires 0013. No app change depends on it.
+--
+-- Numbered 0021, not 0020: two in-flight branches already claim 0020 (coach threads, #87;
+-- body reports, #89). Same reasoning as 0013's own note — a shared prefix is how 0002 ended
+-- up ambiguous. Nothing here depends on either, so the order they land in does not matter.
+--
+-- ── Why ──────────────────────────────────────────────────────────────────────────────
+-- The Supabase performance advisor flagged `goals_race_run_id_fkey` (unindexed_foreign_keys)
+-- after 0013 added the column. It is `on delete set null`, so deleting a `runs` row has to
+-- full-scan `goals` to find the rows naming it; no existing index on `goals` leads with
+-- `race_run_id`.
+--
+-- Prevention, not a fix for a slow query — the same call 0019 made for
+-- `run_overlap_reviews`. `goals` holds two rows today and nothing in the app hard-deletes a
+-- run (retirement sets `superseded_by`, per #30). But the scan grows with every block closed,
+-- and at this size the index costs nothing.
+--
+-- Re-runnable: `if not exists`.
+
+create index if not exists goals_race_run_id_idx on goals(race_run_id);
+
+-- ── Check (changes nothing) ──────────────────────────────────────────────────────────
+--
+--   select indexname from pg_indexes
+--   where tablename = 'goals' order by indexname;
+--
+-- Expect goals_race_run_id_idx alongside the existing goals indexes. The next
+-- performance-advisor run should no longer list `goals_race_run_id_fkey` under
+-- unindexed_foreign_keys.

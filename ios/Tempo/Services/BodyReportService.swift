@@ -9,7 +9,7 @@ import Supabase
 ///
 /// ## Why it is allowed to be missing
 ///
-/// Migration 0020 ships with this file and David applies it by hand. Until it lands the read
+/// Migration 0022 ships with this file and David applies it by hand. Until it lands the read
 /// fails, and that is reported as *unavailable* — not as "nothing reported". The difference
 /// is the same one `OverlapReviewService` draws: an empty set would put a Body section on
 /// screen with a Clear button that cannot persist anything, and readiness would silently go
@@ -18,7 +18,7 @@ final class BodyReportService {
 
     struct Snapshot: Equatable {
         var reports: [BodyReport] = []
-        /// False until migration 0020 is applied (or whenever the read fails). The Body
+        /// False until migration 0022 is applied (or whenever the read fails). The Body
         /// section stays hidden and `log_body` cards fail retryably while this is false.
         var available = false
     }
@@ -65,7 +65,7 @@ final class BodyReportService {
                 .value
             return Snapshot(reports: rows.map(\.report), available: true)
         } catch {
-            // Expected before 0020 lands, so not an error event — the feature is simply off.
+            // Expected before 0022 lands, so not an error event — the feature is simply off.
             return Snapshot()
         }
     }
@@ -113,7 +113,7 @@ final class BodyReportService {
         return row.report
     }
 
-    /// Mark a report resolved. Both columns together — the check constraint in 0020 refuses
+    /// Mark a report resolved. Both columns together — the check constraint in 0022 refuses
     /// a `cleared` row with no `cleared_at`, which is the point of writing them as a pair.
     func clear(_ id: UUID, now: Date = .now) async throws {
         struct Patch: Encodable { let status: String; let cleared_at: String }

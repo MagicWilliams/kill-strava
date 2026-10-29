@@ -1,5 +1,9 @@
 -- Body reports (#89): what the athlete tells the coach about their body, as data.
 --
+-- Numbered 0022, not the 0020 this branch was cut with: coach threads (#87) took 0020 and
+-- the goals index (#212) took 0021 while this sat in review. Same reasoning as 0021's own
+-- note — a shared prefix is how 0002 ended up ambiguous. Nothing here depends on either.
+--
 -- ⚠️  UNAPPLIED. David applies it. The app ships first and is harmless until it lands:
 --     `BodyReportService.snapshot` reports an unreadable table as *unavailable* rather than
 --     as "nothing reported", so the Body section stays hidden, readiness is load-plus-check-in

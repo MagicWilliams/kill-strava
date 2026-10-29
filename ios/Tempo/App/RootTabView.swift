@@ -37,6 +37,9 @@ enum Route: Hashable {
     case changes
     case overlapReview
     case blockReview(GoalInfo)
+    /// One coach conversation (#87). The id and not the row: a thread's title and recap are
+    /// written while it is open, and a pushed copy of the row would go stale behind it.
+    case coachThread(UUID)
 }
 
 @MainActor
@@ -46,10 +49,6 @@ final class TabRouter: ObservableObject {
     /// A coach message to scroll to when the Coach tab next shows — set by "See in chat"
     /// on a What changed entry, consumed (cleared) by `CoachView`.
     @Published var coachFocus: UUID?
-    /// Text to drop into the Coach input when the tab next shows — set by "Train for
-    /// something", consumed (cleared) by `CoachView`. Prefilled, never sent: the athlete
-    /// gets to read it, change it, or back out.
-    @Published var coachDraft: String?
     /// The training intake (#102), presented over the whole app by `.trainingIntake(...)`.
     @Published var trainingIntakeShown = false
     /// The pre-run sheet (#126), presented over the whole app by `.runRecorder(...)`.
@@ -67,10 +66,16 @@ final class TabRouter: ObservableObject {
     func openProjection() { path.append(.projection) }
     func openRaceRecap(_ run: RunSummary) { path.append(.raceRecap(run)) }
     func openChanges() { path.append(.changes) }
+    func openCoachThread(_ id: UUID) { path.append(.coachThread(id)) }
     func openOverlapReview() { path.append(.overlapReview) }
     func openBlockReview(_ goal: GoalInfo) { path.append(.blockReview(goal)) }
 
     /// Land on the Coach tab scrolled to one message.
+    ///
+    /// Since #87 the tab opens on the list of conversations, so this sets the focus and
+    /// `CoachHomeView` pushes the live thread; the transcript scrolls to the message if it
+    /// is in the page it loaded. The ledger does not know which thread holds a message —
+    /// routing to the exact one is follow-up work.
     func showCoachMessage(_ id: UUID) {
         coachFocus = id
         showCoach()
@@ -177,6 +182,7 @@ struct RootTabView: View {
                 case .changes: ChangesView()
                 case .overlapReview: OverlapReviewView()
                 case .blockReview(let goal): BlockReviewView(goal: goal)
+                case .coachThread(let id): CoachView(threadID: id)
                 }
             }
         }
@@ -198,7 +204,7 @@ struct RootTabView: View {
         case .today:    TodayView()
         case .plan:     PlanView()
         case .progress: ProgressScreen()
-        case .coach:    CoachView()
+        case .coach:    CoachHomeView()
         case .you:      YouView()
         }
     }

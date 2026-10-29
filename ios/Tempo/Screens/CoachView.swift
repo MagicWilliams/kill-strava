@@ -1,13 +1,25 @@
 import SwiftUI
 
+/// One coach conversation: the transcript, the confirm cards, and what the coach is carrying
+/// into it from before (#87).
+///
+/// Pushed from `CoachHomeView`, which owns the list of conversations and the New chat button.
+/// The setup interview presents this screen directly with `onboarding: true` and no thread —
+/// see `threadID`.
 struct CoachView: View {
     var onboarding = false
+    /// The conversation this transcript is (#87). Nil only during the setup interview, which
+    /// has no thread list to come from: `ChatStore.load` then resolves the live thread (or
+    /// starts one) so the interview is still recorded as a conversation like any other.
+    var threadID: UUID? = nil
 
     @EnvironmentObject private var store: RunStore
     @EnvironmentObject private var router: TabRouter
+    @Environment(\.dismiss) private var dismiss
     @StateObject private var chat = ChatStore()
-    /// Changes applied this week, for the "What changed" row. Nil until the ledger answers.
-    @State private var changesThisWeek: Int?
+    /// This thread's own row, for the title and the day its predecessor ended. Nil until the
+    /// read answers, and on the interview path, where there is no list to show a title on.
+    @State private var thread: CoachThreads.Row?
     @State private var draft = ""
     /// The composer's focus, so a tap on the transcript can put the keyboard away (#186).
     /// Sending leaves it alone: the athlete may be mid-thought.
@@ -72,7 +84,7 @@ struct CoachView: View {
                     VStack(spacing: 0) {
                         VStack(alignment: .leading, spacing: 18) {
                             header
-                            if !onboarding { changesRow }
+                            if let note = pickingUpNote { pickingUpCard(note) }
                             ForEach(Array(chat.messages.enumerated()), id: \.element.id) { index, msg in
                                 if index == 0 || !Calendar.current.isDate(msg.timestamp, inSameDayAs: chat.messages[index - 1].timestamp) {
                                     daySeparator(msg.timestamp)
@@ -142,36 +154,23 @@ struct CoachView: View {
             inputBar
         }
         .background(Tokens.Palette.canvas)
-        .onAppear(perform: takeDraft)
-        .onChange(of: router.coachDraft) { _, _ in takeDraft() }
+        .toolbar(.hidden, for: .navigationBar)
         .task {
             chat.onboardingMode = onboarding
             chat.runStore = store
+            // Before `load`: it scopes every read and write to this thread, and resolves one
+            // itself only when nothing handed it one.
+            chat.threadID = threadID
             await chat.load(context: store.coachContext(onboarding: onboarding))
+            if let id = chat.threadID {
+                thread = (try? await CoachThreadService.threads())?.first { $0.id == id }
+            }
         }
         // An intake sent while this tab was already alive — `load` has run, so hand it over
         // here. `sendIntake` ignores one that has already gone.
         .onChange(of: store.intakeHandoff?.id) { _, _ in
             Task { await chat.sendIntake(runStore: store) }
         }
-        // Re-count when a card goes green, so the row moves with the change just confirmed.
-        .task(id: chat.messages.filter { $0.actionState == .applied }.count) {
-            guard !onboarding, let entries = try? await ChangeLedgerService.load() else { return }
-            let applied = chat.messages
-                .filter { $0.action != nil && $0.actionState == .applied }
-                .map { (id: $0.id, date: $0.timestamp) }
-            changesThisWeek = ChangeLedger.countThisWeek(
-                entries, alsoApplied: applied, now: .now, calendar: RunStore.cal
-            )
-        }
-    }
-
-    /// Move a draft handed over by the router (the "Train for something" CTA) into the
-    /// input. An athlete's own half-typed message wins: nothing is overwritten.
-    private func takeDraft() {
-        guard !onboarding, let handed = router.coachDraft else { return }
-        router.coachDraft = nil
-        if draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { draft = handed }
     }
 
     /// Scroll to the message What changed asked for, if it is in the loaded history. Left
@@ -185,44 +184,79 @@ struct CoachView: View {
         return true
     }
 
-    /// Entry point to the ledger of applied changes (#88). One row on purpose: Coach home is
-    /// due a redesign (#87), and this should be trivially movable when it lands.
-    private var changesRow: some View {
-        Button { router.openChanges() } label: {
-            HStack(spacing: 10) {
-                Image(systemName: "clock.arrow.circlepath")
-                    .foregroundStyle(Tokens.Palette.accentText)
-                Text("What changed")
-                    .font(Tokens.Font.ui(14, .semibold)).foregroundStyle(Tokens.Palette.textPrimary)
-                Spacer()
-                if let count = changesThisWeek {
-                    Text(count == 0 ? "None this week" : "\(count) this week")
-                        .font(Tokens.Font.mono(11)).foregroundStyle(Tokens.Palette.textSecondary)
-                }
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(Tokens.Palette.textTertiary)
-            }
-            .padding(.horizontal, 14).padding(.vertical, 11)
-            .background(Tokens.Palette.surface)
-            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(Pressable())
-    }
-
     private var header: some View {
         HStack(spacing: 12) {
-            Circle().fill(Tokens.Well.accent.insetFill).frame(width: 44, height: 44)
-                .overlay(Text("C").font(Tokens.Font.display(18)).foregroundStyle(Tokens.Palette.accentText))
+            // The interview is presented, not pushed, so it has nothing to go back to.
+            if !onboarding {
+                Button { dismiss() } label: {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 15, weight: .bold))
+                        .foregroundStyle(Tokens.Palette.textPrimary)
+                        .frame(width: 40, height: 40)
+                        .background(Tokens.Palette.surface, in: Circle())
+                }
+                .buttonStyle(Pressable())
+                .accessibilityLabel("Back to your conversations")
+            } else {
+                Circle().fill(Tokens.Well.accent.insetFill).frame(width: 44, height: 44)
+                    .overlay(Text("C").font(Tokens.Font.display(18)).foregroundStyle(Tokens.Palette.accentText))
+            }
             VStack(alignment: .leading, spacing: 2) {
-                Text("Coach").font(Tokens.Font.display(22)).foregroundStyle(Tokens.Palette.textPrimary)
-                Text(onboarding ? "Setup interview · a few questions" : "Calm expert · sees your real runs")
+                Text(title)
+                    .font(Tokens.Font.display(22)).foregroundStyle(Tokens.Palette.textPrimary)
+                    .lineLimit(2)
+                Text(subtitle)
                     .font(Tokens.Font.ui(12)).foregroundStyle(Tokens.Palette.textSecondary)
             }
-            Spacer()
+            Spacer(minLength: 0)
         }
         .padding(.bottom, 4)
+    }
+
+    /// The thread's own title once it has one. A live conversation has not been written up
+    /// yet, so it is "Coach" rather than a topic the app would be guessing at.
+    private var title: String {
+        guard !onboarding, let thread, let written = thread.title, !written.isEmpty else { return "Coach" }
+        return written
+    }
+
+    private var subtitle: String {
+        if onboarding { return "Setup interview · a few questions" }
+        let said = chat.messages.count
+        guard said > 0 else { return "Calm expert · sees your real runs" }
+        return said == 1 ? "1 message in this conversation" : "\(said) messages in this conversation"
+    }
+
+    /// What the coach is carrying into this conversation — the previous one's recap and how
+    /// many durable facts it holds (#87, mockup screen 2).
+    ///
+    /// The same two values that go to the model in `CoachContext.memory`, deliberately: a
+    /// note that said something else would be a second, prettier summary of a context nobody
+    /// could check. Absent on a first-ever conversation, and during the interview, where
+    /// there is nothing behind it to pick up from.
+    private var pickingUpNote: String? {
+        guard !onboarding else { return nil }
+        return CoachThreads.pickingUpNote(
+            previousSummary: chat.carried.previousSummary,
+            previousDayLabel: chat.carried.previousEndedAt.map {
+                $0.formatted(.dateTime.weekday(.abbreviated))
+            },
+            memoryCount: chat.carried.facts.count
+        )
+    }
+
+    private func pickingUpCard(_ note: String) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            SectionLabel("Picking up from", color: Tokens.Palette.info)
+            Text(note)
+                .font(Tokens.Font.ui(14))
+                .foregroundStyle(Tokens.Palette.textPrimary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Tokens.Palette.surface)
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
     }
 
     /// Bubble + optional action card, sliding left on drag to reveal the timestamp.
@@ -277,6 +311,46 @@ struct CoachView: View {
         }
     }
 
+    /// The run an amend card would change, as loaded on the phone.
+    private func recorded(for action: ProposedAction) -> RunCorrection.Recorded? {
+        guard let id = action.run_id.flatMap(UUID.init(uuidString:)),
+              let run = store.runs.first(where: { $0.id == id }) else { return nil }
+        return RunCorrection.Recorded(distance_m: run.distanceM, duration_s: run.durationS, avg_hr: run.avgHR)
+    }
+
+    @ViewBuilder
+    private func runPreview(_ preview: RunCorrection.CardPreview) -> some View {
+        switch preview {
+        case .computed(let rows, let notes):
+            VStack(alignment: .leading, spacing: 5) {
+                ForEach(rows, id: \.label) { row in
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        Text(row.label.uppercased())
+                            .font(Tokens.Font.mono(10)).tracking(1)
+                            .foregroundStyle(Tokens.Palette.textTertiary)
+                            .frame(width: 64, alignment: .leading)
+                        if let before = row.before {
+                            Text(before + "  →")
+                                .font(Tokens.Font.mono(13))
+                                .foregroundStyle(Tokens.Palette.textSecondary)
+                        }
+                        Text(row.after)
+                            .font(Tokens.Font.mono(13))
+                            .foregroundStyle(Tokens.Palette.textPrimary)
+                    }
+                }
+                ForEach(notes, id: \.self) { note in
+                    Text(note).font(Tokens.Font.ui(12)).foregroundStyle(Tokens.Palette.textSecondary)
+                }
+            }
+        case .rejected(let message):
+            Text(message).font(Tokens.Font.ui(12)).foregroundStyle(Tokens.Palette.danger)
+        case .runNotLoaded:
+            Text("This run isn't loaded on the phone, so there's nothing to preview. Confirm works it out from the saved run.")
+                .font(Tokens.Font.ui(12)).foregroundStyle(Tokens.Palette.textSecondary)
+        }
+    }
+
     /// The race a create_plan card will save, read from the request Confirm sends rather than
     /// from the coach's summary (#184). On 15 Oct the summary said "5K" and the payload named
     /// no distance; the goal was saved as a marathon, and nothing on screen disagreed.
@@ -321,6 +395,14 @@ struct CoachView: View {
             }
             if action.type == "log_body", let severity = action.severity {
                 bodyEffectLine(severity: severity, state: state)
+            }
+
+            // A run card's numbers, worked out by code from the run as stored (#206): what
+            // Confirm will write, shown before the tap. Only while the card is still an offer;
+            // once applied, the loaded run already carries the change.
+            if [ChatMessage.ActionState.pending, .failed, .applying].contains(state),
+               let preview = RunCorrection.cardPreview(for: action, run: recorded(for: action), units: store.units) {
+                runPreview(preview)
             }
 
             switch state {
@@ -411,6 +493,7 @@ struct CoachView: View {
         case "set_risk_tolerance": return "Training mode"
         case "log_body": return "Body"
         case "clear_body": return "Body · clear"
+        case "remember": return "Remember this"
         default: return "Proposed change"
         }
     }
@@ -513,5 +596,8 @@ struct TypingDots: View {
 }
 
 #Preview {
-    CoachView().environmentObject(RunStore()).environmentObject(TabRouter()).preferredColorScheme(.dark)
+    CoachView(threadID: UUID())
+        .environmentObject(RunStore())
+        .environmentObject(TabRouter())
+        .preferredColorScheme(.dark)
 }

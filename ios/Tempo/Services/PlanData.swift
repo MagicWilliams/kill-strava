@@ -245,13 +245,20 @@ extension RunStore {
         if let newWeeks { planWeeks = newWeeks }
         if let newSessions { sessions = newSessions }
 
-        if let checkIn: CheckInInfo = try? await Supa.client
+        // Decoded as an array rather than `.single()`: PostgREST turns a zero-row
+        // `.single()` into a thrown 406, and on almost every day there is no check-in yet —
+        // so the old shape logged a 406 on every single refresh (#224). The `try?` hid it
+        // from the athlete but not from the edge logs. This is the same correction the
+        // profile read got on 2026-08-23; that sweep missed this call site, which is why
+        // `ZeroRowSingleLintTests` now watches for the shape instead of trusting a sweep.
+        let checkIns: [CheckInInfo]? = try? await Supa.client
             .from("check_ins")
             .select("date,feels_ok,note")
             .eq("date", value: PlanDates.todayString)
-            .single()
+            .limit(1)
             .execute()
-            .value {
+            .value
+        if let checkIn = checkIns?.first {
             todayCheckIn = checkIn
         }
     }

@@ -84,7 +84,7 @@ final class RunStore: ObservableObject {
     @Published private(set) var bestEfforts = BestEffortsService.Snapshot()
 
     /// What the athlete has told the coach about their body (#89) — live and cleared.
-    /// Empty, and the Body section hidden, until migration 0020 is applied; see
+    /// Empty, and the Body section hidden, until migration 0022 is applied; see
     /// `BodyReportService` for why an absent table is reported rather than shown as
     /// "nothing's wrong".
     @Published private(set) var bodyReports = BodyReportService.Snapshot()
@@ -158,9 +158,13 @@ final class RunStore: ObservableObject {
         // DB first: ingest dedupes against what's already recorded (Garmin re-exports
         // the same runs under new HK uuids when its Health settings change).
         var response = await readRuns()
+        // Held outside the branch because the display rule needs it too: if the re-read
+        // fails, `RunFetch.resolve` grafts HealthKit copies on, and that graft has to know
+        // which workouts are already ours as retired rows (#202).
+        var retired = Set<String>()
         if !ingested.isEmpty {
             var inserted = 0
-            let retired = await readRetiredExternalIDs()
+            retired = await readRetiredExternalIDs()
             do {
                 inserted = try await health.sync(ingested, existing: response.knownRows ?? runs,
                                                  retiredExternalIDs: retired)
@@ -183,7 +187,8 @@ final class RunStore: ObservableObject {
 
         // The display rule is pure and lives in RunFetch — a failed read must never look
         // like data, and a fallback must never look like the corrected record.
-        let decision = RunFetch.resolve(response, ingested: ingested, onScreen: runs)
+        let decision = RunFetch.resolve(response, ingested: ingested, onScreen: runs,
+                                        retiredExternalIDs: retired)
         if let resolved = decision.runs { runs = resolved }
         dataWarning = decision.warning
         switch decision.availability {
@@ -297,14 +302,14 @@ final class RunStore: ObservableObject {
         )
     }
 
-    /// Whether this database has the body-reports table (migration 0020). Before it does,
+    /// Whether this database has the body-reports table (migration 0022). Before it does,
     /// the Body section stays hidden rather than offering a Clear that cannot save.
     var bodyReportsAvailable: Bool { bodyReports.available }
 
     func refreshBodyReports() async {
         let snapshot = await bodyService.snapshot()
         // A failed read keeps what we already hold rather than flipping the feature off
-        // mid-session; before 0020 is applied there is nothing held, so it stays off.
+        // mid-session; before 0022 is applied there is nothing held, so it stays off.
         if snapshot.available { bodyReports = snapshot }
     }
 
@@ -1073,7 +1078,7 @@ struct CoachContext: Encodable {
     let fitness: FitnessCtx?
     let onboarding: OnboardingCtx? // present only while the setup interview runs
     let check_in_today: String?
-    /// Live body reports (#89); nil when there are none, or before migration 0020 lands.
+    /// Live body reports (#89); nil when there are none, or before migration 0022 lands.
     let body_reports: [BodyCtx]?
     let recent_runs: [RunCtx]      // last 21 days
     let weekly_mileage: [WeekCtx]  // last 8 weeks, oldest first
@@ -1082,6 +1087,23 @@ struct CoachContext: Encodable {
     let goal_detail: GoalDetailCoachContext?
     /// A sent intake not yet turned into a plan (#102) — the coach's cue to reflect it back.
     let intake: IntakeCoachContext?
+
+    /// What the coach knows that is older than this conversation (#87).
+    ///
+    /// A `var`, and the only one here, because it is the one part of the context the store
+    /// cannot build: `RunStore` holds the training data, while the facts in `coach_memory`
+    /// and the previous thread's recap belong to the chat. `ChatStore` stamps it on at the
+    /// moment of the request — see `ChatStore.requestReply`.
+    var memory: MemoryCtx?
+
+    struct MemoryCtx: Encodable {
+        /// Durable facts, newest first. The coach's own words, written by its `remember`
+        /// tool after the athlete confirmed the card.
+        let facts: [String]
+        /// The previous conversation's recap, so a new thread opens knowing what the last
+        /// one settled. Nil when there is no written-up conversation behind this one.
+        let picking_up: String?
+    }
 }
 
 extension RunStore {
@@ -1103,7 +1125,7 @@ extension RunStore {
         return CoachContext(
             today: Date.now.formatted(day),
             units: units.rawValue,
-            mode: TodayMode.coachMode(todayMode, goal: goal),
+            mode: TodayMode.coachMode(todayMode, goal: goal, phase: blockPhase),
             goal: goalLine.coachLine,
             risk_tolerance: riskTolerance,
             max_hr: effectiveMaxHR,
@@ -1149,7 +1171,11 @@ extension RunStore {
             goal_detail: GoalDetailCoachContext(goal),
             intake: intakeHandoff.flatMap { h in
                 h.stamp.map { IntakeCoachContext($0, situation: h.answers.situation) }
-            }
+            },
+            // Filled in by `ChatStore.requestReply`, which is the only caller that knows
+            // which conversation this is. A one-shot read (a takeaway, a block review) has
+            // no conversation and sends none.
+            memory: nil
         )
     }
 

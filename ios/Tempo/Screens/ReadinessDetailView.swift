@@ -85,11 +85,7 @@ struct ReadinessDetailView: View {
 
     private func fitnessCurve(_ m: FitnessMetrics) -> some View {
         Card {
-            HStack {
-                SectionLabel("Fitness · trailing 8 weeks")
-                Spacer()
-                Text("CTL").mono(10, Tokens.Palette.textTertiary)
-            }
+            FitnessCurveHeaderRow()
             Chart {
                 ForEach(Array(m.ctlSeries.enumerated()), id: \.offset) { _, point in
                     AreaMark(x: .value("Day", point.date), y: .value("CTL", point.ctl))
@@ -158,7 +154,7 @@ struct ReadinessDetailView: View {
     /// read screen the mockups put it on is #90's, and not built yet — when it lands, this
     /// section is the thing to move or mirror.
     ///
-    /// Hidden entirely until migration 0020 is applied: a Clear button that cannot save is
+    /// Hidden entirely until migration 0022 is applied: a Clear button that cannot save is
     /// worse than no section at all.
     @ViewBuilder private var bodyCard: some View {
         let live = BodyReports.live(store.bodyReports.reports)
@@ -242,6 +238,24 @@ struct ReadinessDetailView: View {
             Text("Every run scores training load from distance and pace relative to your own recent baseline. Fitness is the 42-day trend of that load; fatigue is the 7-day trend; form is the gap. Readiness reads form against fitness — and your own word always overrules it: a check-in saying something's off, or a body report you rated \(BodyReports.capSeverity) or worse, caps it until you clear it. Honest caveat: it's pace-based for now; heart-rate weighting lands when HR flows reliably from Garmin.")
                 .font(Tokens.Font.ui(12)).foregroundStyle(Tokens.Palette.textSecondary)
                 .lineSpacing(3)
+        }
+    }
+}
+
+/// The fitness chart's header: the section label, with "CTL" against the right edge.
+///
+/// Pulled out of `fitnessCurve` so the offer probe can measure it (#81). A bare
+/// `HStack { label; Spacer(); trailing }` reports the sum of its parts, and third-of-a-point
+/// text widths can add back up to a hair past the width it was offered — enough, through a
+/// page column, to let the whole screen drag sideways (#74). Whether a given row drifts
+/// depends on its exact text widths, so the shape alone doesn't prove it; `DetailLayoutTests`
+/// is what decides.
+struct FitnessCurveHeaderRow: View {
+    var body: some View {
+        HStack {
+            SectionLabel("Fitness · trailing 8 weeks")
+            Spacer()
+            Text("CTL").mono(10, Tokens.Palette.textTertiary)
         }
     }
 }

@@ -141,8 +141,7 @@ struct RunJournalEditSheet: View {
             SectionLabel("Feel")
             FlowLayout(spacing: Tokens.Space.sm) {
                 ForEach(RunDetailJournal.feelOptions(current: original.feelTags), id: \.self) { tag in
-                    JournalChip(title: PostRun.tagLabel(tag), selected: draft.feelTags.contains(tag)) {
-                        Haptics.select()
+                    Chip(PostRun.tagLabel(tag), selected: draft.feelTags.contains(tag)) {
                         draft.feelTags = PostRun.toggled(tag, in: draft.feelTags)
                     }
                 }
@@ -221,14 +220,12 @@ struct RunJournalEditSheet: View {
                 SectionLabel("Shoes")
                 FlowLayout(spacing: Tokens.Space.sm) {
                     ForEach(options) { shoe in
-                        JournalChip(title: shoe.isRetired ? shoe.name + " (retired)" : shoe.name,
-                                    selected: current == shoe.id) {
-                            Haptics.select()
+                        Chip(shoe.isRetired ? shoe.name + " (retired)" : shoe.name,
+                             selected: current == shoe.id) {
                             draft.shoe = .chosen(shoe.id)
                         }
                     }
-                    JournalChip(title: "None", selected: current == nil) {
-                        Haptics.select()
+                    Chip("None", selected: current == nil) {
                         draft.shoe = .chosen(nil)
                     }
                 }
@@ -308,6 +305,9 @@ struct RunJournalEditSheet: View {
         saving = true
         failure = nil
         let upload = newPhoto
+        // The key the row names right now, read before the writes move it: what the sweep
+        // below deletes if the photo changes.
+        let storedPhotoKey = original.photoPath
         Task {
             var fieldsSaved = true
             var photo: RunDetailJournal.PhotoResult = .untouched
@@ -345,33 +345,22 @@ struct RunJournalEditSheet: View {
             onSaved(landed, shownPhoto)
             saving = false
 
+            // The replaced or removed object, now that the row has moved off it (#179).
+            // Detached and unawaited: the row is already right, so an orphan left in the
+            // bucket is not worth a second of the save bar or a word on screen.
+            if let orphan = RunDetailJournal.orphanedObjectKey(previous: storedPhotoKey,
+                                                              photo: photo,
+                                                              userID: Supa.userID) {
+                Task.detached(priority: .utility) {
+                    await RunJournal.deletePhotoObject(objectKey: orphan)
+                }
+            }
+
             if let message = RunDetailJournal.failureMessage(plan, fieldsSaved: fieldsSaved, photo: photo) {
                 failure = message
             } else {
                 dismiss()
             }
         }
-    }
-}
-
-/// A pickable capsule, drawn exactly as the save screen's (frame 7a): volt marks the choice,
-/// `onVolt` on top. Its own copy because that one is private to `SaveRunView` and
-/// `TrainingIntakeView` already owns the name `Chip`.
-private struct JournalChip: View {
-    let title: String
-    let selected: Bool
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            Text(title)
-                .font(Tokens.Font.ui(13, .semibold))
-                .foregroundStyle(selected ? Tokens.Palette.onVolt : Tokens.Palette.textPrimary)
-                .padding(.horizontal, 14).padding(.vertical, 9)
-                .background(selected ? Tokens.Palette.volt : Tokens.Palette.inset, in: Capsule())
-                .contentShape(Capsule())
-        }
-        .buttonStyle(Pressable(haptic: false))
-        .accessibilityAddTraits(selected ? .isSelected : [])
     }
 }

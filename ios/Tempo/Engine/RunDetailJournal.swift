@@ -251,4 +251,35 @@ enum RunDetailJournal {
         case (false, false): return nil
         }
     }
+
+    // MARK: - The object left behind
+
+    /// The object in `run-photos` that no row names any more, safe to delete — or nil when
+    /// there is nothing to delete.
+    ///
+    /// Replacing a photo uploads a new object and moves `photo_path` to it; removing one
+    /// writes the path as null. Either way the object that was there stayed in the bucket
+    /// forever (#179). The row is written first and this runs after it, in that order
+    /// deliberately: deleting first would leave `photo_path` naming an object that is gone
+    /// if the write then failed, and a hero that can never load is worse than an orphan.
+    ///
+    /// Three guards, each of them a way a delete could take a photo that is still in use:
+    ///
+    /// - the write has to have **landed** — after `.failed` or `.untouched` the old object is
+    ///   still the one `photo_path` names and the one on screen;
+    /// - the old key must not *be* the new one, so an upsert that overwrote its own object
+    ///   (the retry in `RunJournal.attachPhoto`) doesn't then delete it;
+    /// - the key has to pass `photoObjectKey`, so a stored path outside the athlete's own
+    ///   prefix — not something this build wrote — is never handed to a delete.
+    static func orphanedObjectKey(previous: String?, photo: PhotoResult, userID: UUID?) -> String? {
+        guard let previous = photoObjectKey(previous, userID: userID) else { return nil }
+        switch photo {
+        case .attached(let landed):
+            return photoObjectKey(landed, userID: userID) == previous ? nil : previous
+        case .removed:
+            return previous
+        case .untouched, .failed:
+            return nil
+        }
+    }
 }

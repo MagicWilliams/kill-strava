@@ -20,7 +20,8 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
 import {
   fmtClock, generate, type Generated, MI, mondayOf, paceBasis, planWrites,
-  racePlacement, readPreferences, sessionDate, type Shape, taperWeeksFor, trainingPaces,
+  racePlacement, raceTooCloseForPlan, readPreferences, sessionDate, type Shape, taperWeeksFor,
+  trainingPaces,
 } from "./generator.ts";
 import { extractFeatures, projectedFinishS, QUALIFYING_MI, type RunRow } from "./features.ts";
 import { DistanceRequired, goalInsertRow, isMissingColumnError, requiresTargetTime, resolveGoal } from "./goal.ts";
@@ -171,7 +172,10 @@ Deno.serve(async (req) => {
     startMonday.setUTCDate(startMonday.getUTCDate() - 7 * firstWeekIndex);
     const raceWeekIndex = racePlacement(startMonday, race_date).weekIndex;
     const weeksToRace = raceWeekIndex - firstWeekIndex;
-    if (weeksToRace < 2) return Response.json({ error: "race is too close for a plan" }, { status: 400 });
+    // `none` has no weeks to be too few of — see `raceTooCloseForPlan` (#140).
+    if (raceTooCloseForPlan(prefs.planStyle, weeksToRace)) {
+      return Response.json({ error: "race is too close for a plan" }, { status: 400 });
+    }
     // TRAINING weeks only — the shape excludes race week by contract, and generate()
     // appends it. Read this as "the plan is one week longer than the shape it came from".
     const planWeeks = weeksToRace;

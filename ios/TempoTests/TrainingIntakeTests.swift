@@ -582,6 +582,41 @@ final class TrainingIntakeTests: XCTestCase {
         XCTAssertEqual(TodayMode.coachMode(.training, goal: coachingOnly), "training")
     }
 
+    /// ...and stops being training the morning after the race (#140). Without the phase, the
+    /// override above has no end: a coaching-only block never reaches `.racePassed` — that
+    /// mode needs a plan — so the coach kept being told "training" about a race already run,
+    /// and went on prescribing for it. Race week still is training; only the day after isn't.
+    func testACoachingOnlyGoalStopsBeingTrainingOnceTheRaceHasRun() {
+        var coachingOnly = goal(startedWeek: nil)
+        coachingOnly.preferences = GoalPreferences(plan_style: "none")
+
+        XCTAssertEqual(TodayMode.coachMode(.justRunning, goal: coachingOnly, phase: .racePassed), "race_passed")
+        XCTAssertEqual(TodayMode.coachMode(.justRunning, goal: coachingOnly, phase: .raceWeek), "training",
+                       "the taper is still training")
+        XCTAssertEqual(TodayMode.coachMode(.justRunning, goal: coachingOnly, phase: .training), "training")
+
+        // A goal that wanted a plan and is still waiting on one is untouched by the phase:
+        // #101 decided that case, and nothing here reopens it.
+        var pending = goal(startedWeek: nil)
+        pending.preferences = GoalPreferences(plan_style: "full")
+        XCTAssertEqual(TodayMode.coachMode(.justRunning, goal: pending, phase: .racePassed), "just_running")
+    }
+
+    /// End to end through the real lifecycle: a plan-less goal still gets a phase, which is
+    /// the whole reason the fix above can work without inventing a fourth `TodayMode`.
+    func testTheLifecycleReadsAPlanLessGoalsRaceDate() {
+        var coachingOnly = goal(raceDate: "2026-11-26", startedWeek: nil)
+        coachingOnly.preferences = GoalPreferences(plan_style: "none")
+        let dayAfter = PlanDates.day.date(from: "2026-11-27")!
+        let phase = BlockLifecycle.phase(goal: coachingOnly, plan: nil, now: dayAfter)
+        XCTAssertEqual(phase, .racePassed)
+
+        let mode = TodayMode.resolve(goal: coachingOnly, plan: nil, phase: phase)
+        XCTAssertEqual(mode, .justRunning, "no plan, so no sessions to render — the feed is right")
+        XCTAssertEqual(TodayMode.coachMode(mode, goal: coachingOnly, phase: phase), "race_passed",
+                       "but the coach is told the race is behind them")
+    }
+
     // MARK: - The card
 
     private func action(_ json: String) throws -> ProposedAction {

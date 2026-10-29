@@ -661,6 +661,23 @@ export function generate(shape: Shape, opts: {
 }
 export type Generated = ReturnType<typeof generate>;
 
+/// Training weeks a block needs before /plan will build one. Two is the floor the shape
+/// arithmetic can work with: one taper week and at least one week of actual training.
+export const MIN_PLAN_WEEKS = 2;
+
+/// Whether a race is too close to build a plan for — the gate /plan answers with a 400.
+///
+/// The week count alone used to decide it, which quietly made the two-week floor a floor on
+/// *goals*. "No plan, just coaching" writes no weeks and no sessions at all (`planWrites`),
+/// so there is no shape to be too short: the athlete who enters a 10-day-out parkrun and asks
+/// for coaching is asking for nothing the arithmetic has to survive. The intake already knew
+/// that and skipped its own check for `none` (`IntakeAnswers.issues`), so the form accepted
+/// the goal and /plan rejected it after the coach had already proposed the card (#140).
+export function raceTooCloseForPlan(style: PlanStyle, weeksToRace: number): boolean {
+  if (style === "none") return false;
+  return weeksToRace < MIN_PLAN_WEEKS;
+}
+
 /// What /plan writes besides the goal, by plan style (#102's "Do you want a plan?").
 ///
 /// - `full`: everything generate() made — today's behavior.
