@@ -514,11 +514,13 @@ struct RunDetailView: View {
         let fallback = run.corrected ? nil : model.detail?.elapsedS
         let elapsed = run.elapsedS ?? fallback
         let clocks = TimeAccounting.resolve(movingS: run.durationS, elapsedS: elapsed)
+        let note = TimeAccounting.cardNote(clocks, sampleMovingS: run.corrected ? nil : model.detail?.sampleMovingS)
 
         if elapsed != nil {
             Card {
                 SectionLabel("Time")
-                if clocks.hasMeaningfulStop {
+                switch note {
+                case .stops:
                     HStack(alignment: .top, spacing: 12) {
                         clockColumn("MOVING", clocks.movingS, pace: true)
                         clockColumn("ELAPSED", clocks.elapsedS, pace: true)
@@ -526,8 +528,14 @@ struct RunDetailView: View {
                     }
                     Text("Pace, mileage, and this run's label all use moving time.")
                         .font(Tokens.Font.ui(12)).foregroundStyle(Tokens.Palette.textTertiary)
-                } else {
+                case .continuous:
                     Text("Ran continuously — moving and elapsed time are the same.")
+                        .font(Tokens.Font.ui(13)).foregroundStyle(Tokens.Palette.textSecondary)
+                case .withinNoise:
+                    Text("No real stops — moving and elapsed time are within seconds of each other.")
+                        .font(Tokens.Font.ui(13)).foregroundStyle(Tokens.Palette.textSecondary)
+                case .unrecordedStop(let sampleMovingS):
+                    Text("No pauses were recorded, but the distance samples show only \(format(seconds: sampleMovingS)) of moving. Pace here still uses the full \(format(seconds: clocks.movingS)).")
                         .font(Tokens.Font.ui(13)).foregroundStyle(Tokens.Palette.textSecondary)
                 }
             }

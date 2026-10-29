@@ -73,9 +73,10 @@ enum TrackMath {
 
     /// Slower than this between two credited points counts as stopped, not moving.
     ///
-    /// The same ~60:00/mi line `RunDetailLoader` draws for moving time on Garmin runs, so a
-    /// run recorded here and a run imported from the watch split their clocks the same way.
-    static let stoppedSpeedMps = 0.45
+    /// The same ~60:00/mi line imported runs are split on (`SampleMovingTime`, which the
+    /// detail page and ingest both read), so a run recorded here and a run imported from the
+    /// watch split their clocks the same way. One definition, there (#237).
+    static let stoppedSpeedMps = SampleMovingTime.stoppedSpeedMps
 
     /// The current-pace window: at least this long *and* at least this far. Thirty seconds alone is ~90 m at easy pace, too
     /// short for GPS error to average out; a hundred metres alone is fifteen seconds at

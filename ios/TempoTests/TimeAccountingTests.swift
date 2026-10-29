@@ -108,4 +108,40 @@ final class TimeAccountingTests: XCTestCase {
             distanceB: 8047, startB: start.addingTimeInterval(6 * 3600), durationB: 2500
         ))
     }
+
+    // MARK: - the Time card's note (#237)
+
+    func testTheOctober15CardNoLongerSaysRanContinuously() {
+        // Stored 10h24m on both clocks, samples saying 1h41m moving. The card used to repeat
+        // the record ("Ran continuously") beside a 4.8 mph AVG SPEED tile.
+        let clocks = TimeAccounting.resolve(movingS: 37_459, elapsedS: 37_459)
+        XCTAssertEqual(TimeAccounting.cardNote(clocks, sampleMovingS: 6_060),
+                       .unrecordedStop(sampleMovingS: 6_060))
+    }
+
+    func testIdenticalClocksWithNoSamplesStillReadContinuous() {
+        let clocks = TimeAccounting.resolve(movingS: 2_400, elapsedS: 2_400)
+        XCTAssertEqual(TimeAccounting.cardNote(clocks, sampleMovingS: nil), .continuous)
+    }
+
+    func testACafeStopUnderTheThresholdIsNotFlagged() {
+        // Samples say four minutes stopped on a 1h44m pause-less record: below the bar
+        // ingest corrects at, so the card does not second-guess it either.
+        let clocks = TimeAccounting.resolve(movingS: 6_240, elapsedS: 6_240)
+        XCTAssertEqual(TimeAccounting.cardNote(clocks, sampleMovingS: 6_000), .continuous)
+    }
+
+    func testClocksSecondsApartAreNotCalledTheSame() {
+        // Under the noise floor is not a stop worth columns, but "the same" would be false.
+        let clocks = TimeAccounting.resolve(movingS: 2_400, elapsedS: 2_412)
+        XCTAssertEqual(TimeAccounting.cardNote(clocks, sampleMovingS: nil), .withinNoise)
+    }
+
+    func testARecordedStopShowsTheColumns() {
+        // Including a run ingest just corrected: its clocks now differ, as they should.
+        XCTAssertEqual(TimeAccounting.cardNote(TimeAccounting.resolve(movingS: 2_672, elapsedS: 2_838),
+                                               sampleMovingS: nil), .stops)
+        XCTAssertEqual(TimeAccounting.cardNote(TimeAccounting.resolve(movingS: 6_060, elapsedS: 37_459),
+                                               sampleMovingS: 6_060), .stops)
+    }
 }
