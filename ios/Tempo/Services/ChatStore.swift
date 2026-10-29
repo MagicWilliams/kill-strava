@@ -10,10 +10,30 @@ struct ProposedAction: Codable, Equatable {
     // amend_run / add_run
     let run_id: String?
     let start_time: String?     // ISO 8601, passed straight through to Postgres
-    let distance_m: Int?        // the run's metres; on create_plan, the race's (#184)
-    let duration_s: Int?
-    let avg_hr: Int?
+    /// Final totals. Sent by the coach before #206; on a facts card they are absent until
+    /// Confirm stamps code's result onto it (`RunCorrection.stamping`). `var` for that.
+    var distance_m: Int?        // the run's metres; on create_plan, the race's (#184)
+    var duration_s: Int?
+    var avg_hr: Int?
     let note: String?
+
+    // amend_run / add_run since #206: what the athlete said, never a total the model worked
+    // out. `RunCorrection` does the arithmetic. Distances and paces are in `unit`; times
+    // and paces are clock strings ("14:00", "8:30").
+    var unit: String? = nil
+    var added_distance: Double? = nil   // amend_run: a stretch the watch missed
+    var added_time: String? = nil
+    var added_pace: String? = nil
+    var actual_distance: Double? = nil  // amend_run: the true total, stated outright
+    var actual_time: String? = nil
+    var run_distance: Double? = nil     // add_run. Not `distance`: create_plan owns that key (#184)
+    var run_time: String? = nil
+    var run_pace: String? = nil
+    var stated_avg_hr: Int? = nil       // only a number the athlete read off another device
+    /// amend_run: the run this card was first applied against, pinned before the write.
+    /// Facts are deltas ("add 1.2 mi"), so a Retry after a write that landed but whose
+    /// response was lost would otherwise add the stretch twice. Never sent by the model.
+    var based_on: RunCorrection.Recorded? = nil
 
     // set_risk_tolerance
     let level: String?
@@ -107,7 +127,14 @@ final class ChatStore: ObservableObject {
 
     // Wire types
     struct WireMessage: Codable { let role: String; let content: String }
-    private struct CoachRequest: Encodable { let messages: [WireMessage]; let context: CoachContext }
+    /// `features` tells the coach what this build can read. A coach that predates a feature
+    /// ignores the key; a coach that has it only uses it for a build that asks — which is
+    /// what lets the app and the function ship in either order (#206).
+    private struct CoachRequest: Encodable {
+        let messages: [WireMessage]
+        let context: CoachContext
+        var features = [RunCorrection.coachFeature]
+    }
     private struct CoachReply: Decodable { let reply: String; let proposed_actions: [ProposedAction]? }
     private struct HistoryRow: Decodable {
         let id: UUID
@@ -128,7 +155,12 @@ final class ChatStore: ObservableObject {
         let proposed_action: ProposedAction?
         let action_state: String?
     }
-    private struct StatePatch: Encodable { let action_state: String }
+    /// `proposed_action` only when the card itself changed (a pinned base, stamped totals);
+    /// nil is left out of the JSON, so a plain state change writes only the state.
+    private struct StatePatch: Encodable {
+        let action_state: String
+        var proposed_action: ProposedAction? = nil
+    }
 
     /// Load persisted history; on a fresh account, open with a data-grounded status read.
     /// In onboarding mode, always (re)open the interview — resuming where it left off.
@@ -295,10 +327,13 @@ final class ChatStore: ObservableObject {
         // in the transcript. The plan paths are the only ones that narrate; letting them
         // append it themselves is what put the result above the tap that asked for it (#39).
         var narration: String?
+        // A run card comes back carrying the totals code computed, so the card, "What
+        // changed" and the row in `coach_messages` all show what was actually written.
+        var stamped: ProposedAction?
         do {
             switch action.type {
-            case "amend_run":          try await applyAmend(action)
-            case "add_run":            try await applyAdd(action, messageID: messageID)
+            case "amend_run":          stamped = try await applyAmend(action, messageID: messageID, units: runStore.units)
+            case "add_run":            stamped = try await applyAdd(action, messageID: messageID, units: runStore.units)
             case "set_risk_tolerance": try await applyRiskTolerance(action, runStore: runStore)
             case "update_athlete":     try await applyAthleteUpdate(action, runStore: runStore)
             case "create_plan":        narration = try await applyCreatePlan(action, runStore: runStore)
@@ -318,12 +353,15 @@ final class ChatStore: ObservableObject {
             messages[idx].actionState = .failed
             persist(.failed, for: messageID)
             Telemetry.error("coach.action_failed", error, context: Self.failureContext(type: action.type, error: error))
-            errorText = (error as? ActionError)?.message ?? "That change didn't go through — Confirm to retry."
+            errorText = (error as? ActionError)?.message
+                ?? (error as? RunCorrection.Rejection)?.message
+                ?? "That change didn't go through — Confirm to retry."
             // No acknowledgement on a failure: the retry card is the response.
             return false
         }
         messages[idx].actionState = .applied
-        persist(.applied, for: messageID)
+        if let stamped { messages[idx].action = stamped }
+        persist(.applied, for: messageID, action: stamped)
         // Causal order: the tap, then what it did. Both go in before the acknowledgement round
         // trip, so the coach is answering a transcript that already reads correctly.
         append(.user, "Confirmed — \(action.displaySummary)")
@@ -406,7 +444,12 @@ final class ChatStore: ObservableObject {
         }
     }
 
-    private func applyAmend(_ action: ProposedAction) async throws {
+    /// Returns the card with the written totals stamped on it.
+    ///
+    /// The arithmetic is `RunCorrection`'s, never the model's (#206). The run it is done
+    /// against is pinned on the card before the write: a facts card says "add 1.2 mi", and
+    /// a Retry after a write that landed must not add it to the already-corrected row.
+    private func applyAmend(_ action: ProposedAction, messageID: UUID, units: Units) async throws -> ProposedAction {
         guard let runID = action.run_id else { throw ActionError.badParams }
 
         struct Existing: Decodable {
@@ -424,9 +467,24 @@ final class ChatStore: ObservableObject {
             .execute()
             .value
 
+        var action = action
+        let base: RunCorrection.Recorded
+        if let pinned = action.based_on {
+            base = pinned
+        } else {
+            base = RunCorrection.Recorded(
+                distance_m: existing.distance_m,
+                duration_s: existing.duration_s,
+                avg_hr: existing.avg_hr
+            )
+            action.based_on = base
+            await pin(action, for: messageID)
+        }
+        let outcome = try RunCorrection.amendment(proposed: action, to: base, units: units)
+
         struct Patch: Encodable {
-            var distance_m: Int?
-            var duration_s: Int?
+            var distance_m: Int
+            var duration_s: Int
             var avg_hr: Int?
             var avg_pace_sec: Int?
             var corrected = true
@@ -441,15 +499,12 @@ final class ChatStore: ObservableObject {
             }
         }
 
-        let newDistance = action.distance_m ?? existing.distance_m
-        let newDuration = action.duration_s ?? existing.duration_s
-        let miles = Double(newDistance) / 1609.34
         var patch = Patch(
-            distance_m: action.distance_m,
-            duration_s: action.duration_s,
-            avg_hr: action.avg_hr,
-            avg_pace_sec: miles > 0.05 ? Int(Double(newDuration) / miles) : nil,
-            correction_note: action.note ?? action.displaySummary,
+            distance_m: outcome.distanceM,
+            duration_s: outcome.durationS,
+            avg_hr: outcome.avgHR,
+            avg_pace_sec: outcome.avgPaceSec,
+            correction_note: RunCorrection.correctionNote(action.note ?? action.displaySummary, outcome: outcome),
             original: nil
         )
         if !existing.corrected {   // preserve the pre-correction snapshot once
@@ -461,16 +516,30 @@ final class ChatStore: ObservableObject {
             )
         }
         try await Supa.client.from("runs").update(patch).eq("id", value: runID).execute()
+        return RunCorrection.stamping(action, with: outcome)
+    }
+
+    /// Hold the card's pinned base in memory and in `coach_messages` before the write it
+    /// guards. Awaited, so a relaunch after a landed write still finds it; a failed save
+    /// only costs that relaunch case, never the write itself.
+    private func pin(_ action: ProposedAction, for messageID: UUID) async {
+        if let idx = messages.firstIndex(where: { $0.id == messageID }) { messages[idx].action = action }
+        struct ActionPatch: Encodable { let proposed_action: ProposedAction }
+        _ = try? await Supa.client.from("coach_messages")
+            .update(ActionPatch(proposed_action: action))
+            .eq("id", value: messageID.uuidString)
+            .execute()
     }
 
     /// Log a run the coach proposed. `messageID` is the card the offer came on: it is what
     /// gives the row its identity, so confirming the same offer twice writes one run and not
     /// two (see `Engine/ManualRunIdentity.swift`).
-    private func applyAdd(_ action: ProposedAction, messageID: UUID) async throws {
+    /// Returns the card with the written totals stamped on it; the arithmetic is
+    /// `RunCorrection`'s (#206).
+    private func applyAdd(_ action: ProposedAction, messageID: UUID, units: Units) async throws -> ProposedAction {
         guard let uid = Supa.userID?.uuidString,
-              let start = action.start_time,
-              let distance = action.distance_m,
-              let duration = action.duration_s else { throw ActionError.badParams }
+              let start = action.start_time else { throw ActionError.badParams }
+        let outcome = try RunCorrection.loggedRun(proposed: action, units: units)
 
         struct ManualInsert: Encodable {
             let user_id: String
@@ -483,15 +552,14 @@ final class ChatStore: ObservableObject {
             let avg_hr: Int?
             let correction_note: String?
         }
-        let miles = Double(distance) / 1609.34
         let row = ManualInsert(
             user_id: uid,
             external_id: ManualRunIdentity.externalID(forProposalIn: messageID),
             start_time: start,
-            distance_m: distance,
-            duration_s: duration,
-            avg_pace_sec: miles > 0.05 ? Int(Double(duration) / miles) : nil,
-            avg_hr: action.avg_hr,
+            distance_m: outcome.distanceM,
+            duration_s: outcome.durationS,
+            avg_pace_sec: outcome.avgPaceSec,
+            avg_hr: outcome.avgHR,
             correction_note: action.note
         )
         // Upsert, not insert, and for the same reason the ingest path does it
@@ -503,6 +571,7 @@ final class ChatStore: ObservableObject {
             .from("runs")
             .upsert(row, onConflict: "user_id,source,external_id", ignoreDuplicates: true)
             .execute()
+        return RunCorrection.stamping(action, with: outcome)
     }
 
     private func applyRiskTolerance(_ action: ProposedAction, runStore: RunStore) async throws {
@@ -704,6 +773,10 @@ final class ChatStore: ObservableObject {
     /// database row, so only its status goes in.
     private static func failureContext(type: String, error: Error) -> [String: String] {
         var context = ["type": type]
+        // A run card code refused (#206): the case names the field, never the athlete's words.
+        if let rejection = error as? RunCorrection.Rejection {
+            context["reason"] = String(String(describing: rejection).prefix(80))
+        }
         if case let FunctionsError.httpError(code, body) = error {
             context["status"] = String(code)
             if (400..<500).contains(code), let reason = PlanRequest.refusal(inErrorBody: body) {
@@ -804,10 +877,10 @@ final class ChatStore: ObservableObject {
 
     /// Mirror a card's resolution into the row that proposed it, so a relaunch replays the
     /// outcome instead of re-offering a change the athlete already answered.
-    private func persist(_ state: ChatMessage.ActionState, for id: UUID) {
+    private func persist(_ state: ChatMessage.ActionState, for id: UUID, action: ProposedAction? = nil) {
         Task {
             try? await Supa.client.from("coach_messages")
-                .update(StatePatch(action_state: state.durable.rawValue))
+                .update(StatePatch(action_state: state.durable.rawValue, proposed_action: action))
                 .eq("id", value: id.uuidString)
                 .execute()
         }

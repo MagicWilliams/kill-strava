@@ -277,6 +277,46 @@ struct CoachView: View {
         }
     }
 
+    /// The run an amend card would change, as loaded on the phone.
+    private func recorded(for action: ProposedAction) -> RunCorrection.Recorded? {
+        guard let id = action.run_id.flatMap(UUID.init(uuidString:)),
+              let run = store.runs.first(where: { $0.id == id }) else { return nil }
+        return RunCorrection.Recorded(distance_m: run.distanceM, duration_s: run.durationS, avg_hr: run.avgHR)
+    }
+
+    @ViewBuilder
+    private func runPreview(_ preview: RunCorrection.CardPreview) -> some View {
+        switch preview {
+        case .computed(let rows, let notes):
+            VStack(alignment: .leading, spacing: 5) {
+                ForEach(rows, id: \.label) { row in
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        Text(row.label.uppercased())
+                            .font(Tokens.Font.mono(10)).tracking(1)
+                            .foregroundStyle(Tokens.Palette.textTertiary)
+                            .frame(width: 64, alignment: .leading)
+                        if let before = row.before {
+                            Text(before + "  →")
+                                .font(Tokens.Font.mono(13))
+                                .foregroundStyle(Tokens.Palette.textSecondary)
+                        }
+                        Text(row.after)
+                            .font(Tokens.Font.mono(13))
+                            .foregroundStyle(Tokens.Palette.textPrimary)
+                    }
+                }
+                ForEach(notes, id: \.self) { note in
+                    Text(note).font(Tokens.Font.ui(12)).foregroundStyle(Tokens.Palette.textSecondary)
+                }
+            }
+        case .rejected(let message):
+            Text(message).font(Tokens.Font.ui(12)).foregroundStyle(Tokens.Palette.danger)
+        case .runNotLoaded:
+            Text("This run isn't loaded on the phone, so there's nothing to preview. Confirm works it out from the saved run.")
+                .font(Tokens.Font.ui(12)).foregroundStyle(Tokens.Palette.textSecondary)
+        }
+    }
+
     /// The race a create_plan card will save, read from the request Confirm sends rather than
     /// from the coach's summary (#184). On 15 Oct the summary said "5K" and the payload named
     /// no distance; the goal was saved as a marathon, and nothing on screen disagreed.
@@ -306,6 +346,14 @@ struct CoachView: View {
                 .foregroundStyle(state == .dismissed ? Tokens.Palette.textTertiary : Tokens.Palette.textPrimary)
             if action.type == "create_plan" {
                 planGoalLine(for: action, state: state)
+            }
+
+            // A run card's numbers, worked out by code from the run as stored (#206): what
+            // Confirm will write, shown before the tap. Only while the card is still an offer;
+            // once applied, the loaded run already carries the change.
+            if [ChatMessage.ActionState.pending, .failed, .applying].contains(state),
+               let preview = RunCorrection.cardPreview(for: action, run: recorded(for: action), units: store.units) {
+                runPreview(preview)
             }
 
             switch state {
