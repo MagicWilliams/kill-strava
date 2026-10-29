@@ -37,6 +37,9 @@ enum Route: Hashable {
     case changes
     case overlapReview
     case blockReview(GoalInfo)
+    /// One coach conversation (#87). The id and not the row: a thread's title and recap are
+    /// written while it is open, and a pushed copy of the row would go stale behind it.
+    case coachThread(UUID)
 }
 
 @MainActor
@@ -63,10 +66,16 @@ final class TabRouter: ObservableObject {
     func openProjection() { path.append(.projection) }
     func openRaceRecap(_ run: RunSummary) { path.append(.raceRecap(run)) }
     func openChanges() { path.append(.changes) }
+    func openCoachThread(_ id: UUID) { path.append(.coachThread(id)) }
     func openOverlapReview() { path.append(.overlapReview) }
     func openBlockReview(_ goal: GoalInfo) { path.append(.blockReview(goal)) }
 
     /// Land on the Coach tab scrolled to one message.
+    ///
+    /// Since #87 the tab opens on the list of conversations, so this sets the focus and
+    /// `CoachHomeView` pushes the live thread; the transcript scrolls to the message if it
+    /// is in the page it loaded. The ledger does not know which thread holds a message —
+    /// routing to the exact one is follow-up work.
     func showCoachMessage(_ id: UUID) {
         coachFocus = id
         showCoach()
@@ -173,6 +182,7 @@ struct RootTabView: View {
                 case .changes: ChangesView()
                 case .overlapReview: OverlapReviewView()
                 case .blockReview(let goal): BlockReviewView(goal: goal)
+                case .coachThread(let id): CoachView(threadID: id)
                 }
             }
         }
@@ -194,7 +204,7 @@ struct RootTabView: View {
         case .today:    TodayView()
         case .plan:     PlanView()
         case .progress: ProgressScreen()
-        case .coach:    CoachView()
+        case .coach:    CoachHomeView()
         case .you:      YouView()
         }
     }

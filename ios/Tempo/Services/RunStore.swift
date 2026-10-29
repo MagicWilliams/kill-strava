@@ -992,6 +992,23 @@ struct CoachContext: Encodable {
     let goal_detail: GoalDetailCoachContext?
     /// A sent intake not yet turned into a plan (#102) — the coach's cue to reflect it back.
     let intake: IntakeCoachContext?
+
+    /// What the coach knows that is older than this conversation (#87).
+    ///
+    /// A `var`, and the only one here, because it is the one part of the context the store
+    /// cannot build: `RunStore` holds the training data, while the facts in `coach_memory`
+    /// and the previous thread's recap belong to the chat. `ChatStore` stamps it on at the
+    /// moment of the request — see `ChatStore.requestReply`.
+    var memory: MemoryCtx?
+
+    struct MemoryCtx: Encodable {
+        /// Durable facts, newest first. The coach's own words, written by its `remember`
+        /// tool after the athlete confirmed the card.
+        let facts: [String]
+        /// The previous conversation's recap, so a new thread opens knowing what the last
+        /// one settled. Nil when there is no written-up conversation behind this one.
+        let picking_up: String?
+    }
 }
 
 extension RunStore {
@@ -1058,7 +1075,11 @@ extension RunStore {
             goal_detail: GoalDetailCoachContext(goal),
             intake: intakeHandoff.flatMap { h in
                 h.stamp.map { IntakeCoachContext($0, situation: h.answers.situation) }
-            }
+            },
+            // Filled in by `ChatStore.requestReply`, which is the only caller that knows
+            // which conversation this is. A one-shot read (a takeaway, a block review) has
+            // no conversation and sends none.
+            memory: nil
         )
     }
 
