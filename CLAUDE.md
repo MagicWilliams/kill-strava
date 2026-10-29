@@ -85,3 +85,20 @@ restate the code are noise; comments carrying a decision or a scar are the point
 
 Swift: pure logic in `Engine/`, I/O in `Services/`, view code stays declarative. Prefer
 extracting a pure function over mocking a dependency.
+
+## One race, one answer
+
+Every screen has to agree about which race the athlete is training for. On 15 Oct 2026 Plan
+said 42 days, You said 6 weeks, Progress said 7, and a 5K had been saved as a marathon that
+none of them named (#215, #230). So:
+
+- **A number or label that shows on more than one screen comes from one `Engine/` function.**
+  Views don't do their own date math or goal-state branching. Countdown → `RaceCountdown`,
+  goal state → `GoalLine.State`, race distance → `RaceRecap.raceMeters(goal:)`.
+- **Every place that names the race also names its distance.** A projection, a countdown or a
+  goal card that doesn't say "5K" or "marathon" can't show that it's for the wrong race.
+- **"No goal" and "no target time" are different states.** Switch on `GoalLine.State`
+  (`.noGoal` / `.untimed` / `.timed`). Never on `goalTimeSeconds == nil`.
+- **A confirm card says what Confirm will save, read from the payload, not from the coach's
+  prose.** If a field isn't in the action, the card shows it as missing. The 15 Oct card read
+  "5K at Turkey Trot" over a payload with no distance.
