@@ -992,6 +992,10 @@ struct CoachContext: Encodable {
     let goal_detail: GoalDetailCoachContext?
     /// A sent intake not yet turned into a plan (#102) — the coach's cue to reflect it back.
     let intake: IntakeCoachContext?
+    /// The goal time code suggests for the intake's race, or the active goal's (#239). The
+    /// coach offers this, a value in its range, or the athlete's own time, and nothing else.
+    /// Absent with no projection: then there is no target to propose.
+    let suggested_goal: SuggestedGoalCoachContext?
 
     /// What the coach knows that is older than this conversation (#87).
     ///
@@ -1076,6 +1080,11 @@ extension RunStore {
             intake: intakeHandoff.flatMap { h in
                 h.stamp.map { IntakeCoachContext($0, situation: h.answers.situation) }
             },
+            suggested_goal: SuggestedGoal.coachContext(
+                runs: runs,
+                race: SuggestedGoal.race(intake: intakeHandoff?.stamp, goal: goal, now: .now),
+                asOf: .now
+            ),
             // Filled in by `ChatStore.requestReply`, which is the only caller that knows
             // which conversation this is. A one-shot read (a takeaway, a block review) has
             // no conversation and sends none.
