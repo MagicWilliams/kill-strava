@@ -31,6 +31,16 @@ enum ProjectionHistory {
     /// mile of strides is not evidence you can hold that shape for 26.2.
     static let minQualifyingMiles = 2.5
 
+    /// A run slower than this on average is not a running effort, and cannot be extrapolated
+    /// from: it is a walk, or a watch left recording after the run ended.
+    ///
+    /// The floor above only guards one side. "Fastest qualifying run" sounds safe without a
+    /// ceiling, because a slow run never wins, until it is the only run in the window. On
+    /// 15 Oct 2026 an 8.1 mi workout with a 10h24m wall clock (77:00/mi) was the only run
+    /// in six weeks, and the projection read 36:06:09 (#227). Twenty minutes a mile is
+    /// brisk-walk pace: generous to any run-walk, and still below every walk.
+    static let maxQualifyingPaceSecPerMile = 1_200
+
     /// Training weeks run Mon–Sun. Held here, like `RunHistory.calendar`, so the engine
     /// stays pure — no actor isolation, no store to construct in a test.
     static let calendar: Calendar = {
@@ -52,7 +62,8 @@ enum ProjectionHistory {
     // MARK: - A single moment
 
     /// The one effort the projection rests on as of `asOf` — fastest average pace among
-    /// qualifying runs in the trailing window. Nil when nothing qualifies.
+    /// qualifying runs in the trailing window (at least `minQualifyingMiles`, no slower
+    /// than `maxQualifyingPaceSecPerMile`). Nil when nothing qualifies.
     ///
     /// Takes no race distance, because the choice cannot depend on one: Riegel scales every
     /// candidate by the same `d₂^1.06`, so whichever run wins for a marathon wins for a 5K.
@@ -70,9 +81,10 @@ enum ProjectionHistory {
     ) -> RunSummary? {
         guard let cutoff = calendar.date(byAdding: .day, value: -windowDays, to: asOf) else { return nil }
         return runs
-            .filter {
-                $0.start >= cutoff && $0.start <= asOf
-                    && $0.miles >= minQualifyingMiles && $0.paceSecPerMile != nil
+            .filter { (run: RunSummary) -> Bool in
+                guard run.start >= cutoff, run.start <= asOf, run.miles >= minQualifyingMiles,
+                      let pace = run.paceSecPerMile else { return false }
+                return pace <= maxQualifyingPaceSecPerMile
             }
             .min { a, b in
                 let pa = a.paceSecPerMile ?? .max, pb = b.paceSecPerMile ?? .max
