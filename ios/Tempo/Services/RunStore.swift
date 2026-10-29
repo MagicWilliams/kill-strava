@@ -1013,7 +1013,7 @@ extension RunStore {
         return CoachContext(
             today: Date.now.formatted(day),
             units: units.rawValue,
-            mode: TodayMode.coachMode(todayMode, goal: goal),
+            mode: TodayMode.coachMode(todayMode, goal: goal, phase: blockPhase),
             goal: goalLine.coachLine,
             risk_tolerance: riskTolerance,
             max_hr: effectiveMaxHR,

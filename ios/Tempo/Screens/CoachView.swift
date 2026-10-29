@@ -142,8 +142,6 @@ struct CoachView: View {
             inputBar
         }
         .background(Tokens.Palette.canvas)
-        .onAppear(perform: takeDraft)
-        .onChange(of: router.coachDraft) { _, _ in takeDraft() }
         .task {
             chat.onboardingMode = onboarding
             chat.runStore = store
@@ -164,14 +162,6 @@ struct CoachView: View {
                 entries, alsoApplied: applied, now: .now, calendar: RunStore.cal
             )
         }
-    }
-
-    /// Move a draft handed over by the router (the "Train for something" CTA) into the
-    /// input. An athlete's own half-typed message wins: nothing is overwritten.
-    private func takeDraft() {
-        guard !onboarding, let handed = router.coachDraft else { return }
-        router.coachDraft = nil
-        if draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { draft = handed }
     }
 
     /// Scroll to the message What changed asked for, if it is in the loaded history. Left
