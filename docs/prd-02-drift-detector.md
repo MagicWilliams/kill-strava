@@ -168,6 +168,7 @@ All code, all unit-tested, no UI. Goal: numbers Magic trusts before anything is 
 - **Context:** Tempo needs an established, defensible method to estimate race-equivalent fitness from recent runs.
 - **Do:** Compare candidates (e.g. Riegel's race-time formula, Daniels' VDOT-style estimates, an HR-adjusted approach). Recommend one, with tradeoffs, and define what counts as a "qualifying effort." Propose an easy-run classification heuristic (pace/HR relative to the runner's baseline).
 - **Acceptance:** A short written recommendation in the repo (`docs/`) with the chosen formula, qualifying-effort rules, easy-run heuristic, and known failure cases.
+- **Written up (proposed, #234):** [[spike-fitness-formula]]. Its last section is the spec for #2.
 - **Out of scope:** Implementation.
 
 #### #2 Fitness estimator `feature`
@@ -264,7 +265,7 @@ Propose these to Magic; add only on sign-off.
 ## 12. Open questions
 
 1. Which issues already exist in the repo? (Answer during the audit.)
-2. Fitness formula and easy-run heuristic (resolved by #1).
+2. Fitness formula and easy-run heuristic (resolved by #1; proposal in [[spike-fitness-formula]], awaiting David).
 3. What exactly does the backend store, and what does the AI provider retain? (Partly answered in §14. Needed before any privacy copy ships.)
 4. Figma design system link (needed before #6).
 5. ~~Paid tier price and paywall~~ Deferred: Tempo is free for now.
