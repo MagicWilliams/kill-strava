@@ -18,6 +18,7 @@ import { RACE_DISTANCES } from "./distances.ts";
 import { runEditing, shapeRunInput, speaksRunFacts } from "./run_corrections.ts";
 import { goalLifecycle, RACE_ROLE_PROPERTY } from "./goal_lifecycle.ts";
 import { parseThreadSummary } from "./summary.ts";
+import { goalRejections, HELD_BACK_PLAN } from "./goal_guard.ts";
 
 const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
 const MODEL = "claude-sonnet-5";
@@ -94,7 +95,7 @@ ${goalRules}
 Training intake (ONLY when <athlete_context>.intake is present):
 - The athlete just filled in the training intake form; the latest user turn is their answers in plain text, and intake holds the same answers as data. They have opted in to training, so this is the moment to set the goal; that holds even when mode is "just_running", which only means no plan exists yet.
 - Your first reply after the form is the reflect-back. In 3–6 sentences: say back the few answers that will shape the block most (the race and date, where they are now, plan style, what they want coached), then assess them against the data: current volume, recent long runs, best_efforts. Be honest about fit.
-- Then propose the goal and call create_plan in the same message. race_name and race_date come from intake. goal_time_s: if goal_type is "time", start from stated_goal_time and say plainly if the data says it is a reach or too soft (their risk dial applies). For "pr" or "unsure", propose a target from the data and say what it is grounded in — but when the data cannot honestly support one (straight after a race, a long layoff, no recent runs at the distance), pass the goal_type and omit goal_time_s: the plan engine paces from current fitness, and the target can be set once a few weeks of running show where they are. Say which you did. For "finish", pass goal_type "finish" and omit goal_time_s: there is no target, the plan engine sets paces from current fitness, and you should not push a time (mention what the data points to only as information, if at all). Pass the intake's distance (and distance_m) on the card too, so the card says what it will build; the app attaches the rest of the intake's facts.
+- Then propose the goal and call create_plan in the same message. race_name and race_date come from intake. goal_time_s: if goal_type is "time", start from stated_goal_time and say plainly if the data says it is a reach or too soft (their risk dial applies). For "pr" or "unsure", the target comes from <athlete_context>.suggested_goal, never from your own arithmetic: goal_time_s must be suggested_goal.target_s, a value inside suggested_goal.range_s (seconds, [fastest, slowest]; a round number near the target, or a firmer or softer line that suits their risk dial), or a time the athlete stated themselves. Explain the choice in words, grounded in suggested_goal.basis, and never invent a number. suggested_goal is for the race at its distance_m and race_date; a different race has no suggestion. When there is no suggested_goal for the race, or the data cannot honestly support a target (straight after a race, a long layoff), pass the goal_type and omit goal_time_s: the plan engine paces from current fitness, and the target can be set once a few weeks of running show where they are. Say which you did. For "finish", pass goal_type "finish" and omit goal_time_s: there is no target, the plan engine sets paces from current fitness, and you should not push a time (mention what the data points to only as information, if at all). Pass the intake's distance (and distance_m) on the card too, so the card says what it will build; the app attaches the rest of the intake's facts.
 - If plan_style is "none", there is no schedule to build: the card saves the goal only, so its summary should read like "Save my goal: 5K at Turkey Trot, Nov 27, 19:30", not "Build my plan". "weekly" builds weekly targets with only the long run and key workouts.
 - situation "mid_block": they are already in week started_week of a block. The plan picks up from that week, anchored on their real runs. Acknowledge where they are; never send them back to week 1. stated_weekly_mi is their word for current volume; if the runs disagree, say so.
 - If risk_tolerance is "ambitious", name the specific risk once in the reflect-back, plainly.
@@ -178,7 +179,7 @@ const OTHER_TOOLS = [
           description: "The race distance this goal is for, and the same one the summary names. Required whenever race_date is not the active goal's race date: the plan engine refuses a new race with no distance rather than guess. For the active goal's own race it may be omitted, and the goal's distance carries over. \"custom\" needs distance_m.",
         },
         distance_m: { type: "integer", description: "Race distance in metres. Required with \"custom\" (e.g. 8000 for an 8K); otherwise optional, and it must agree with distance." },
-        goal_time_s: { type: "integer", description: "Target finish time in seconds (e.g. 11700 for 3:15:00). Required when goal_type is \"time\" or absent. Omit it for \"finish\"; for \"pr\" or \"unsure\" include it when the data supports a target, otherwise omit it (paces then come from current fitness)." },
+        goal_time_s: { type: "integer", description: "Target finish time in seconds (e.g. 11700 for 3:15:00). Required when goal_type is \"time\" or absent. Omit it for \"finish\". For \"pr\" or \"unsure\" it must be suggested_goal.target_s, a value inside suggested_goal.range_s, or a time the athlete stated themselves; with no suggested_goal for this race, omit it (paces then come from current fitness). Any other value is rejected." },
         goal_type: {
           type: "string",
           enum: ["time", "finish", "pr", "unsure"],
@@ -351,19 +352,25 @@ Deno.serve(async (req) => {
     let reply = blocks.filter((b) => b.type === "text").map((b) => b.text).join("\n").trim();
     let toolBlocks = blocks.filter((b) => b.type === "tool_use");
 
+    // #239: a pr/unsure create_plan whose goal_time_s the app's suggested_goal does not back
+    // goes back to the model as a tool error, and its reply is rewritten in the round below.
+    const athleteTurns = anthropicMessages.filter((m) => m.role === "user").map((m) => m.content);
+    const rejected = goalRejections(toolBlocks, context, athleteTurns);
+
     // The model often emits ONLY a tool call, no prose — which would stall the
     // conversation (especially the onboarding interview). One continuation round:
     // feed back tool results and let the coach keep talking.
-    if (toolBlocks.length > 0 && !reply) {
+    if ((toolBlocks.length > 0 && !reply) || rejected.size > 0) {
       const isAutoApplied = (name?: string) =>
         (context?.onboarding?.active === true) &&
         ["update_athlete", "update_plan_settings", "set_risk_tolerance", "complete_onboarding"].includes(name ?? "");
       const toolResults = toolBlocks.map((b) => ({
         type: "tool_result",
         tool_use_id: b.id,
-        content: isAutoApplied(b.name)
+        ...(rejected.has(b.id ?? "") ? { is_error: true } : {}),
+        content: rejected.get(b.id ?? "") ?? (isAutoApplied(b.name)
           ? "Recorded successfully. Continue the conversation — ask your next question or wrap up."
-          : "Proposal card is now shown to the athlete for confirmation — it is NOT yet applied. Continue the conversation without assuming it happened.",
+          : "Proposal card is now shown to the athlete for confirmation — it is NOT yet applied. Continue the conversation without assuming it happened."),
       }));
       const followUp = await fetch(ANTHROPIC_URL, {
         method: "POST",
@@ -384,7 +391,10 @@ Deno.serve(async (req) => {
         const followData = await followUp.json();
         const followBlocks: typeof blocks = followData.content ?? [];
         reply = followBlocks.filter((b) => b.type === "text").map((b) => b.text).join("\n").trim();
-        toolBlocks = [...toolBlocks, ...followBlocks.filter((b) => b.type === "tool_use")];
+        toolBlocks = [
+          ...toolBlocks.filter((b) => !rejected.has(b.id ?? "")),
+          ...followBlocks.filter((b) => b.type === "tool_use"),
+        ];
       }
     }
 
@@ -416,6 +426,14 @@ Deno.serve(async (req) => {
       if (!reply && toolBlocks.length === 0 && !oneShot) {
         reply = "Lost my train of thought there — ask me that again.";
       }
+    }
+
+    // #239: whatever happened above, a card the guard rejects never reaches the athlete.
+    const stillRejected = goalRejections(toolBlocks, context, athleteTurns);
+    if (stillRejected.size > 0) {
+      console.error("create_plan goal_time_s rejected twice", JSON.stringify([...stillRejected.values()]));
+      toolBlocks = toolBlocks.filter((b) => !stillRejected.has(b.id ?? ""));
+      reply = reply ? `${reply}\n\n${HELD_BACK_PLAN}` : HELD_BACK_PLAN;
     }
 
     // The model occasionally omits `summary` despite the schema — guarantee it here,
