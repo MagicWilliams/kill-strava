@@ -15,7 +15,9 @@
 // distance_m, course_type, goal_type, started_week, preferences — the same names as the
 // goals columns they land in. All optional for a regeneration of the active goal's race,
 // which carries them over. A NEW race must name its distance: since #184 a request with none
-// gets 400 `distance_required` instead of a marathon plan. goal.ts decides all of this.
+// gets 400 `distance_required` instead of a marathon plan. Since #238 it may carry
+// `race_role` ("goal" | "tune_up"), stored in preferences and echoed back so the app's
+// narration says "tune-up" only when the row does. goal.ts decides all of this.
 
 import { createClient } from "npm:@supabase/supabase-js@2";
 import {
@@ -275,7 +277,7 @@ features: ${JSON.stringify(features, null, 1)}
       return Response.json({
         plan_id: null, weeks: null, plan_style: prefs.planStyle,
         distance: goal.distance.label, projected_finish_s: projected,
-        goal_time_s, pace_basis: basis.source, rationale: basis.note,
+        goal_time_s, pace_basis: basis.source, rationale: basis.note, race_role: goal.race_role,
       });
     }
     const shape = generated.shape;
@@ -335,6 +337,7 @@ features: ${JSON.stringify(features, null, 1)}
       warnings: generated.warnings,
       goal_time_s,
       pace_basis: basis.source,
+      race_role: goal.race_role,
     });
   } catch (err) {
     console.error("plan error", err);

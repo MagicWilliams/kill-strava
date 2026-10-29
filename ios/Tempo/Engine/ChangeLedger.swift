@@ -238,6 +238,13 @@ enum ChangeLedger {
             title = "Setup finished"
             target = .profile
 
+        case GoalRetirement.actionType:
+            // A plan change, not a "You" one: the block it closed is what moved (#238).
+            kind = .plan
+            title = "Goal ended"
+            target = .plan
+            set("goal", "Reason", a.reason)
+
         default:
             // An action type this build doesn't know. It was applied, so it is listed —
             // rule 1 says every applied change, not every one we understand.

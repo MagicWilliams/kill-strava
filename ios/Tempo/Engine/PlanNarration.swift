@@ -26,9 +26,11 @@ enum PlanNarration {
         var projectedFinishSeconds: Int?
         var startWeeklyMiles: Double?
         var peakWeeklyMiles: Double?
+        /// What `plan` reported storing (#238). A tune-up plan says so in its first words.
+        var raceRole: RaceRole = .goal
     }
 
-    /// The "Plan is live…" line, or nothing.
+    /// The "Plan is live…" line, or nothing. "Tune-up plan is live…" for a tune-up (#238).
     ///
     /// No week count means the engine came back without a plan to announce; a half-sentence
     /// about volume with no plan behind it is worse than saying nothing, and the athlete
@@ -37,7 +39,8 @@ enum PlanNarration {
     /// The volume is said in the athlete's unit (#109); the engine reports it in miles.
     static func planIsLive(_ result: PlanResult, units: Units = .mi) -> String? {
         guard let weeks = result.weeks else { return nil }
-        var lines = ["Plan is live: \(weeks) weeks (\((result.archetype ?? "custom").replacingOccurrences(of: "_", with: " ")))."]
+        let lead = result.raceRole == .tuneUp ? "Tune-up plan is live" : "Plan is live"
+        var lines = ["\(lead): \(weeks) weeks (\((result.archetype ?? "custom").replacingOccurrences(of: "_", with: " ")))."]
         if let start = result.startWeeklyMiles, let peak = result.peakWeeklyMiles {
             lines.append("Volume runs \(units.number(miles: start, decimals: 0)) → \(units.number(miles: peak, decimals: 0)) \(units.abbreviation)/wk.")
         }

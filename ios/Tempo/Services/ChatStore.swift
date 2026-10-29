@@ -58,6 +58,8 @@ struct ProposedAction: Codable, Equatable {
     /// Before #184 the tool had no distance at all, and a card whose summary said "5K" was
     /// saved as a marathon.
     var distance: String? = nil
+    /// "goal" | "tune_up" (#238). Absent means goal. Read through `RaceRole(wire:)`.
+    var race_role: String? = nil
 
     // update_plan_settings
     let days_per_week: Int?
@@ -78,6 +80,11 @@ struct ProposedAction: Codable, Equatable {
     /// summary is what the card says; this is what `coach_memory` stores and what the coach
     /// is handed back months later, so it is the one that has to read cold.
     let fact: String?
+
+    // end_goal (#238)
+    /// Why the athlete is dropping the race, in the coach's condensed words. Optional: "I'm
+    /// not racing it" is reason enough. Kept on the card, which is the record of the change.
+    var reason: String? = nil
 
     /// create_plan only: what the athlete tapped in the intake (#102). Stamped by the app,
     /// never sent by the model — see `IntakeHandoff.stamping`.
@@ -165,7 +172,7 @@ final class ChatStore: ObservableObject {
     private struct CoachRequest: Encodable {
         let messages: [WireMessage]
         let context: CoachContext
-        var features = [RunCorrection.coachFeature]
+        var features = [RunCorrection.coachFeature, GoalRetirement.coachFeature]
     }
     private struct CoachReply: Decodable { let reply: String; let proposed_actions: [ProposedAction]? }
     private struct HistoryRow: Decodable {
@@ -312,6 +319,7 @@ final class ChatStore: ObservableObject {
         case "update_plan_settings": return "Rebuilding your plan with the new structure…"
         case "update_session":       return "Adjusting your session…"
         case "amend_run", "add_run": return "Updating your log…"
+        case GoalRetirement.actionType: return "Ending your plan…"
         default:                     return "Saving…"
         }
     }
@@ -386,6 +394,7 @@ final class ChatStore: ObservableObject {
             case "update_session":     try await applyUpdateSession(action, runStore: runStore)
             case "complete_onboarding": await applyCompleteOnboarding(runStore: runStore)
             case "remember":           try await applyRemember(action)
+            case GoalRetirement.actionType: try await applyEndGoal(runStore: runStore)
             default:
                 messages[idx].actionState = .failed
                 persist(.failed, for: messageID)
@@ -730,6 +739,28 @@ final class ChatStore: ObservableObject {
         await runStore.loadPlan()
     }
 
+    /// Retire the active goal and its plan (#238): the block closes the way the close-out
+    /// closes one, with the outcome `GoalRetirement` picks, so Today and Plan fall back to
+    /// just running. Runs are never touched.
+    ///
+    /// `BlockReviewService.close` rather than a second copy of its writes: it already checks
+    /// that each update matched a row, and it is safe to repeat, which is what Retry needs.
+    private func applyEndGoal(runStore: RunStore) async throws {
+        guard let retirement = GoalRetirement.retirement(
+            goal: runStore.goal, plan: runStore.plan, now: .now, calendar: RunStore.cal
+        ) else { throw ActionError.nothingToEnd }
+        if let goal = retirement.goal {
+            _ = try await BlockReviewService.close(BlockReviewService.CloseRequest(
+                goal: goal, planID: retirement.planID, outcome: retirement.outcome,
+                finishS: nil, raceRunID: nil, logRunStart: nil
+            ))
+        } else if let planID = retirement.planID {
+            try await Supa.client.from("plans").update(BlockCloseout.PlanPatch())
+                .eq("id", value: planID.uuidString).execute()
+        }
+        await runStore.loadPlan()
+    }
+
     /// Calls the /plan Edge Function (assessment → shape → generated schedule) and returns
     /// the line describing what came back.
     ///
@@ -745,6 +776,9 @@ final class ChatStore: ObservableObject {
             let projected_finish_s: Int?
             let start_weekly_mi: Double?
             let peak_weekly_mi: Double?
+            /// What `plan` stored (#238). Absent from a `plan` that predates it, and then the
+            /// narration says nothing about a role it can't vouch for.
+            let race_role: String?
         }
         let rep: Rep
         do {
@@ -764,7 +798,8 @@ final class ChatStore: ObservableObject {
             rationale: rep.rationale,
             projectedFinishSeconds: rep.projected_finish_s,
             startWeeklyMiles: rep.start_weekly_mi,
-            peakWeeklyMiles: rep.peak_weekly_mi
+            peakWeeklyMiles: rep.peak_weekly_mi,
+            raceRole: RaceRole(wire: rep.race_role) ?? .goal
         ), units: runStore.units)
     }
 
@@ -822,10 +857,14 @@ final class ChatStore: ObservableObject {
         /// `plan` turned the card away for something on it (#184: `distance_required`). Same
         /// words as `badParams` for the athlete; the reason is for `coach.action_failed`.
         case planRefused(String)
+        /// An end_goal card with no goal or plan left to end (#238).
+        case nothingToEnd
         var message: String {
             switch self {
             case .badParams, .planRefused:
                 return "That card is missing something the plan needs. Ask the coach to propose it again."
+            case .nothingToEnd:
+                return GoalRetirement.nothingToEnd
             }
         }
     }
