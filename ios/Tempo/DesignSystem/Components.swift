@@ -227,6 +227,86 @@ struct QuietButton: View {
     }
 }
 
+/// A pickable capsule: feel tags, shoe pairs, intake answers. Volt marks the choice, and
+/// volt is a fill, so `onVolt` sits on it.
+///
+/// Three hand-written copies of this capsule existed — `SaveRunView`, `TrainingIntakeView`
+/// and `RunJournalEditSheet` each declared a private one — and they had already drifted
+/// apart on fill, ink and type size (#179). One component with two `Ground`s, because that
+/// is the difference that is real: a chip inside a `Card` takes the `inset` fill to separate
+/// from the card it sits in, and a chip straight on the canvas takes `surface`.
+///
+/// Both grounds carry today's type verbatim, so collapsing the copies changed nothing on
+/// screen. Whether intake's slightly larger, quieter chip should survive is the design
+/// pass's call (#175), and now it is one value to change rather than three.
+///
+/// The select tick lives here, not in the action: every copy's every call site rang it, and
+/// one that forgot would have been a chip that felt broken for no visible reason.
+struct Chip: View {
+    enum Ground {
+        /// Inside a `Card` — the save screen, the journal edit sheet.
+        case card
+        /// Straight on the canvas — training intake.
+        case canvas
+    }
+
+    let title: String
+    let selected: Bool
+    var ground: Ground = .card
+    /// Share the row equally rather than hugging the text: intake's days-per-week numbers.
+    var fill = false
+    let action: () -> Void
+
+    init(_ title: String, selected: Bool, ground: Ground = .card, fill: Bool = false,
+         action: @escaping () -> Void) {
+        self.title = title
+        self.selected = selected
+        self.ground = ground
+        self.fill = fill
+        self.action = action
+    }
+
+    var body: some View {
+        Button {
+            Haptics.select()
+            action()
+        } label: {
+            Text(title)
+                .font(font)
+                .foregroundStyle(selected ? Tokens.Palette.onVolt : ink)
+                .padding(.horizontal, 14).padding(.vertical, 9)
+                .frame(maxWidth: fill ? .infinity : nil)
+                .background(selected ? Tokens.Palette.volt : unselectedFill, in: Capsule())
+                .contentShape(Capsule())
+        }
+        // `haptic: false`: the tick above is the selection, and a press tick on top of it
+        // reads as a double tap.
+        .buttonStyle(Pressable(haptic: false))
+        .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+
+    private var font: SwiftUI.Font {
+        switch ground {
+        case .card:   return Tokens.Font.ui(13, .semibold)
+        case .canvas: return Tokens.Font.ui(14, selected ? .semibold : .medium)
+        }
+    }
+
+    private var ink: Color {
+        switch ground {
+        case .card:   return Tokens.Palette.textPrimary
+        case .canvas: return Tokens.Palette.textSecondary
+        }
+    }
+
+    private var unselectedFill: Color {
+        switch ground {
+        case .card:   return Tokens.Palette.inset
+        case .canvas: return Tokens.Palette.surface
+        }
+    }
+}
+
 /// Compact metric tile (value over label).
 struct StatTile: View {
     let value: String

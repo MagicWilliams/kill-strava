@@ -22,9 +22,11 @@ import {
   generate,
   MARATHON_MI,
   MI,
+  MIN_PLAN_WEEKS,
   mondayOf,
   namedDistance,
   planWrites,
+  raceTooCloseForPlan,
   type Preferences,
   racePlacement,
   readPreferences,
@@ -372,6 +374,22 @@ Deno.test("#104: plan_style none writes nothing but the goal", () => {
   const p = block();
   assertEquals(planWrites("none", p), { plan: false, weeks: [], sessions: [] });
   assertEquals(planWrites("none", null), { plan: false, weeks: [], sessions: [] });
+});
+
+Deno.test("#140: a race under two weeks out is too close for a plan — but not for coaching", () => {
+  // The intake skips its own two-week check for "No plan, just coaching", so the form let a
+  // 10-day-out race through and /plan answered 400 after the coach had proposed the card.
+  for (const style of ["full", "weekly"] as const) {
+    assert(raceTooCloseForPlan(style, 1), `${style} cannot be built in one week`);
+    assert(raceTooCloseForPlan(style, 0), `${style} cannot be built in race week itself`);
+    assert(!raceTooCloseForPlan(style, MIN_PLAN_WEEKS), `${style} at the floor is buildable`);
+    assert(!raceTooCloseForPlan(style, 16));
+  }
+  // `none` writes no weeks at all, so there is no shape the arithmetic has to survive.
+  assertEquals(planWrites("none", null), { plan: false, weeks: [], sessions: [] });
+  for (const weeks of [0, 1, MIN_PLAN_WEEKS, 16]) {
+    assert(!raceTooCloseForPlan("none", weeks), `coaching-only is never too close (${weeks})`);
+  }
 });
 
 Deno.test("#104: plan_style weekly writes every week, but only the sessions that carry intent", () => {

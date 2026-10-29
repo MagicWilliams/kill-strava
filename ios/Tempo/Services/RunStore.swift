@@ -151,9 +151,13 @@ final class RunStore: ObservableObject {
         // DB first: ingest dedupes against what's already recorded (Garmin re-exports
         // the same runs under new HK uuids when its Health settings change).
         var response = await readRuns()
+        // Held outside the branch because the display rule needs it too: if the re-read
+        // fails, `RunFetch.resolve` grafts HealthKit copies on, and that graft has to know
+        // which workouts are already ours as retired rows (#202).
+        var retired = Set<String>()
         if !ingested.isEmpty {
             var inserted = 0
-            let retired = await readRetiredExternalIDs()
+            retired = await readRetiredExternalIDs()
             do {
                 inserted = try await health.sync(ingested, existing: response.knownRows ?? runs,
                                                  retiredExternalIDs: retired)
@@ -176,7 +180,8 @@ final class RunStore: ObservableObject {
 
         // The display rule is pure and lives in RunFetch — a failed read must never look
         // like data, and a fallback must never look like the corrected record.
-        let decision = RunFetch.resolve(response, ingested: ingested, onScreen: runs)
+        let decision = RunFetch.resolve(response, ingested: ingested, onScreen: runs,
+                                        retiredExternalIDs: retired)
         if let resolved = decision.runs { runs = resolved }
         dataWarning = decision.warning
         switch decision.availability {
@@ -1025,7 +1030,7 @@ extension RunStore {
         return CoachContext(
             today: Date.now.formatted(day),
             units: units.rawValue,
-            mode: TodayMode.coachMode(todayMode, goal: goal),
+            mode: TodayMode.coachMode(todayMode, goal: goal, phase: blockPhase),
             goal: goalLine.coachLine,
             risk_tolerance: riskTolerance,
             max_hr: effectiveMaxHR,

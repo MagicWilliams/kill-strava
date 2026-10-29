@@ -96,10 +96,14 @@ enum RunFetch {
     ///   - ingested: this refresh's HealthKit read — raw, uncorrected.
     ///   - onScreen: what the athlete is currently looking at (loaded from Supabase on an
     ///     earlier refresh, so it carries corrections).
+    ///   - retiredExternalIDs: HealthKit uuids of rows retired as duplicates
+    ///     (`superseded_by is not null`). The graft below needs them for the same reason the
+    ///     sync did (#97) — see that branch.
     static func resolve(
         _ response: Response,
         ingested: [RunSummary],
-        onScreen: [RunSummary]
+        onScreen: [RunSummary],
+        retiredExternalIDs: Set<String> = []
     ) -> Decision {
         switch response {
         case .rows(let rows):
@@ -113,7 +117,18 @@ enum RunFetch {
             // We inserted runs and then couldn't read them back. Graft on the HealthKit
             // copies of exactly what's missing rather than hiding runs the athlete just
             // finished — they're raw, but a brand-new run has nothing to correct yet.
-            let missing = RunDedupe.newRuns(from: ingested, existing: rows)
+            //
+            // `rows` is the live archive only, so on its own it has the blind spot #97 fixed
+            // for the sync: a retired duplicate's start can sit hours from its keeper (the 47
+            // timezone re-imports, 2021-12-26 → 2025-04-27), so HealthKit's copy of it passes
+            // the time window and gets grafted in beside the run it duplicates — double
+            // counted in History, weekly mileage and load until the next clean refresh. The
+            // retired uuids are what tells the graft those workouts are already ours.
+            let missing = RunDedupe.reconcile(
+                candidates: ingested,
+                existing: rows,
+                retiredExternalIDs: retiredExternalIDs
+            ).inserts
             let merged = (rows + missing).sorted { $0.start > $1.start }
             return Decision(
                 runs: merged,

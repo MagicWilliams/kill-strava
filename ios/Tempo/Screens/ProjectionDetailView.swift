@@ -149,7 +149,7 @@ struct ProjectionDetailView: View {
 
     private var heroCaption: String {
         guard let projection = displayedFinish else {
-            return "No qualifying effort in the last six weeks — the projection needs a run of at least \(minQualifying) to extrapolate from."
+            return "No qualifying effort in the last six weeks — the projection needs a run of at least \(minQualifying), at running pace rather than a walk, to extrapolate from."
         }
         guard let goal = goalTime else {
             return "Set a goal time and the gap to it shows up here."

@@ -324,8 +324,7 @@ struct SaveRunView: View {
             SectionLabel("Feel")
             FlowLayout(spacing: Tokens.Space.sm) {
                 ForEach(PostRun.feelTags, id: \.self) { tag in
-                    Chip(title: PostRun.tagLabel(tag), selected: draft.feelTags.contains(tag)) {
-                        Haptics.select()
+                    Chip(PostRun.tagLabel(tag), selected: draft.feelTags.contains(tag)) {
                         draft.feelTags = PostRun.toggled(tag, in: draft.feelTags)
                     }
                 }
@@ -394,13 +393,11 @@ struct SaveRunView: View {
                 SectionLabel("Shoes")
                 FlowLayout(spacing: Tokens.Space.sm) {
                     ForEach(options) { shoe in
-                        Chip(title: shoe.name, selected: picked == shoe.id) {
-                            Haptics.select()
+                        Chip(shoe.name, selected: picked == shoe.id) {
                             draft.shoe = .chosen(shoe.id)
                         }
                     }
-                    Chip(title: "None", selected: picked == nil) {
-                        Haptics.select()
+                    Chip("None", selected: picked == nil) {
                         draft.shoe = .chosen(nil)
                     }
                 }
@@ -598,26 +595,6 @@ private struct Metric: View {
         .background(Tokens.Well.neutral.fill)
         .clipShape(RoundedRectangle(cornerRadius: Tokens.Radius.lg, style: .continuous))
         .accessibilityElement(children: .combine)
-    }
-}
-
-/// A pickable capsule: feel tags and shoes. Volt marks the choice, `onVolt` on top.
-private struct Chip: View {
-    let title: String
-    let selected: Bool
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            Text(title)
-                .font(Tokens.Font.ui(13, .semibold))
-                .foregroundStyle(selected ? Tokens.Palette.onVolt : Tokens.Palette.textPrimary)
-                .padding(.horizontal, 14).padding(.vertical, 9)
-                .background(selected ? Tokens.Palette.volt : Tokens.Palette.inset, in: Capsule())
-                .contentShape(Capsule())
-        }
-        .buttonStyle(Pressable(haptic: false))
-        .accessibilityAddTraits(selected ? .isSelected : [])
     }
 }
 
