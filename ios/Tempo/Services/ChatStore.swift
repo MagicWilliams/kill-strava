@@ -4,7 +4,7 @@ import Supabase
 /// A write the coach wants to make, pending the athlete's confirmation.
 /// Flat shape mirroring the Edge Function's tool params.
 struct ProposedAction: Codable, Equatable {
-    let type: String            // amend_run | add_run | set_risk_tolerance
+    let type: String            // amend_run | add_run | set_risk_tolerance | log_body …
     let summary: String?        // one line shown on the confirm card (server guarantees it; belt & suspenders)
 
     // amend_run / add_run
@@ -72,6 +72,17 @@ struct ProposedAction: Codable, Equatable {
     let target_pace_sec: Int?
     let detail: String?
     let session_status: String?  // planned | skipped
+
+    // log_body / clear_body (#89)
+    var area: String? = nil
+    var sensation: String? = nil
+    /// The athlete's own 0–10. Validated, never clamped — see `applyLogBody`.
+    var severity: Int? = nil
+    /// `open` | `watching`. Named `body_status` on the wire as well as here: this shape is
+    /// flat across every tool, and `status` was already taken by `session_status`.
+    var body_status: String? = nil
+    /// clear_body: the report to resolve, from `body_reports` in the athlete context.
+    var report_id: String? = nil
 
     // remember
     /// The durable fact the coach wants carried into every later conversation (#87). The
@@ -312,6 +323,7 @@ final class ChatStore: ObservableObject {
         case "update_plan_settings": return "Rebuilding your plan with the new structure…"
         case "update_session":       return "Adjusting your session…"
         case "amend_run", "add_run": return "Updating your log…"
+        case "log_body", "clear_body": return "Saving what you told me…"
         default:                     return "Saving…"
         }
     }
@@ -384,6 +396,8 @@ final class ChatStore: ObservableObject {
             case "create_plan":        narration = try await applyCreatePlan(action, runStore: runStore)
             case "update_plan_settings": narration = try await applyPlanSettings(action, runStore: runStore)
             case "update_session":     try await applyUpdateSession(action, runStore: runStore)
+            case "log_body":           try await applyLogBody(action, runStore: runStore, messageID: messageID)
+            case "clear_body":         try await applyClearBody(action, runStore: runStore)
             case "complete_onboarding": await applyCompleteOnboarding(runStore: runStore)
             case "remember":           try await applyRemember(action)
             default:
@@ -792,6 +806,35 @@ final class ChatStore: ObservableObject {
 
         if let bpm = action.max_hr { runStore.setMaxHR(bpm) }
         runStore.setBirthdate(action.birthdate)
+    }
+
+    /// Log what the athlete told the coach about their body (#89).
+    ///
+    /// The severity is **validated, not clamped**, the same way `LoadModel.load` refuses an
+    /// RPE outside 1–10: an 11 from a bad decode clamped to 10 would cap readiness on a
+    /// number the athlete never said, and the card would go green over it. A refused card
+    /// comes back as Retry and the coach proposes again.
+    ///
+    /// `messageID` is the card the offer came on, so the Body section can link back to the
+    /// conversation the report came out of.
+    private func applyLogBody(_ action: ProposedAction, runStore: RunStore, messageID: UUID) async throws {
+        let area = action.area?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let sensation = action.sensation?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !area.isEmpty, !sensation.isEmpty,
+              let severity = action.severity, (0...10).contains(severity) else { throw ActionError.badParams }
+        try await runStore.logBodyReport(
+            area: area,
+            sensation: sensation,
+            severity: severity,
+            status: BodyReport.Status(decoding: action.body_status ?? BodyReport.Status.open.rawValue),
+            sourceMessageID: messageID
+        )
+    }
+
+    /// Clear a report the athlete says has resolved. Readiness recovers in `RunStore`.
+    private func applyClearBody(_ action: ProposedAction, runStore: RunStore) async throws {
+        guard let raw = action.report_id, let id = UUID(uuidString: raw) else { throw ActionError.badParams }
+        try await runStore.clearBodyReport(id)
     }
 
     private func applyCompleteOnboarding(runStore: RunStore) async {

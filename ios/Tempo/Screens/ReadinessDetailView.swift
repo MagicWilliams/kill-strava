@@ -8,6 +8,11 @@ struct ReadinessDetailView: View {
     @EnvironmentObject private var router: TabRouter
     @Environment(\.dismiss) private var dismiss
 
+    /// Reports whose Clear is in flight. A tap that leaves the row looking live is how the
+    /// same report gets cleared twice.
+    @State private var clearing: Set<UUID> = []
+    @State private var clearError: String?
+
     var body: some View {
         ZStack(alignment: .topLeading) {
             ScrollView {
@@ -18,6 +23,7 @@ struct ReadinessDetailView: View {
                         numbers(m)
                         fitnessCurve(m)
                         checkInCard
+                        bodyCard
                         howItWorks
                     } else {
                         Card {
@@ -119,7 +125,13 @@ struct ReadinessDetailView: View {
                 HStack(spacing: 8) {
                     Image(systemName: checkIn.feelsOk ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
                         .foregroundStyle(checkIn.feelsOk ? Tokens.Palette.success : Tokens.Palette.warning)
-                    Text(checkIn.feelsOk ? "Feeling okay — the numbers stand." : "You flagged something's off — readiness is capped and the coach knows.")
+                    // "The numbers stand" would be a lie sitting directly above a Body
+                    // section that is holding readiness at 40 (#89).
+                    Text(checkIn.feelsOk
+                         ? (BodyReports.capsReadiness(store.bodyReports.reports)
+                            ? "Feeling okay — but an open body report is holding readiness down. See Body, below."
+                            : "Feeling okay — the numbers stand.")
+                         : "You flagged something's off — readiness is capped and the coach knows.")
                         .font(Tokens.Font.ui(13)).foregroundStyle(Tokens.Palette.textPrimary)
                 }
             } else {
@@ -134,10 +146,96 @@ struct ReadinessDetailView: View {
         }
     }
 
+    /// The Body section (#89): what the athlete has told the coach about their body, and what
+    /// it is doing to the number above.
+    ///
+    /// It lives on this screen because this is where the app answers "why is readiness 40?",
+    /// beside the check-in card that answers the same question the other way. The Coach's
+    /// read screen the mockups put it on is #90's, and not built yet — when it lands, this
+    /// section is the thing to move or mirror.
+    ///
+    /// Hidden entirely until migration 0022 is applied: a Clear button that cannot save is
+    /// worse than no section at all.
+    @ViewBuilder private var bodyCard: some View {
+        let live = BodyReports.live(store.bodyReports.reports)
+        let resolved = BodyReports.cleared(store.bodyReports.reports)
+        if store.bodyReportsAvailable && !(live.isEmpty && resolved.isEmpty) {
+            Card {
+                SectionLabel("Body")
+                if live.isEmpty {
+                    Text("Nothing open. Tell the coach if something starts to niggle.")
+                        .font(Tokens.Font.ui(13)).foregroundStyle(Tokens.Palette.textSecondary)
+                }
+                ForEach(live) { report in
+                    liveReportRow(report)
+                }
+                if let error = clearError {
+                    Text(error).font(Tokens.Font.ui(12)).foregroundStyle(Tokens.Palette.danger)
+                }
+                ForEach(resolved.prefix(3)) { report in
+                    Text("Resolved: \(report.summaryLine)\(Self.resolvedDates(report))")
+                        .font(Tokens.Font.ui(12)).foregroundStyle(Tokens.Palette.textTertiary)
+                }
+            }
+        }
+    }
+
+    private func liveReportRow(_ report: BodyReport) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(report.summaryLine)
+                    .font(Tokens.Font.ui(14, .semibold)).foregroundStyle(Tokens.Palette.textPrimary)
+                Text("Since \(Self.day.string(from: report.openedAt)) · \(BodyReports.readinessEffect(severity: report.severity))")
+                    .font(Tokens.Font.ui(12)).foregroundStyle(Tokens.Palette.textSecondary)
+            }
+            Spacer(minLength: 0)
+            if clearing.contains(report.id) {
+                ProgressView().controlSize(.small).tint(Tokens.Palette.textTertiary)
+            } else {
+                Button { clear(report) } label: {
+                    Text("Clear")
+                        .font(Tokens.Font.ui(13, .semibold)).foregroundStyle(Tokens.Palette.textPrimary)
+                        .padding(.horizontal, 12).padding(.vertical, 7)
+                        .background(Tokens.Palette.surface)
+                        .clipShape(Capsule())
+                        .overlay(Capsule().strokeBorder(Tokens.Palette.elevated, lineWidth: 1))
+                }
+                .buttonStyle(Pressable())
+            }
+        }
+    }
+
+    /// Clearing from here writes the same row the coach's `clear_body` card writes, so
+    /// readiness recovers the same way by either route. Nothing on screen moves until the
+    /// write lands — a report that only *looks* cleared comes back next launch.
+    private func clear(_ report: BodyReport) {
+        clearing.insert(report.id)
+        clearError = nil
+        Task {
+            do {
+                try await store.clearBodyReport(report.id)
+            } catch {
+                clearError = "That didn't save — tap Clear again, or tell the coach."
+            }
+            clearing.remove(report.id)
+        }
+    }
+
+    private static let day: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "MMM d"
+        return f
+    }()
+
+    private static func resolvedDates(_ report: BodyReport) -> String {
+        guard let cleared = report.clearedAt else { return "" }
+        return " (\(day.string(from: report.openedAt)) – \(day.string(from: cleared)))"
+    }
+
     private var howItWorks: some View {
         Card {
             SectionLabel("How this works")
-            Text("Every run scores training load from distance and pace relative to your own recent baseline. Fitness is the 42-day trend of that load; fatigue is the 7-day trend; form is the gap. Readiness reads form against fitness — and your daily check-in can always overrule it. Honest caveat: it's pace-based for now; heart-rate weighting lands when HR flows reliably from Garmin.")
+            Text("Every run scores training load from distance and pace relative to your own recent baseline. Fitness is the 42-day trend of that load; fatigue is the 7-day trend; form is the gap. Readiness reads form against fitness — and your own word always overrules it: a check-in saying something's off, or a body report you rated \(BodyReports.capSeverity) or worse, caps it until you clear it. Honest caveat: it's pace-based for now; heart-rate weighting lands when HR flows reliably from Garmin.")
                 .font(Tokens.Font.ui(12)).foregroundStyle(Tokens.Palette.textSecondary)
                 .lineSpacing(3)
         }

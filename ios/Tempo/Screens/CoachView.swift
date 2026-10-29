@@ -370,6 +370,18 @@ struct CoachView: View {
         }
     }
 
+    /// What a body report does to readiness, on the card that logs it (#89).
+    ///
+    /// Said out loud because the alternative is the athlete guessing. A 3/10 that moved no
+    /// number looks like the app ignored them; a 6/10 that capped readiness looks like a bug
+    /// if nothing said it was coming. The rule is `BodyReports`' — the card only quotes it,
+    /// so the two can't drift.
+    private func bodyEffectLine(severity: Int, state: ChatMessage.ActionState) -> some View {
+        Text(BodyReports.readinessEffect(severity: severity))
+            .font(Tokens.Font.ui(12))
+            .foregroundStyle(state == .dismissed ? Tokens.Palette.textTertiary : Tokens.Palette.textSecondary)
+    }
+
     /// Confirm card for a coach-proposed change. Walks pending → applying → applied/failed,
     /// and stays on screen after resolving as evidence the change actually landed.
     private func actionCard(for messageID: UUID, action: ProposedAction, state: ChatMessage.ActionState) -> some View {
@@ -380,6 +392,9 @@ struct CoachView: View {
                 .foregroundStyle(state == .dismissed ? Tokens.Palette.textTertiary : Tokens.Palette.textPrimary)
             if action.type == "create_plan" {
                 planGoalLine(for: action, state: state)
+            }
+            if action.type == "log_body", let severity = action.severity {
+                bodyEffectLine(severity: severity, state: state)
             }
 
             // A run card's numbers, worked out by code from the run as stored (#206): what
@@ -476,6 +491,8 @@ struct CoachView: View {
         case "amend_run": return "Edit run"
         case "add_run": return "Log run"
         case "set_risk_tolerance": return "Training mode"
+        case "log_body": return "Body"
+        case "clear_body": return "Body · clear"
         case "remember": return "Remember this"
         default: return "Proposed change"
         }
