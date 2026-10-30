@@ -330,11 +330,18 @@ struct StatTile: View {
 struct Screen<Content: View>: View {
     private let title: String
     private let subtitle: String?
+    private let compactSubtitle: String?
     private let content: Content
 
-    init(title: String, subtitle: String? = nil, @ViewBuilder content: () -> Content) {
+    init(
+        title: String,
+        subtitle: String? = nil,
+        compactSubtitle: String? = nil,
+        @ViewBuilder content: () -> Content
+    ) {
         self.title = title
         self.subtitle = subtitle
+        self.compactSubtitle = compactSubtitle
         self.content = content()
     }
 
@@ -343,9 +350,7 @@ struct Screen<Content: View>: View {
             VStack(alignment: .leading, spacing: 14) {
                 VStack(alignment: .leading, spacing: 3) {
                     Text(title).display(30)
-                    if let subtitle {
-                        Text(subtitle).font(Tokens.Font.ui(13)).foregroundStyle(Tokens.Palette.textSecondary)
-                    }
+                    subtitleLine
                 }
                 .padding(.top, 8)
                 content
@@ -356,6 +361,31 @@ struct Screen<Content: View>: View {
         }
         .background(Tokens.Palette.canvas)
         .scrollIndicators(.hidden)
+    }
+
+    /// The subtitle under the tab title.
+    ///
+    /// Where a shorter form is given, `ViewThatFits` takes the full one when it fits on a
+    /// line and the short one when it doesn't. That matters because truncation drops the
+    /// *end*: "Turkey Trot · 5K · 43 days · 7 we…" loses the numbers and keeps the part the
+    /// athlete already knows, where "Turkey Trot · 5K · 43 days" loses only the week count
+    /// (#230).
+    ///
+    /// `lineLimit(1)` is what makes the choice happen at all — a `Text` free to wrap always
+    /// "fits", so without it the full form would never give way. It is applied only on this
+    /// path: a screen that passes one subtitle keeps wrapping, as every screen did before.
+    @ViewBuilder private var subtitleLine: some View {
+        if let subtitle {
+            if let compactSubtitle, compactSubtitle != subtitle {
+                ViewThatFits(in: .horizontal) {
+                    Text(subtitle).font(Tokens.Font.ui(13)).lineLimit(1)
+                    Text(compactSubtitle).font(Tokens.Font.ui(13)).lineLimit(1)
+                }
+                .foregroundStyle(Tokens.Palette.textSecondary)
+            } else {
+                Text(subtitle).font(Tokens.Font.ui(13)).foregroundStyle(Tokens.Palette.textSecondary)
+            }
+        }
     }
 }
 
