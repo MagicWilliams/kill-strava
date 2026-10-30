@@ -7,7 +7,7 @@ struct ProgressScreen: View {
     @Environment(\.units) private var units
 
     var body: some View {
-        Screen(title: "Progress", subtitle: subtitle) {
+        Screen(title: "Progress", subtitle: countdown.subtitle(), compactSubtitle: countdown.subtitle(.compact)) {
             if store.todayMode == .justRunning {
                 // No race, so nothing to project a finish for (#101). Where the athlete
                 // stands right now is the honest headline instead.
@@ -24,13 +24,12 @@ struct ProgressScreen: View {
         .refreshable { await store.refresh() }
     }
 
-    /// The countdown is whatever the athlete's actual goal says — name, date, and the
-    /// no-goal case included. The rule lives in `Engine/RaceCountdown.swift`; the header
-    /// that used to hardcode Chicago is the reason it's pinned there (#36).
-    private var subtitle: String {
-        RaceCountdown.state(
-            raceName: store.goal?.raceName, raceDay: store.goal?.raceDay, now: .now
-        ).subtitle
+    /// The countdown is whatever the athlete's actual goal says — name, distance, date, and
+    /// the no-goal case included. The rule lives in `Engine/RaceCountdown.swift`; the header
+    /// that used to hardcode Chicago is the reason it's pinned there (#36), and Plan and You
+    /// read the same state so the three tabs cannot disagree about one date (#230).
+    private var countdown: RaceCountdown.State {
+        RaceCountdown.state(goal: store.goal, now: .now, units: units)
     }
 
     @ViewBuilder private var projected: some View {

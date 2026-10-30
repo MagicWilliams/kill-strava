@@ -8,7 +8,7 @@ struct YouView: View {
     @Environment(\.units) private var units
 
     var body: some View {
-        Screen(title: "You", subtitle: subtitle) {
+        Screen(title: "You", subtitle: countdown.subtitle(), compactSubtitle: countdown.subtitle(.compact)) {
             goal
             pastBlocks
             yearStats
@@ -19,11 +19,15 @@ struct YouView: View {
         .refreshable { await store.refresh() }
     }
 
-    private var subtitle: String? {
-        guard let goal = store.goal, let day = goal.raceDay else { return "No goal yet" }
-        let weeks = max((Calendar.current.dateComponents([.day], from: .now, to: day).day ?? 0) / 7, 0)
-        let role = goal.raceRole.label.map { " · \($0)" } ?? ""
-        return "\(goal.raceName ?? "Race")\(role) · \(weeks) weeks out"
+    /// The same state Plan and Progress read (#230). This header used to count from `.now`
+    /// and then floor into weeks, which on 15 Oct made You say "6 weeks out" to Progress's
+    /// "7 weeks" about the same 27 Nov race — two lost days, one from counting off the
+    /// current instant and one from the floor.
+    ///
+    /// You is the only header that prints the race's role, so it is the only one that asks
+    /// for it: "Turkey Trot · 5K · tune-up · 43 days · 7 weeks" (#238).
+    private var countdown: RaceCountdown.State {
+        RaceCountdown.state(goal: store.goal, now: .now, units: units, includingRole: true)
     }
 
     @ViewBuilder private var goal: some View {
