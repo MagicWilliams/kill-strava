@@ -112,6 +112,9 @@ struct BlockReviewView: View {
     @State private var retrospective: String?
     @State private var writingRetrospective = false
     @State private var retrospectiveFailed = false
+    /// Set alongside `retrospectiveFailed` when the reason is a used-up allowance, not a
+    /// coach that couldn't be reached.
+    @State private var retrospectiveLimit: String?
     @State private var closing = false
     @ObservedObject private var consent = CoachConsentStore.shared
 
@@ -212,13 +215,18 @@ struct BlockReviewView: View {
         guard let review else { return }
         writingRetrospective = true
         retrospectiveFailed = false
-        let text = await BlockReviewService.retrospective(goal: goal, review: review, context: context)
+        retrospectiveLimit = nil
+        let outcome = await BlockReviewService.retrospective(goal: goal, review: review, context: context)
         writingRetrospective = false
-        if let text {
+        switch outcome {
+        case .written(let text):
             retrospective = text
             goal.review = BlockRetrospective(text: text, generated_at: nil)
             await store.refreshPastBlocks()
-        } else {
+        case .limited(let refusal):
+            retrospectiveLimit = refusal.message
+            retrospectiveFailed = true
+        case .failed:
             retrospectiveFailed = true
         }
     }
@@ -468,9 +476,9 @@ struct BlockReviewView: View {
                         .font(Tokens.Font.ui(13)).foregroundStyle(Tokens.Palette.textTertiary)
                 }
             } else if !consent.maySend {
-                if isClosed { CoachConsentNotice() }
+                CoachConsentNotice()
             } else if retrospectiveFailed {
-                Text("Couldn't reach the coach.")
+                Text(retrospectiveLimit ?? "Couldn't reach the coach.")
                     .font(Tokens.Font.ui(13)).foregroundStyle(Tokens.Palette.textTertiary)
                 Button {
                     Task { await writeRetrospective(context: store.coachContext()) }

@@ -10,9 +10,24 @@ import Supabase
 enum TakeawayService {
     private static var inFlight: Set<UUID> = []
 
+    /// Why there is or isn't a read. Run Detail says which; the background callers only care
+    /// whether there is one, through `ensureTakeaway`.
+    enum Outcome {
+        case read(String)
+        case limited(UsageLimit.Refusal)
+        /// A failure, or another generation for the same run already running.
+        case unavailable
+    }
+
     /// Returns the cached takeaway, or generates + caches one. Nil on failure
     /// (or when another generation for the same run is already running).
     static func ensureTakeaway(for run: RunSummary, detail: RunDetail? = nil, store: RunStore) async -> String? {
+        if case .read(let text) = await takeaway(for: run, detail: detail, store: store) { return text }
+        return nil
+    }
+
+    /// `ensureTakeaway`, keeping the reason when there is no read.
+    static func takeaway(for run: RunSummary, detail: RunDetail? = nil, store: RunStore) async -> Outcome {
         struct Row: Decodable { let coach_takeaway: String?; let correction_note: String? }
         let row: Row? = try? await Supa.client
             .from("runs")
@@ -21,13 +36,13 @@ enum TakeawayService {
             .single()
             .execute()
             .value
-        if let cached = row?.coach_takeaway { return cached }
+        if let cached = row?.coach_takeaway { return .read(cached) }
 
         // The gateway would refuse this anyway. Stopping here saves pulling the run's samples
         // out of HealthKit for a payload that can't go, on every run that syncs.
-        guard CoachConsentStore.shared.maySend else { return nil }
+        guard CoachConsentStore.shared.maySend else { return .unavailable }
 
-        guard !inFlight.contains(run.id) else { return nil }
+        guard !inFlight.contains(run.id) else { return .unavailable }
         inFlight.insert(run.id)
         defer { inFlight.remove(run.id) }
 
@@ -71,10 +86,17 @@ enum TakeawayService {
             corrected_note: row?.correction_note
         )
 
-        guard let reply: Reply = try? await CoachGateway.invoke(
-            .coach,
-            body: Request(mode: "takeaway", run: payload, context: store.coachContext())
-        ), let text = TakeawayReply.usable(reply.reply) else { return nil }
+        let reply: Reply
+        do {
+            reply = try await CoachGateway.invoke(
+                .coach,
+                body: Request(mode: "takeaway", run: payload, context: store.coachContext())
+            )
+        } catch {
+            if let refusal = UsageLimit.refusal(from: error, surface: "takeaway") { return .limited(refusal) }
+            return .unavailable
+        }
+        guard let text = TakeawayReply.usable(reply.reply) else { return .unavailable }
 
         struct Patch: Encodable { let coach_takeaway: String }
         _ = try? await Supa.client.from("runs").update(Patch(coach_takeaway: text))
@@ -82,7 +104,7 @@ enum TakeawayService {
         // The just-running Today shows the newest read; one written from Run Detail should
         // be there when the athlete navigates back, not after the next pull-to-refresh.
         store.noteTakeaway(LatestRead.Read(runID: run.id, runStart: run.start, text: text))
-        return text
+        return .read(text)
     }
 
     /// The newest run with a cached coach read, for the just-running Today (#101).

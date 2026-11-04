@@ -86,5 +86,10 @@ jobs:
       # (#63). Typechecking it proved nothing; this is the gate that does.
       - name: Test (edge function logic)
         run: deno test supabase/functions/
+      # claim_usage holds the check that bounds the Anthropic bill, and it is SQL, so it is
+      # tested against real Postgres (PGlite). Separate because it needs file and env access
+      # the logic tests above don't have, and they should stay without it.
+      - name: Test (usage limits in SQL)
+        run: deno test --allow-all supabase/tests/
       - name: Lint
         run: deno lint supabase/functions/ || true

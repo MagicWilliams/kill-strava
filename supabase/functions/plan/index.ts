@@ -27,6 +27,7 @@ import {
 } from "./generator.ts";
 import { extractFeatures, projectedFinishS, QUALIFYING_MI, type RunRow } from "./features.ts";
 import { DistanceRequired, goalInsertRow, isMissingColumnError, requiresTargetTime, resolveGoal } from "./goal.ts";
+import { usageRefusal } from "../_shared/usage_gate.ts";
 
 const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
 const MODEL = "claude-sonnet-5";
@@ -236,6 +237,11 @@ features: ${JSON.stringify(features, null, 1)}
     // `none` is "no plan, just coaching": there is no shape to ask for, so no Claude call.
     let generated: Generated | null = null;
     if (prefs.planStyle !== "none") {
+      // Here and not at the top: `none` spends nothing, so it isn't counted, and neither is a
+      // card the checks above turned away. Nothing has been written yet, so a refusal leaves
+      // the athlete's plan exactly as it was.
+      const refusal = await usageRefusal(req.headers.get("Authorization"), "plan");
+      if (refusal) return refusal;
       const proposed = await proposeShape(apiKey, system);
       if (proposed instanceof Response) return proposed;
       // Phase arithmetic, the taper, the volume band and the long-run cap are no longer

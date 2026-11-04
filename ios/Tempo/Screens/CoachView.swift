@@ -149,6 +149,13 @@ struct CoachView: View {
                     .padding(.horizontal, 20).padding(.bottom, 6)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
+            // Not in `danger`: nothing has gone wrong, and red is what a failure looks like.
+            if let notice = chat.usageNotice {
+                Text(notice)
+                    .font(Tokens.Font.ui(12)).foregroundStyle(Tokens.Palette.textSecondary)
+                    .padding(.horizontal, 20).padding(.bottom, 6)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
             if consent.maySend {
                 if !chat.isThinking && !chat.messages.isEmpty && !onboarding {
                     quickReplyRow

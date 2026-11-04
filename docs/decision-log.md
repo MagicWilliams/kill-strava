@@ -17,12 +17,28 @@ Newest first. One entry per session that ships features or makes a product decis
 - **The decision is stored on the phone and on `profiles`**, newest wins, and a tie between different answers resolves to the decline. No server-side check in the functions yet: the app is the only thing that calls them.
 
 ### Shipped
-- `Engine/CoachConsent` (the rule), `Services/CoachGateway` (the one way out), `Services/CoachConsentStore`, `Screens/CoachConsentView`, migration `0025_coach_consent.sql` (not applied by the PR).
+- `Engine/CoachConsent` (the rule), `Services/CoachGateway` (the one way out), `Services/CoachConsentStore`, `Screens/CoachConsentView`, migration `0025_coach_consent.sql`.
 
 ### Next up
-- David: apply 0025, tap through the device check in the PR, sign off the copy.
+- David: tap Agree once the build lands, then the device check in the PR. Migration 0025 is applied to staging and production, and he delegated the copy review.
 - Fill the `[UPDATE WHEN THE CONSENT SCREEN SHIPS]` placeholder in `docs/app-store-listing.md` once that file lands on `main`.
 - `site/privacy.html` (#250) summarises the same flow more briefly than this screen; bring it up to the same list.
+
+## 2026-11-04: Per-user usage limits before the public listing
+
+### Decisions
+- **Each kind of call has its own hourly and daily allowance:** chat, takeaway, block review, thread recap and plan. Background work can't use up an athlete's chat.
+- **The limits live in a table, not in code.** Tuning one is an `update`, with no redeploy of the live coach.
+- **A limiter that can't answer lets the call through.** It guards the bill, not access, so a missing migration or a database fault must not take the coach away. A caller PostgREST refuses (401/403) is the exception, because the caller controls that header.
+- **Being limited is its own state in the app,** drawn in a neutral color and saying when it resets. It never reads as a connection failure or lost data.
+- **Per-user limits don't bound the bill alone,** because anonymous accounts can still be minted per IP. The hard bound is a spend limit on the Anthropic side.
+
+### Shipped
+- Migration 0024 (`usage_limits`, `usage_counters`, `claim_usage`), the gate in `coach` and `plan`, and the limited state in every caller. Written, not applied or deployed.
+
+### Next up
+- David applies the migration, deploys both functions and sets the auth and Anthropic limits (steps in the PR).
+- Cap the size of a request: limits count calls, and the client still decides how large each one is.
 
 ## 2026-10-15 (later): Drift Detector PRD, revised after the repo audit
 
