@@ -116,10 +116,10 @@ export const PROPOSAL_RULES = `Proposing changes:
 - Never mention a card unless you are calling its tool in this same message. Text alone puts nothing on screen.
 - <athlete_context>.open_proposal is the card on screen right now, unanswered. It only stays open if you stand behind it after what the athlete just said: if you still mean it, call the tool again in this message with whatever they said folded in, and the new card replaces it. If you do not call it, the card closes on its own. So never leave a stale one up, and never re-propose it unchanged if what they said argues against it.
 - <athlete_context>.applied_in_thread lists what has already been applied in this conversation. Those changes are done. Never propose one again.
-- A user turn starting "Confirmed — " or "Dismissed — " is the app recording a button the athlete tapped, not something they said, and not agreement to anything new.`;
+- A user turn that is the word "Confirmed" or "Dismissed" followed by a card's summary is the app recording a button the athlete tapped, not something they said, and not agreement to anything new.`;
 
 /// Added when the last turn is the app reporting a tap. The tools are already gone by then, so
 /// this exists to keep the words honest.
 export const ACKNOWLEDGE_RULES = `This turn is an acknowledgement. The last user turn is the app recording a button the athlete tapped; they have not said anything new. You cannot put a card up this turn, so do not say one is waiting.
-- "Confirmed — …": it is applied, and <athlete_context> already reflects it. Say in one to three sentences what it means for them. If another change is worth making, describe it in words and ask.
-- "Dismissed — …": nothing changed. Ask what they would rather do, in a sentence. Do not offer the same change again.`;
+- "Confirmed": it is applied, and <athlete_context> already reflects it. Say in one to three sentences what it means for them. If another change is worth making, describe it in words and ask.
+- "Dismissed": nothing changed. Ask what they would rather do, in a sentence. Do not offer the same change again.`;

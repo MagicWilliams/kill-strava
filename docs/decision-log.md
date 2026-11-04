@@ -23,7 +23,7 @@ Found in two fresh-account setups from that day: one run correction proposed fou
 - `Engine/OpenProposal.swift`, `IntakeStamp.revised`, a target and week line on the plan card, and `coach/proposals.ts` with its prompt rules. The coach function is written, not deployed.
 
 ### Next up
-- David approves the `coach` deploy, which has to land before the app merge.
+- Held until after Friday's run, like #269: this PR stays unmerged because other sessions deploy `coach` from `main`. Then merge #269, rebase this onto it (its prompt moves to `prompts.ts`), deploy `coach`, and merge straight after.
 - Device check: run a fresh intake, change an answer in chat, and confirm the card shows the change.
 
 ## 2026-11-04: Per-user usage limits before the public listing
