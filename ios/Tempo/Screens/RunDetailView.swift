@@ -421,7 +421,7 @@ struct RunDetailView: View {
                     .font(Tokens.Font.ui(14)).foregroundStyle(Tokens.Palette.textPrimary)
                     .lineSpacing(3)
             } else if !model.takeawayLoading {
-                Text("Couldn't reach the coach — the read appears next time you open this run.")
+                Text(model.takeawayLimit ?? "Couldn't reach the coach — the read appears next time you open this run.")
                     .font(Tokens.Font.ui(13)).foregroundStyle(Tokens.Palette.textTertiary)
             }
             Button {
@@ -921,6 +921,9 @@ final class RunDetailStore: ObservableObject {
     @Published var loading = true
     @Published var takeaway: String?
     @Published var takeawayLoading = true
+    /// Set when there is no read because the coach allowance is used up, not because the
+    /// coach couldn't be reached.
+    @Published var takeawayLimit: String?
     @Published var correctionNote: String?
     /// This run's sub-distance efforts (#25). Empty until the archive scan has reached this
     /// run — and empty is also the right answer for a run too short to hold any.
@@ -985,7 +988,11 @@ final class RunDetailStore: ObservableObject {
             return
         }
         takeawayLoading = true
-        takeaway = await TakeawayService.ensureTakeaway(for: run, detail: detail, store: runStore)
+        switch await TakeawayService.takeaway(for: run, detail: detail, store: runStore) {
+        case .read(let text): takeaway = text
+        case .limited(let refusal): takeawayLimit = refusal.message
+        case .unavailable: break
+        }
         takeawayLoading = false
     }
 }

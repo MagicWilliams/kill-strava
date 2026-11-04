@@ -134,6 +134,9 @@ final class ChatStore: ObservableObject {
     @Published private(set) var messages: [ChatMessage] = []
     @Published private(set) var isThinking = false
     @Published var errorText: String?
+    /// The coach or plan allowance is used up for now. Apart from `errorText` because it
+    /// isn't an error, and the screen shouldn't draw it in the color of one (`UsageLimit`).
+    @Published private(set) var usageNotice: String?
 
     /// The conversation this store is reading and writing.
     ///
@@ -265,8 +268,10 @@ final class ChatStore: ObservableObject {
         let history = messages.suffix(12).map {
             WireMessage(role: $0.role == .user ? "user" : "assistant", content: $0.text)
         } + [WireMessage(role: "user", content: opener)]
-        if let reply = await requestReply(history: Array(history), context: context) {
-            handleReply(reply)
+        switch await requestReply(history: Array(history), context: context) {
+        case .reply(let reply): handleReply(reply)
+        case .limited(let refusal): usageNotice = refusal.message
+        case .failed: break
         }
     }
 
@@ -274,16 +279,17 @@ final class ChatStore: ObservableObject {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, !isThinking else { return }
         errorText = nil
+        usageNotice = nil
         append(.user, trimmed)
         isThinking = true
         defer { isThinking = false }
         let history = messages.suffix(24).map {
             WireMessage(role: $0.role == .user ? "user" : "assistant", content: $0.text)
         }
-        if let reply = await requestReply(history: Array(history), context: context) {
-            handleReply(reply)
-        } else {
-            errorText = "Coach unreachable — check your connection and try again."
+        switch await requestReply(history: Array(history), context: context) {
+        case .reply(let reply): handleReply(reply)
+        case .limited(let refusal): usageNotice = refusal.message
+        case .failed: errorText = "Coach unreachable — check your connection and try again."
         }
     }
 
@@ -295,16 +301,17 @@ final class ChatStore: ObservableObject {
         guard let handoff = runStore.intakeHandoff, !handoff.sentToCoach, !isThinking else { return }
         runStore.markIntakeSent()
         errorText = nil
+        usageNotice = nil
         append(.user, handoff.answers.transcriptLine(calendar: RunStore.cal, units: runStore.units))
         isThinking = true
         defer { isThinking = false }
         let history = messages.suffix(24).map {
             WireMessage(role: $0.role == .user ? "user" : "assistant", content: $0.text)
         }
-        if let reply = await requestReply(history: Array(history), context: runStore.coachContext(onboarding: onboardingMode)) {
-            handleReply(reply)
-        } else {
-            errorText = "Coach unreachable — your answers are saved above. Send a message to pick it back up."
+        switch await requestReply(history: Array(history), context: runStore.coachContext(onboarding: onboardingMode)) {
+        case .reply(let reply): handleReply(reply)
+        case .limited(let refusal): usageNotice = refusal.message
+        case .failed: errorText = "Coach unreachable — your answers are saved above. Send a message to pick it back up."
         }
     }
 
@@ -373,6 +380,7 @@ final class ChatStore: ObservableObject {
               let action = messages[idx].action,
               messages[idx].actionState.isOpenOffer else { return false }
         errorText = nil
+        usageNotice = nil
         messages[idx].actionState = .applying
         busyLabel = Self.busyLabel(for: action.type)
         defer { busyLabel = nil }
@@ -407,6 +415,12 @@ final class ChatStore: ObservableObject {
         } catch {
             messages[idx].actionState = .failed
             persist(.failed, for: messageID)
+            // The card comes back as Retry, which is still true. What it needs is the wait,
+            // not "didn't go through", and `coach.usage_limited` has already logged it.
+            if case ActionError.usageLimited(let refusal) = error {
+                usageNotice = refusal.message
+                return false
+            }
             Telemetry.error("coach.action_failed", error, context: Self.failureContext(type: action.type, error: error))
             errorText = (error as? ActionError)?.message
                 ?? (error as? RunCorrection.Rejection)?.message
@@ -470,7 +484,8 @@ final class ChatStore: ObservableObject {
     ///
     /// A failed round trip stays quiet. The change landed and the green card says so; an
     /// "unreachable" banner underneath it reads like the save failed, which is worse than the
-    /// silence this whole issue is about. `requestReply` logs the failure either way.
+    /// silence this whole issue is about. `requestReply` logs the failure either way. A limit
+    /// stays quiet for the same reason: the next message the athlete sends will say so.
     private func acknowledgeIfWarranted(
         _ transition: CoachAcknowledgement.Transition,
         action: ProposedAction,
@@ -489,7 +504,7 @@ final class ChatStore: ObservableObject {
         let history = CoachAcknowledgement.wireHistory(messages.suffix(24).map {
             CoachAcknowledgement.Turn(role: $0.role == .user ? .user : .assistant, content: $0.text)
         }).map { WireMessage(role: $0.role.rawValue, content: $0.content) }
-        if let reply = await requestReply(
+        if case .reply(let reply) = await requestReply(
             history: history,
             context: runStore.coachContext(onboarding: onboardingMode)
         ) {
@@ -790,6 +805,11 @@ final class ChatStore: ObservableObject {
             where PlanRequest.refusal(inErrorBody: body) == PlanRequest.distanceRequired {
             // A new race with no distance (#184). Nothing was written; the card needs re-proposing.
             throw ActionError.planRefused(PlanRequest.distanceRequired)
+        } catch {
+            if let refusal = UsageLimit.refusal(from: error, surface: "plan") {
+                throw ActionError.usageLimited(refusal)
+            }
+            throw error
         }
         await runStore.loadPlan()
         return PlanNarration.planIsLive(PlanNarration.PlanResult(
@@ -859,12 +879,16 @@ final class ChatStore: ObservableObject {
         case planRefused(String)
         /// An end_goal card with no goal or plan left to end (#238).
         case nothingToEnd
+        /// `plan` is out of allowance for now. Nothing is wrong with the card.
+        case usageLimited(UsageLimit.Refusal)
         var message: String {
             switch self {
             case .badParams, .planRefused:
                 return "That card is missing something the plan needs. Ask the coach to propose it again."
             case .nothingToEnd:
                 return GoalRetirement.nothingToEnd
+            case .usageLimited(let refusal):
+                return refusal.message
             }
         }
     }
@@ -923,12 +947,18 @@ final class ChatStore: ObservableObject {
                     if settingsTouched, let goal = store.goal, PlanRequest.canRegenerate(goal) {
                         // No confirmation turn to sit under here — the interview applied these
                         // silently — so the narration goes in on its own.
-                        if let line = try? await self.invokePlanEngine(
-                            self.regenerating(goalTimeS: goal.goalTimeSeconds, raceName: goal.raceName, raceDate: goal.raceDate, runStore: store),
-                            runStore: store
-                        ) {
-                            self.append(.coach, line)
-                        }
+                        do {
+                            if let line = try await self.invokePlanEngine(
+                                self.regenerating(goalTimeS: goal.goalTimeSeconds, raceName: goal.raceName, raceDate: goal.raceDate, runStore: store),
+                                runStore: store
+                            ) {
+                                self.append(.coach, line)
+                            }
+                        } catch ActionError.usageLimited(let refusal) {
+                            // Saved, but the plan didn't follow. The rest of this path is
+                            // silent, and here that would read as a rebuild that happened.
+                            self.usageNotice = refusal.message
+                        } catch {}
                     }
                 }
             }
@@ -975,7 +1005,15 @@ final class ChatStore: ObservableObject {
         )
     }
 
-    private func requestReply(history: [WireMessage], context: CoachContext) async -> CoachReply? {
+    /// The three ways a turn can end. `failed` has been logged; each caller says what it means
+    /// for that caller, and `limited` carries words that are true for all of them.
+    private enum ReplyOutcome {
+        case reply(CoachReply)
+        case limited(UsageLimit.Refusal)
+        case failed
+    }
+
+    private func requestReply(history: [WireMessage], context: CoachContext) async -> ReplyOutcome {
         var context = context
         context.memory = memoryContext
         do {
@@ -983,10 +1021,13 @@ final class ChatStore: ObservableObject {
                 "coach",
                 options: FunctionInvokeOptions(body: CoachRequest(messages: history, context: context))
             )
-            return reply
+            return .reply(reply)
         } catch {
+            if let refusal = UsageLimit.refusal(from: error, surface: "chat") {
+                return .limited(refusal)
+            }
             Telemetry.error("coach.invoke_failed", error)
-            return nil
+            return .failed
         }
     }
 
