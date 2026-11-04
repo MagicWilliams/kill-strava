@@ -23,7 +23,7 @@ enum GoalLine {
     /// The Goal column when there is no target time to show. Deliberately the same string
     /// the projection beside it uses for its own empty state: the two sit on one card, and
     /// they should be visibly equally ignorant, not one dashed and one confident.
-    static let unknownFinish = "—:—:—"
+    static let unknownFinish = "--:--:--"
 
     /// Used when a goal exists but carries no race name. Matches `RaceCountdown`, PlanView
     /// and YouView.
@@ -65,12 +65,12 @@ enum GoalLine {
         var coachLine: String {
             switch self {
             case .noGoal:
-                return "No goal set yet — assess the run history and propose one when the athlete is ready."
+                return "No goal set yet. Assess the run history and propose one when the athlete is ready."
             case .untimed(let race, let on):
                 guard let on else {
-                    return "\(race) — no race date or target time set yet."
+                    return "\(race): no race date or target time set yet."
                 }
-                return "\(race) on \(on) — no target time set yet."
+                return "\(race) on \(on): no target time set yet."
             case .timed(let race, let on, let seconds):
                 let target = "target \(PaceModel.formatFinish(seconds))"
                 guard let on else { return "\(race), \(target)" }
@@ -80,7 +80,7 @@ enum GoalLine {
     }
 
     /// The You tab goal card's **TARGET**: the goal time spread over the goal's own distance,
-    /// in the athlete's unit. "—" when the goal has no target time.
+    /// in the athlete's unit. Units.missing when the goal has no target time.
     ///
     /// This used to be `PaceModel.paces(for: .marathon, goalSeconds:).marathon`, which reads
     /// every goal time as a *marathon* time and divides it over 26.2 — so a 25:00 5K goal

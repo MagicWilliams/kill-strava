@@ -63,7 +63,7 @@ struct YouView: View {
                 .buttonStyle(Pressable())
             } else {
                 Text("No goal yet").font(Tokens.Font.display(23)).foregroundStyle(Tokens.Palette.textPrimary)
-                Text("The coach proposes one from your data — the plan builds from there.")
+                Text("The coach proposes one from your data, and the plan builds from there.")
                     .font(Tokens.Font.ui(13)).foregroundStyle(Tokens.Palette.textSecondary)
                 PrimaryButton(title: "Talk to Coach") { router.showCoach() }
             }

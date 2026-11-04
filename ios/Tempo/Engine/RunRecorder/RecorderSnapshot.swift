@@ -12,7 +12,7 @@ import Foundation
 struct RecorderSnapshot: Equatable {
 
     /// The small tile next to average pace (#125). David's call, 2026-10-12: with no heart
-    /// rate, swap in another number rather than show "—" or hide the tile, and the number is
+    /// rate, swap in another number rather than show Units.missing or hide the tile, and the number is
     /// the last split.
     enum Secondary: Equatable {
         case heartRate(bpm: Int)

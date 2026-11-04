@@ -28,10 +28,10 @@ struct FitnessMetrics {
 
     var caption: String {
         switch readiness {
-        case 70...: return "Fresh and fit — green light for quality."
-        case 55..<70: return "Solid to train. Quality is fine; respect the paces."
+        case 70...: return "Fresh and fit. Good day for a hard session."
+        case 55..<70: return "Good to train. Hard sessions are fine, but stick to the paces."
         case 40..<55: return "You're carrying load. Easy miles serve you best today."
-        default: return "Fatigue outweighs fitness right now — recovery IS the workout."
+        default: return "Fatigue is higher than fitness right now. Take it easy today."
         }
     }
 }

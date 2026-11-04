@@ -21,7 +21,7 @@ struct ReadinessDetailView: View {
                         howItWorks
                     } else {
                         Card {
-                            Text("Readiness needs run history — sync a few runs and this comes alive.")
+                            Text("Readiness needs run history. Sync a few runs to see it.")
                                 .font(Tokens.Font.ui(13)).foregroundStyle(Tokens.Palette.textSecondary)
                         }
                     }
@@ -107,7 +107,7 @@ struct ReadinessDetailView: View {
                 }
             }
             .frame(height: 110)
-            Text("Rising line = the aerobic engine growing. Dips follow down-weeks; that's the rhythm, not a problem.")
+            Text("A rising line means your fitness is improving. Dips after down weeks are normal.")
                 .font(Tokens.Font.ui(12)).foregroundStyle(Tokens.Palette.textTertiary)
         }
     }
@@ -119,11 +119,11 @@ struct ReadinessDetailView: View {
                 HStack(spacing: 8) {
                     Image(systemName: checkIn.feelsOk ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
                         .foregroundStyle(checkIn.feelsOk ? Tokens.Palette.success : Tokens.Palette.warning)
-                    Text(checkIn.feelsOk ? "Feeling okay — the numbers stand." : "You flagged something's off — readiness is capped and the coach knows.")
+                    Text(checkIn.feelsOk ? "Feeling okay, so the numbers stand." : "You flagged something's off. Readiness is capped and the coach knows.")
                         .font(Tokens.Font.ui(13)).foregroundStyle(Tokens.Palette.textPrimary)
                 }
             } else {
-                Text("No check-in yet today. Your word outranks the math — hard sessions ask first.")
+                Text("No check-in yet today. Hard sessions ask how you feel first, and your answer overrides the numbers.")
                     .font(Tokens.Font.ui(13)).foregroundStyle(Tokens.Palette.textSecondary)
             }
             Button { router.showCoach() } label: {
@@ -137,7 +137,7 @@ struct ReadinessDetailView: View {
     private var howItWorks: some View {
         Card {
             SectionLabel("How this works")
-            Text("Every run scores training load from distance and pace relative to your own recent baseline. Fitness is the 42-day trend of that load; fatigue is the 7-day trend; form is the gap. Readiness reads form against fitness — and your daily check-in can always overrule it. Honest caveat: it's pace-based for now; heart-rate weighting lands when HR flows reliably from Garmin.")
+            Text("Every run scores training load from distance and pace relative to your own recent baseline. Fitness is the 42-day trend of that load; fatigue is the 7-day trend; form is the gap. Readiness compares form against fitness, and your daily check-in can always overrule it. For now it's based on pace. Heart rate gets added once it comes through reliably from Garmin.")
                 .font(Tokens.Font.ui(12)).foregroundStyle(Tokens.Palette.textSecondary)
                 .lineSpacing(3)
         }

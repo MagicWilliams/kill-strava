@@ -143,12 +143,12 @@ struct TodayView: View {
             } else if needsCheckIn(s) {
                 checkInRow
             } else if store.todayCheckIn?.feelsOk == false {
-                Text("You flagged something's off today — the coach knows. Adjust or skip guilt-free.")
+                Text("You flagged something's off today, and the coach knows. Adjust or skip it.")
                     .font(Tokens.Font.ui(12)).foregroundStyle(Tokens.Palette.warning)
             } else if store.todayCheckIn?.feelsOk == true {
                 HStack(spacing: 6) {
                     Image(systemName: "checkmark").font(.system(size: 11, weight: .bold))
-                    Text("Checked in — good to go").font(Tokens.Font.ui(12, .semibold))
+                    Text("Checked in. Good to go").font(Tokens.Font.ui(12, .semibold))
                 }
                 .foregroundStyle(Tokens.Palette.success)
             }
@@ -193,8 +193,8 @@ struct TodayView: View {
             SectionLabel("Just running", color: Tokens.Palette.accentText)
             Text("Run when it feels right").display(24)
             Text(store.todayMode == .racePassed
-                 ? "The block is done. Every run still lands in your history and gets the coach's read."
-                 : "No plan in Just running mode. Every run still lands in your history and gets the coach's read.")
+                 ? "The block is done. Every run still goes in your history and gets a coach's note."
+                 : "No plan in Just running mode. Every run still goes in your history and gets a coach's note.")
                 .font(Tokens.Font.ui(13)).foregroundStyle(Tokens.Palette.textSecondary)
             startButton(session: nil)
         }
@@ -217,7 +217,7 @@ struct TodayView: View {
     /// not the same event, and the hand should be able to tell them apart without the eyes.
     private var checkInRow: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Before this one — feeling okay? Nothing hurting?")
+            Text("Before this one: feeling okay? Nothing hurting?")
                 .font(Tokens.Font.ui(13, .medium)).foregroundStyle(Tokens.Palette.textPrimary)
             HStack(spacing: 8) {
                 Button {
@@ -270,7 +270,7 @@ struct TodayView: View {
         } else if let run = store.matchedRun(for: s) {
             Button { openRun(run) } label: {
                 HStack(spacing: 6) {
-                    Text("Get the coach's read on this run")
+                    Text("Get the coach's note on this run")
                         .font(Tokens.Font.ui(13, .semibold)).foregroundStyle(Tokens.Palette.accentText)
                     Image(systemName: "arrow.right").font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(Tokens.Palette.accentText)
@@ -283,7 +283,7 @@ struct TodayView: View {
     private func doneRow(_ s: SessionInfo) -> some View {
         HStack(spacing: 8) {
             Image(systemName: "checkmark.circle.fill").foregroundStyle(Tokens.Palette.success)
-            Text(store.matchedRun(for: s).map { "Done — \(units.formatDistance(meters: Double($0.distanceM), decimals: 1)) logged" } ?? "Done")
+            Text(store.matchedRun(for: s).map { "Done: \(units.formatDistance(meters: Double($0.distanceM), decimals: 1)) logged" } ?? "Done")
                 .font(Tokens.Font.ui(13, .semibold)).foregroundStyle(Tokens.Palette.success)
             Spacer()
             if let run = store.matchedRun(for: s) {
@@ -452,7 +452,7 @@ struct TodayView: View {
                 SectionLabel("Coach's read", color: Tokens.Palette.accentText)
                 Text("The coach reads a run when you open it.")
                     .font(Tokens.Font.ui(13)).foregroundStyle(Tokens.Palette.textSecondary)
-                readLink("Get the coach's read on your last run", runID: last)
+                readLink("Get the coach's note on your last run", runID: last)
             }
         case .current(let read):
             readCard(read, unread: nil)

@@ -58,7 +58,7 @@ struct CoachView: View {
 
         let today = PlanDates.todayString
         if store.sessions.contains(where: { $0.status == "planned" && $0.date < today && $0.type != "rest" }) {
-            suggestions.append("I missed a session — what now?")
+            suggestions.append("I missed a session. What now?")
         }
 
         if let projected = store.plan?.projected_finish_s,
@@ -414,12 +414,12 @@ struct CoachView: View {
                     // again does nothing (#38).
                     HStack(spacing: 10) {
                         ProgressView().controlSize(.small).tint(Tokens.Palette.textTertiary)
-                        Text("Queued — one change at a time…")
+                        Text("Queued. One change at a time…")
                             .font(Tokens.Font.ui(13)).foregroundStyle(Tokens.Palette.textTertiary)
                     }
                 } else {
                     if state == .failed {
-                        Text("That didn't go through — Confirm to retry.")
+                        Text("That didn't go through. Confirm to retry.")
                             .font(Tokens.Font.ui(12)).foregroundStyle(Tokens.Palette.danger)
                     }
                     HStack(spacing: 8) {
