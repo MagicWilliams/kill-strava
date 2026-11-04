@@ -57,9 +57,9 @@ Deno.test("no user behind the JWT is a 401, not a limit", () => {
   assertEquals(readClaim({ data: { allowed: false, reason: "no_user" }, error: null, status: 200 }), { outcome: "no_user" });
 });
 
-Deno.test("the publishable key and a dead token are refused, not waved through as a fault", () => {
+Deno.test("the anon key and a dead token are refused, not waved through as a fault", () => {
   // `anon` has no EXECUTE on claim_usage. Reading this as "the limiter is down" would make
-  // the key shipped in the app a way around every limit.
+  // the legacy anon key, which passes `verify_jwt`, a way around every limit.
   const denied = { code: "42501", message: "permission denied for function claim_usage" };
   assertEquals(readClaim({ data: null, error: denied, status: 401 }), { outcome: "no_user" });
   assertEquals(readClaim({ data: null, error: denied, status: 403 }), { outcome: "no_user" });

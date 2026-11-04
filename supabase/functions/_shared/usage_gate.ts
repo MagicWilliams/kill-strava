@@ -9,8 +9,8 @@ import { readClaim, refusalResponse, type UsageKind, type UsageVerdict } from ".
  * send back if the call is refused, or null to go ahead.
  *
  * This is also what proves there is a user behind a `coach` call: `verify_jwt` accepts the
- * publishable key, which ships in the app. It costs one PostgREST round trip, and needs no
- * separate `auth.getUser()` because `claim_usage` reads the same JWT.
+ * legacy anon key, which has none. It costs one PostgREST round trip, and needs no separate
+ * `auth.getUser()` because `claim_usage` reads the same JWT.
  */
 export async function usageRefusal(authorization: string | null, kind: UsageKind): Promise<Response | null> {
   if (!authorization) return refusalResponse({ outcome: "no_user" }, kind);

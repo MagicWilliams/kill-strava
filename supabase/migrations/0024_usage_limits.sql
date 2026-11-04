@@ -5,8 +5,9 @@
 --
 -- ── Why this exists ──────────────────────────────────────────────────────────────────
 -- Tempo is free, and anyone gets an anonymous account on first launch. `coach` had no check
--- at all, and `verify_jwt` does not help: the publishable key shipped in the app is itself a
--- valid JWT. Once the app is public, anyone can run up the Anthropic bill without limit.
+-- of its own, and `verify_jwt` does not help: it only proves this project signed the JWT,
+-- which is also true of the legacy anon key, and it says nothing about how much that caller
+-- has used. Once the app is public, anyone can run up the Anthropic bill without limit.
 --
 -- ── Why the decision is here and not in the function ─────────────────────────────────
 -- A check and a count made in two round trips let concurrent calls all see "under the limit"
@@ -21,8 +22,8 @@
 -- with no limits row writes nothing, so it cannot be used to grow the table either.
 --
 -- ── Failure modes the function relies on ─────────────────────────────────────────────
---  - The publishable key (`anon`) has no EXECUTE here. That is how a call with no real user
---    is told apart from a real one, so `anon` stays revoked below.
+--  - The `anon` role has no EXECUTE here. That is how a JWT with no user behind it, such as
+--    the legacy anon key, is told apart from a real caller, so it stays revoked below.
 --  - A valid JWT for a deleted user fails the foreign key and reads as `no_user`, not as an
 --    error: the function treats errors as "the limiter is down" and lets the call through.
 --

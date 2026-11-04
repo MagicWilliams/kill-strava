@@ -39,7 +39,7 @@ const FALLBACK_RETRY_S = 3600;
  * A limiter that cannot answer lets the call through: a missing migration or a database blip
  * must not take away the coach an athlete is training with, and this is a guard on the bill,
  * not on access. The exception is 401/403. That is PostgREST refusing the caller, which is
- * how an expired token or the publishable key arrives (`anon` has no EXECUTE), and the
+ * how an expired token or the legacy anon key arrives (`anon` has no EXECUTE), and the
  * caller controls that header, so passing those through would be a way around the limit.
  */
 export function readClaim(result: ClaimResult): UsageVerdict {

@@ -207,7 +207,7 @@ Deno.test("deleting a user takes their counters with them", async () => {
 
 // ── Access ──────────────────────────────────────────────────────────────────────────
 
-Deno.test("the publishable key can't call it", async () => {
+Deno.test("the anon role can't call it", async () => {
   // How `readClaim` tells a caller with no user from a limiter fault: PostgREST turns this
   // into a 401.
   const db = await database();
