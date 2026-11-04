@@ -49,4 +49,52 @@ final class UsageLimitTests: XCTestCase {
             XCTAssertFalse(copy.contains(word), word)
         }
     }
+
+    // MARK: - The size cap
+
+    func testTheSizeRefusalIsRecognizedAndKeepsItsWords() {
+        let refusal = UsageLimit.refusal(
+            status: 413,
+            body: body(#"{"error":"request_too_large","message":"Too much at once."}"#)
+        )
+        XCTAssertEqual(refusal?.message, "Too much at once.")
+        XCTAssertEqual(refusal?.cause, .tooLarge)
+    }
+
+    func testAnAllowanceRefusalKeepsItsCause() {
+        let refusal = UsageLimit.refusal(status: 429, body: body(#"{"error":"usage_limited","message":"Later."}"#))
+        XCTAssertEqual(refusal?.cause, .allowance)
+    }
+
+    func testAGateway413IsAFailureNotARefusal() {
+        // Whatever is in front of the function can turn away a body too, in words of its own.
+        XCTAssertNil(UsageLimit.refusal(status: 413, body: body(#"{"message":"Payload too large"}"#)))
+        XCTAssertNil(UsageLimit.refusal(status: 413, body: body("Request Entity Too Large")))
+        XCTAssertNil(UsageLimit.refusal(status: 413, body: Data()))
+    }
+
+    func testEachCodeOnlyCountsWithItsOwnStatus() {
+        XCTAssertNil(UsageLimit.refusal(status: 429, body: body(#"{"error":"request_too_large","message":"no"}"#)))
+        XCTAssertNil(UsageLimit.refusal(status: 413, body: body(#"{"error":"usage_limited","message":"no"}"#)))
+        XCTAssertNil(UsageLimit.refusal(status: 400, body: body(#"{"error":"request_too_large","message":"no"}"#)))
+    }
+
+    func testASizeRefusalWithNoWordsStillSaysWhatHappened() {
+        for json in [#"{"error":"request_too_large"}"#, #"{"error":"request_too_large","message":"  "}"#] {
+            XCTAssertEqual(UsageLimit.refusal(status: 413, body: body(json))?.message, UsageLimit.Copy.tooLargeFallback)
+        }
+    }
+
+    func testTheSizeFallbackCannotBeReadAsAnOutageOrAsLostData() {
+        let copy = UsageLimit.Copy.tooLargeFallback.lowercased()
+        for word in ["unreachable", "couldn't", "failed", "offline", "lost"] {
+            XCTAssertFalse(copy.contains(word), word)
+        }
+    }
+
+    /// What keeps one too-large thread from blocking every newer recap, oldest first, forever.
+    func testOnlyAnAllowanceStopsWhatIsQueuedBehindIt() {
+        XCTAssertTrue(UsageLimit.Refusal(message: "", cause: .allowance).appliesToLaterRequests)
+        XCTAssertFalse(UsageLimit.Refusal(message: "", cause: .tooLarge).appliesToLaterRequests)
+    }
 }
