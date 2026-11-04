@@ -405,7 +405,7 @@ struct IntakeStamp: Codable, Equatable {
     let goal_type: String
     let started_week: Int?
     let start_mileage: Double?
-    // What the athlete typed — the coach's proposal can differ, and its card wins.
+    // What the athlete typed, or later said: `revised` folds the card's race back in.
     let race_name: String?
     let race_date: String
     let stated_goal_time_s: Int?
@@ -438,6 +438,128 @@ struct IntakeStamp: Codable, Equatable {
             wants_strength: wants_strength,
             risk_tolerance: risk_tolerance
         )
+    }
+
+    /// These answers, with what the athlete has since changed in conversation.
+    ///
+    /// The form used to be final. The stamp outranks the card (rightly: a model's echo of a form
+    /// is not the form), and nothing could reach it, so the conversation could not move it. On
+    /// 2026-11-04 an athlete said "5 days, long runs on Friday", the coach agreed, and Confirm
+    /// built 6 days with a Sunday long run from the form. It took two more plan rebuilds to
+    /// repair. A time asked for over a "just finish" answer was dropped the same way.
+    ///
+    /// A value out of range or outside the vocabulary is ignored, like any other card the model
+    /// got wrong, and the card's own lines show what it will really build.
+    func revised(by changes: IntakeChanges?, raceName: String? = nil, raceDate: String? = nil) -> IntakeStamp {
+        let c = changes ?? IntakeChanges()
+        var key = distance
+        var meters = distance_m
+        var distanceChanged = false
+        let custom = c.distance_m.flatMap { IntakeAnswers.customMetersRange.contains($0) ? $0 : nil }
+        if let picked = c.distance.flatMap(IntakeAnswers.Distance.init(rawValue:)) {
+            if let known = picked.meters {
+                (key, meters, distanceChanged) = (picked.rawValue, known, true)
+            } else if let custom {
+                (key, meters, distanceChanged) = (picked.rawValue, custom, true)
+            }
+        } else if c.distance == nil, let custom {
+            let known = IntakeAnswers.Distance.allCases.first { d in
+                d.meters.map { abs(Double(custom - $0)) / Double($0) < 0.01 } ?? false
+            }
+            (key, meters, distanceChanged) = (known?.rawValue ?? IntakeAnswers.Distance.custom.rawValue, custom, true)
+        }
+
+        let goalType = c.goal_type.flatMap(IntakeAnswers.GoalType.init(rawValue:))?.rawValue ?? goal_type
+        let course = c.course_type.flatMap(IntakeAnswers.Course.init(rawValue:))?.rawValue
+        let style = c.plan_style.flatMap(IntakeAnswers.PlanStyle.init(rawValue:))
+
+        var prefs = preferences
+        if let course { prefs.course_type = course }
+        if let style {
+            prefs.plan_style = style.rawValue
+            if style == .none {
+                prefs.long_runs_20plus = nil
+                prefs.quality = []
+            }
+        }
+        // The long-run count is counted against a threshold only some distances have.
+        if distanceChanged, IntakeAnswers.Distance(rawValue: key)?.longRunThresholdMiles == nil {
+            prefs.long_runs_20plus = nil
+        }
+
+        return IntakeStamp(
+            distance: key,
+            distance_m: meters,
+            course_type: course ?? course_type,
+            goal_type: goalType,
+            started_week: started_week,
+            start_mileage: start_mileage,
+            race_name: raceName ?? race_name,
+            race_date: raceDate ?? race_date,
+            // `stamp` only keeps a stated time on a "time" goal, and so does this.
+            stated_goal_time_s: goalType == IntakeAnswers.GoalType.time.rawValue ? stated_goal_time_s : nil,
+            preferences: prefs,
+            days_per_week: c.days_per_week.flatMap { (3...7).contains($0) ? $0 : nil } ?? days_per_week,
+            long_run_day: c.long_run_day.flatMap { (0...6).contains($0) ? $0 : nil } ?? long_run_day,
+            wants_strength: c.wants_strength ?? wants_strength,
+            risk_tolerance: c.risk_tolerance.flatMap(IntakeAnswers.Risk.init(rawValue:))?.rawValue ?? risk_tolerance
+        )
+    }
+
+    /// "5 days a week · long run Friday": the half of the card the race line doesn't cover. Nil
+    /// for "No plan, just coaching", which builds no weeks to fit them to.
+    var settingsLine: String? {
+        guard preferences.plan_style != IntakeAnswers.PlanStyle.none.rawValue else { return nil }
+        return "\(days_per_week) days a week · long run \(IntakeAnswers.weekday(long_run_day))"
+    }
+}
+
+/// What the athlete changed about their intake answers, in conversation. `create_plan
+/// .intake_changes` on the wire: only what they changed, never an echo of the form, which is
+/// what lets it outrank the stamp when the rest of the card can't.
+struct IntakeChanges: Codable, Equatable {
+    var distance: String? = nil
+    var distance_m: Int? = nil
+    var goal_type: String? = nil
+    var plan_style: String? = nil
+    var course_type: String? = nil
+    var days_per_week: Int? = nil
+    var long_run_day: Int? = nil
+    var wants_strength: Bool? = nil
+    var risk_tolerance: String? = nil
+
+    /// The same answers arriving as a fact the interview applied silently, or nil for a fact
+    /// that isn't one. Without this, Confirm on the plan card wrote the form's values straight
+    /// back over what the athlete had just said.
+    init?(fact action: ProposedAction) {
+        switch action.type {
+        case "update_plan_settings":
+            days_per_week = action.days_per_week
+            long_run_day = action.long_run_day
+        case "set_risk_tolerance":
+            risk_tolerance = action.level
+        case "update_athlete":
+            guard let wants = action.wants_strength else { return nil }
+            wants_strength = wants
+        default:
+            return nil
+        }
+    }
+
+    init(
+        distance: String? = nil, distance_m: Int? = nil, goal_type: String? = nil, plan_style: String? = nil,
+        course_type: String? = nil, days_per_week: Int? = nil, long_run_day: Int? = nil,
+        wants_strength: Bool? = nil, risk_tolerance: String? = nil
+    ) {
+        self.distance = distance
+        self.distance_m = distance_m
+        self.goal_type = goal_type
+        self.plan_style = plan_style
+        self.course_type = course_type
+        self.days_per_week = days_per_week
+        self.long_run_day = long_run_day
+        self.wants_strength = wants_strength
+        self.risk_tolerance = risk_tolerance
     }
 }
 
@@ -678,6 +800,16 @@ extension PlanRequest {
             .joined(separator: " · ")
     }
 
+    /// The target this request builds to: "Target 19:30", or the fact that it has none. Read
+    /// from the request for the same reason as `cardLine`: a summary can say 19:30 on a card
+    /// that would save no time at all, and the athlete should see that before the tap.
+    var targetLine: String {
+        if let goal_time_s { return "Target \(IntakeAnswers.finishTime(goal_time_s))" }
+        return preferences?.plan_style == IntakeAnswers.PlanStyle.none.rawValue
+            ? "No target time"
+            : "No target time: paces come from current fitness"
+    }
+
     /// The `error` string of a `plan` error body (`{ "error": "distance_required" }`), or nil.
     static func refusal(inErrorBody data: Data) -> String? {
         struct Body: Decodable { let error: String? }
@@ -874,7 +1006,9 @@ struct IntakeHandoff: Equatable {
     let id = UUID()
     let answers: IntakeAnswers
     /// Nil for "just running" — nothing to save, only something for the interview to know.
-    let stamp: IntakeStamp?
+    /// Moves as the athlete changes their answers in conversation (`IntakeStamp.revised`), so
+    /// the next card and `<athlete_context>.intake` both start from what they last said.
+    var stamp: IntakeStamp?
     /// Set once the coach has been sent the intake, so revisiting the tab doesn't send it twice.
     var sentToCoach = false
 
@@ -887,11 +1021,18 @@ struct IntakeHandoff: Equatable {
 
     /// Attach the intake to a create_plan card. Only create_plan: it is the one action whose
     /// write is the intake's write. Every other card passes through untouched, and a card
-    /// that already carries a stamp keeps it.
-    static func stamping(_ action: ProposedAction, with handoff: IntakeHandoff?) -> ProposedAction {
-        guard action.type == "create_plan", action.intake == nil, let stamp = handoff?.stamp else { return action }
+    /// that already carries a stamp keeps it. What the card says changed goes on the stamp.
+    ///
+    /// - Parameter earlier: the answers an earlier card in this conversation carried, for when
+    ///   the handoff is gone (`OpenProposal.unbuiltStamp`). Only for the same race date. A
+    ///   different date is a different race, and the form's distance would be a wrong answer
+    ///   about it.
+    static func stamping(_ action: ProposedAction, with handoff: IntakeHandoff?, earlier: IntakeStamp? = nil) -> ProposedAction {
+        guard action.type == "create_plan", action.intake == nil else { return action }
+        let inherited = earlier.flatMap { $0.race_date == action.race_date ? $0 : nil }
+        guard let stamp = handoff?.stamp ?? inherited else { return action }
         var stamped = action
-        stamped.intake = stamp
+        stamped.intake = stamp.revised(by: action.intake_changes, raceName: action.race_name, raceDate: action.race_date)
         return stamped
     }
 }

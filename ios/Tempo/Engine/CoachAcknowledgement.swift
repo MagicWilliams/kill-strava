@@ -42,8 +42,12 @@ enum CoachAcknowledgement {
     /// Tool types the setup interview applies without a card. `ChatStore.handleReply` strips
     /// these from the proposals it turns into cards, so during onboarding they never reach a
     /// Confirm — the guard below is the second lock on that door, not the first.
+    ///
+    /// `remember` joined on 2026-11-04. It was the only fact the interview still asked about,
+    /// and it was the one most likely to come in threes: an answer during setup is exactly
+    /// when a stack of cards gets in the way of the question being asked.
     static let onboardingAutoApplyTypes: Set<String> =
-        ["update_athlete", "update_plan_settings", "set_risk_tolerance", "complete_onboarding"]
+        ["update_athlete", "update_plan_settings", "set_risk_tolerance", "complete_onboarding", "remember"]
 
     /// The one turn of acknowledgement, or nothing. Whatever comes back is handed to
     /// `handleReply`, which may attach another card but never asks for a further reply — that

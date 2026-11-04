@@ -89,6 +89,9 @@ struct ProposedAction: Codable, Equatable {
     /// create_plan only: what the athlete tapped in the intake (#102). Stamped by the app,
     /// never sent by the model — see `IntakeHandoff.stamping`.
     var intake: IntakeStamp? = nil
+    /// create_plan only: answers the athlete changed in this conversation, which unlike the
+    /// rest of the card do outrank the form. Folded into `intake` when the card is stamped.
+    var intake_changes: IntakeChanges? = nil
 
     /// Never-empty line for the confirm card and the confirmation message.
     var displaySummary: String { summary ?? note ?? "Proposed \(type)" }
@@ -176,6 +179,9 @@ final class ChatStore: ObservableObject {
         let messages: [WireMessage]
         let context: CoachContext
         var features = [RunCorrection.coachFeature, GoalRetirement.coachFeature]
+        /// This turn answers a tap, so the coach is given no card tools (see `proposals.ts`).
+        /// Nil is left out of the JSON, and a coach that predates it ignores it.
+        var acknowledging: Bool? = nil
     }
     private struct CoachReply: Decodable { let reply: String; let proposed_actions: [ProposedAction]? }
     private struct HistoryRow: Decodable {
@@ -317,6 +323,11 @@ final class ChatStore: ObservableObject {
 
     // MARK: - Confirm / dismiss proposed actions
 
+    /// Whether this card can still be answered. See `OpenProposal`.
+    func proposalStatus(_ messageID: UUID) -> OpenProposal.Status {
+        OpenProposal.status(of: messageID, in: messages, now: .now)
+    }
+
     /// What the user is waiting on, shown beside the progress indicator.
     @Published private(set) var busyLabel: String?
 
@@ -363,7 +374,8 @@ final class ChatStore: ObservableObject {
     /// another confirm is in flight is queued, never dropped: the athlete meant it, and its
     /// card says it is waiting instead of offering a button that does nothing.
     func confirm(_ messageID: UUID, runStore: RunStore) async -> Bool {
-        let offered = messages.first { $0.id == messageID && $0.action != nil }?.actionState
+        let live = proposalStatus(messageID) == .live
+        let offered = live ? messages.first { $0.id == messageID && $0.action != nil }?.actionState : nil
         guard confirmQueue.admit(messageID, offering: offered) != .ignore else { return false }
         return await queued { [weak self] () -> Bool in
             guard let self else { return false }
@@ -378,7 +390,8 @@ final class ChatStore: ObservableObject {
     private func apply(_ messageID: UUID, runStore: RunStore) async -> Bool {
         guard let idx = messages.firstIndex(where: { $0.id == messageID }),
               let action = messages[idx].action,
-              messages[idx].actionState.isOpenOffer else { return false }
+              messages[idx].actionState.isOpenOffer,
+              proposalStatus(messageID) == .live else { return false }
         errorText = nil
         usageNotice = nil
         messages[idx].actionState = .applying
@@ -464,7 +477,8 @@ final class ChatStore: ObservableObject {
     func dismiss(_ messageID: UUID, runStore: RunStore) async {
         guard let idx = messages.firstIndex(where: { $0.id == messageID }),
               let action = messages[idx].action,
-              messages[idx].actionState.isOpenOffer else { return }
+              messages[idx].actionState.isOpenOffer,
+              proposalStatus(messageID) == .live else { return }
         messages[idx].actionState = .dismissed
         persist(.dismissed, for: messageID)
         append(.user, "Dismissed — \(action.displaySummary)")
@@ -506,11 +520,13 @@ final class ChatStore: ObservableObject {
         }).map { WireMessage(role: $0.role.rawValue, content: $0.content) }
         if case .reply(let reply) = await requestReply(
             history: history,
-            context: runStore.coachContext(onboarding: onboardingMode)
+            context: runStore.coachContext(onboarding: onboardingMode),
+            acknowledging: true
         ) {
-            // `handleReply` may attach a card of its own — legitimate — but it never asks for
-            // another reply, which is what stops this from chaining into a monologue.
-            handleReply(reply)
+            // No card comes out of this turn, which is what stops a tap chaining into another
+            // card. "Confirmed — Correct Oct 27" reads to a model like agreement to correct Oct
+            // 27, and on 2026-11-04 that put the same correction up four times.
+            handleReply(reply, acknowledging: true)
         }
     }
 
@@ -914,9 +930,8 @@ final class ChatStore: ObservableObject {
 
     // MARK: - Plumbing
 
-    private func handleReply(_ reply: CoachReply) {
-        let handoff = runStore?.intakeHandoff
-        var actions = (reply.proposed_actions ?? []).map { IntakeHandoff.stamping($0, with: handoff) }
+    private func handleReply(_ reply: CoachReply, acknowledging: Bool = false) {
+        var actions = reply.proposed_actions ?? []
 
         // Onboarding: small facts apply silently — the athlete's answer was the consent.
         // SEQUENTIAL, and any plan rebuild is coalesced to a single run at the end
@@ -929,6 +944,9 @@ final class ChatStore: ObservableObject {
                     guard let self else { return }
                     var settingsTouched = false
                     for action in silent {
+                        if let changes = IntakeChanges(fact: action) {
+                            await self.foldIntoIntake(changes, runStore: store)
+                        }
                         do {
                             switch action.type {
                             case "update_athlete":       try await self.applyAthleteUpdate(action, runStore: store)
@@ -938,6 +956,7 @@ final class ChatStore: ObservableObject {
                                 settingsTouched = true
                             case "set_risk_tolerance":   try await self.applyRiskTolerance(action, runStore: store)
                             case "complete_onboarding":  await store.markOnboarded()
+                            case "remember":             try await self.applyRemember(action)
                             default: break
                             }
                         } catch {
@@ -964,19 +983,39 @@ final class ChatStore: ObservableObject {
             }
         }
 
-        if !reply.reply.isEmpty {
-            append(.coach, reply.reply, action: actions.first)
+        // One card, whatever came back. The coach function holds to this as well and tells the
+        // model; this is for a function that predates it.
+        var card = acknowledging ? nil : OpenProposal.oneCard(from: actions)
+        if let proposed = card, OpenProposal.repeatsWhatWasApplied(proposed, in: messages) {
+            Telemetry.warn("coach.repeat_card", "proposed again what was just applied", context: ["type": proposed.type])
+            card = nil
         }
-        // Additional proposals (rare) become their own cards.
-        for extra in actions.dropFirst() {
-            append(.coach, extra.displaySummary, action: extra)
+        // After the checks above, so an answer is only changed by a card that is really shown.
+        let stamped = card.map {
+            IntakeHandoff.stamping($0, with: runStore?.intakeHandoff, earlier: OpenProposal.unbuiltStamp(in: messages))
         }
-        if reply.reply.isEmpty && actions.isEmpty {
+        if let intake = stamped?.intake { runStore?.reviseIntake(to: intake) }
+
+        let text = reply.reply.isEmpty ? stamped?.displaySummary ?? "" : reply.reply
+        if !text.isEmpty {
+            append(.coach, text, action: stamped)
+        } else {
             // The v11 guard is supposed to make this unreachable. If it fires, the guard
             // has a hole — and only telemetry would ever tell us.
             Telemetry.warn("coach.empty_reply", "reached the supposedly-unreachable path")
             errorText = "Coach sent an empty reply — try again."
         }
+    }
+
+    /// An answer the interview just recorded silently, carried onto the form's answers and onto
+    /// the plan card if one is open: that card holds its own copy, and it is the copy Confirm
+    /// writes to the profile.
+    private func foldIntoIntake(_ changes: IntakeChanges, runStore: RunStore) async {
+        runStore.reviseIntake(changes)
+        guard let card = OpenProposal.liveCard(in: messages, now: .now),
+              var action = card.action, let stamp = action.intake else { return }
+        action.intake = stamp.revised(by: changes)
+        await pin(action, for: card.id)
     }
 
     /// This conversation's memory, as the coach is given it. Nil when there is nothing to
@@ -1013,13 +1052,19 @@ final class ChatStore: ObservableObject {
         case failed
     }
 
-    private func requestReply(history: [WireMessage], context: CoachContext) async -> ReplyOutcome {
+    private func requestReply(history: [WireMessage], context: CoachContext, acknowledging: Bool = false) async -> ReplyOutcome {
         var context = context
         context.memory = memoryContext
+        context.open_proposal = OpenProposal.liveCard(in: messages, now: .now)?.action.map(OpenProposal.forCoach)
+        context.applied_in_thread = OpenProposal.appliedSummaries(in: messages)
         do {
             let reply: CoachReply = try await Supa.client.functions.invoke(
                 "coach",
-                options: FunctionInvokeOptions(body: CoachRequest(messages: history, context: context))
+                options: FunctionInvokeOptions(body: CoachRequest(
+                    messages: history,
+                    context: context,
+                    acknowledging: acknowledging ? true : nil
+                ))
             )
             return .reply(reply)
         } catch {

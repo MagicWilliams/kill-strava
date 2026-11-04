@@ -645,6 +645,178 @@ final class TrainingIntakeTests: XCTestCase {
         XCTAssertEqual(IntakeHandoff.stamping(plan, with: newer).intake?.distance, "10k")
     }
 
+    // MARK: - What the athlete changed in conversation
+
+    /// The whole point: said in chat, on the card, in the request, and in the profile write.
+    func testChangesSaidInConversationReachWhatConfirmWrites() throws {
+        let handoff = IntakeHandoff(answers: fiveK(), stamp: stamp(fiveK()))
+        let plan = try action(#"{"type":"create_plan","race_date":"2026-11-26","summary":"Build my plan","intake_changes":{"days_per_week":4,"long_run_day":5}}"#)
+
+        let card = IntakeHandoff.stamping(plan, with: handoff)
+        let revised = try XCTUnwrap(card.intake)
+
+        XCTAssertEqual(revised.profilePatch.days_per_week, 4)
+        XCTAssertEqual(revised.profilePatch.long_run_day, 5)
+        XCTAssertEqual(revised.settingsLine, "4 days a week · long run Friday")
+        XCTAssertEqual(revised.distance, "5k", "everything not mentioned stays what they tapped")
+        XCTAssertEqual(revised.preferences, handoff.stamp?.preferences)
+    }
+
+    /// The model's echo still doesn't count: only `intake_changes` moves the form.
+    func testACardsOwnFieldsStillDoNotOutrankTheForm() throws {
+        let handoff = IntakeHandoff(answers: fiveK(), stamp: stamp(fiveK()))
+        let plan = try action(#"{"type":"create_plan","race_date":"2026-11-26","distance":"marathon","goal_type":"finish","summary":"x"}"#)
+        let card = IntakeHandoff.stamping(plan, with: handoff)
+        XCTAssertEqual(card.intake?.distance, "5k")
+        XCTAssertEqual(card.intake?.goal_type, "pr")
+    }
+
+    /// A race changed in chat moves the distance, its metres and the threshold together.
+    func testADifferentDistanceMovesEverythingThatDependsOnIt() throws {
+        var marathon = fiveK()
+        marathon.distance = .marathon
+        marathon.longRunCount = 3
+        let s = try XCTUnwrap(stamp(marathon))
+        XCTAssertNotNil(s.preferences.long_runs_20plus)
+
+        let five = s.revised(by: IntakeChanges(distance: "5k"))
+        XCTAssertEqual(five.distance, "5k")
+        XCTAssertEqual(five.distance_m, 5_000)
+        XCTAssertNil(five.preferences.long_runs_20plus, "nobody builds a 5K around 20-milers")
+
+        let body = PlanRequest.fromIntake(five, goalTimeS: 1_170, raceName: nil, raceDate: five.race_date)
+        XCTAssertEqual(body.distance_m, 5_000)
+    }
+
+    func testCustomMetresAreReadAndBadOnesIgnored() throws {
+        let s = try XCTUnwrap(stamp(fiveK()))
+        XCTAssertEqual(s.revised(by: IntakeChanges(distance: "custom", distance_m: 8_000)).distance_m, 8_000)
+        XCTAssertEqual(s.revised(by: IntakeChanges(distance: "custom")).distance, "5k", "custom with no metres says nothing")
+        XCTAssertEqual(s.revised(by: IntakeChanges(distance_m: 21_097)).distance, "half", "metres alone find their label")
+        XCTAssertEqual(s.revised(by: IntakeChanges(distance_m: 50)).distance, "5k", "out of range")
+    }
+
+    /// On 2026-11-04's rules a time asked for over a "just finish" answer was silently dropped.
+    func testATimeGoalChosenInChatOverJustFinishKeepsItsTime() throws {
+        var finish = fiveK()
+        finish.goalType = .finish
+        let handoff = IntakeHandoff(answers: finish, stamp: stamp(finish))
+        let plan = try action(#"{"type":"create_plan","goal_time_s":1170,"race_date":"2026-11-26","summary":"19:30","intake_changes":{"goal_type":"time"}}"#)
+
+        let card = IntakeHandoff.stamping(plan, with: handoff)
+        let request = try XCTUnwrap(PlanRequest.forCreatePlanCard(card, goal: nil, planStartDate: nil, today: today, calendar: cal))
+        XCTAssertEqual(request.goal_type, "time")
+        XCTAssertEqual(request.goal_time_s, 1_170)
+        XCTAssertEqual(request.targetLine, "Target 19:30")
+    }
+
+    /// And without the change, the card says plainly that the 19:30 in its summary is not coming.
+    func testACardThatWouldSaveNoTimeSaysSo() throws {
+        var finish = fiveK()
+        finish.goalType = .finish
+        let handoff = IntakeHandoff(answers: finish, stamp: stamp(finish))
+        let plan = try action(#"{"type":"create_plan","goal_time_s":1170,"race_date":"2026-11-26","summary":"Target 19:30"}"#)
+
+        let card = IntakeHandoff.stamping(plan, with: handoff)
+        let request = try XCTUnwrap(PlanRequest.forCreatePlanCard(card, goal: nil, planStartDate: nil, today: today, calendar: cal))
+        XCTAssertEqual(request.targetLine, "No target time: paces come from current fitness")
+    }
+
+    func testGoingFromATimeToAnotherGoalDropsTheStatedTime() throws {
+        var timed = fiveK()
+        timed.goalType = .time
+        timed.goalTimeSeconds = 1_170
+        let s = try XCTUnwrap(stamp(timed))
+        XCTAssertEqual(s.stated_goal_time_s, 1_170)
+        XCTAssertNil(s.revised(by: IntakeChanges(goal_type: "finish")).stated_goal_time_s)
+    }
+
+    func testValuesOutsideTheVocabularyAreIgnored() throws {
+        let s = try XCTUnwrap(stamp(fiveK()))
+        let bad = IntakeChanges(
+            distance: "ultra", goal_type: "win", plan_style: "vibes", course_type: "moon",
+            days_per_week: 9, long_run_day: 8, risk_tolerance: "reckless"
+        )
+        XCTAssertEqual(s.revised(by: bad), s)
+        XCTAssertEqual(s.revised(by: nil), s)
+    }
+
+    /// A card changes the race, so `intake` and `suggested_goal` have to follow it.
+    func testTheCardsRaceIsFoldedIn() throws {
+        let handoff = IntakeHandoff(answers: fiveK(), stamp: stamp(fiveK()))
+        let plan = try action(#"{"type":"create_plan","race_name":"Philly","race_date":"2026-12-13","summary":"x"}"#)
+        let revised = try XCTUnwrap(IntakeHandoff.stamping(plan, with: handoff).intake)
+        XCTAssertEqual(revised.race_name, "Philly")
+        XCTAssertEqual(revised.race_date, "2026-12-13")
+    }
+
+    /// "No plan, just coaching" asks for no workouts and builds no weeks.
+    func testChoosingNoPlanInChatClearsWhatOnlyAPlanUses() throws {
+        var a = fiveK()
+        a.quality = [.tempo]
+        let s = try XCTUnwrap(stamp(a))
+        let coaching = s.revised(by: IntakeChanges(plan_style: "none"))
+        XCTAssertEqual(coaching.preferences.plan_style, "none")
+        XCTAssertEqual(coaching.preferences.quality, [])
+        XCTAssertNil(coaching.settingsLine)
+    }
+
+    /// The interview applies these silently. Without folding them in, Confirm on the plan card
+    /// wrote the form's values straight back over them.
+    func testAFactTheInterviewRecordedBecomesAChange() throws {
+        let settings = try action(#"{"type":"update_plan_settings","days_per_week":5,"long_run_day":5,"summary":"x"}"#)
+        XCTAssertEqual(IntakeChanges(fact: settings), IntakeChanges(days_per_week: 5, long_run_day: 5))
+
+        let risk = try action(#"{"type":"set_risk_tolerance","level":"ambitious","risk_named":"r","summary":"x"}"#)
+        XCTAssertEqual(IntakeChanges(fact: risk), IntakeChanges(risk_tolerance: "ambitious"))
+
+        let strength = try action(#"{"type":"update_athlete","wants_strength":true,"summary":"x"}"#)
+        XCTAssertEqual(IntakeChanges(fact: strength), IntakeChanges(wants_strength: true))
+
+        let birthday = try action(#"{"type":"update_athlete","birthdate":"1990-01-01","summary":"x"}"#)
+        XCTAssertNil(IntakeChanges(fact: birthday), "not an intake answer")
+        XCTAssertNil(IntakeChanges(fact: try action(#"{"type":"remember","fact":"x","summary":"x"}"#)))
+    }
+
+    /// `intake_changes` must survive the trip through `coach_messages.proposed_action`.
+    func testChangesRoundTripThroughJsonb() throws {
+        let plan = try action(#"{"type":"create_plan","race_date":"2026-11-26","intake_changes":{"days_per_week":4}}"#)
+        let back = try JSONDecoder().decode(ProposedAction.self, from: JSONEncoder().encode(plan))
+        XCTAssertEqual(back.intake_changes?.days_per_week, 4)
+    }
+
+    // MARK: - After a relaunch
+
+    /// The handoff lives in memory. A relaunch loses it while the conversation carries on, and
+    /// the card the coach proposes next has to keep what the athlete tapped.
+    func testACardAfterARelaunchInheritsTheFormForTheSameRace() throws {
+        let earlier = try XCTUnwrap(stamp(fiveK()))
+        let plan = try action(#"{"type":"create_plan","race_date":"2026-11-26","intake_changes":{"days_per_week":4},"summary":"x"}"#)
+        let card = IntakeHandoff.stamping(plan, with: nil, earlier: earlier)
+        XCTAssertEqual(card.intake?.distance, "5k")
+        XCTAssertEqual(card.intake?.days_per_week, 4)
+    }
+
+    /// A different date is a different race, and the form's distance would be a wrong answer.
+    func testACardForADifferentRaceDoesNotInheritTheForm() throws {
+        let earlier = try XCTUnwrap(stamp(fiveK()))
+        let plan = try action(#"{"type":"create_plan","race_date":"2027-02-28","distance":"marathon","summary":"x"}"#)
+        XCTAssertNil(IntakeHandoff.stamping(plan, with: nil, earlier: earlier).intake)
+    }
+
+    func testOnlyAPlanThatWasNotBuiltHandsItsFormOn() throws {
+        let s = try XCTUnwrap(stamp(fiveK()))
+        var plan = try action(#"{"type":"create_plan","race_date":"2026-11-26","summary":"x"}"#)
+        plan.intake = s
+        func message(_ state: ChatMessage.ActionState) -> ChatMessage {
+            ChatMessage(id: UUID(), role: .coach, text: "x", action: plan, actionState: state)
+        }
+        XCTAssertEqual(OpenProposal.unbuiltStamp(in: [message(.pending)]), s)
+        XCTAssertEqual(OpenProposal.unbuiltStamp(in: [message(.dismissed)]), s)
+        XCTAssertNil(OpenProposal.unbuiltStamp(in: [message(.applied)]), "that intake is finished")
+        XCTAssertNil(OpenProposal.unbuiltStamp(in: []))
+    }
+
     /// The card is persisted in `coach_messages.proposed_action`. A relaunch must bring the
     /// intake back with it, and every card written before #102 must still decode.
     func testTheIntakeSurvivesTheCardsRoundTripThroughJsonb() throws {

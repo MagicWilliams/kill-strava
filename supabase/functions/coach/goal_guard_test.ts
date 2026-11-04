@@ -138,8 +138,31 @@ Deno.test("#239: times are read from the athlete's words as h:mm:ss, h:mm and m:
   assert(timesIn("maybe 3:15?").has(11700));
   assert(timesIn("19:30 for the 5K").has(1170));
   assertEquals(timesIn("12:75").size, 0, "not a time");
-  assertEquals(timesIn("sub-3, under 20 minutes").size, 0, "no colon, not read");
+  assertEquals(timesIn("12 weeks out, 5 days a week").size, 0, "numbers that are not times");
   assertEquals([...timesIn("3:15:00")], [11700], "the tail of h:mm:ss is not a second time");
+});
+
+Deno.test("a time said in plain speech is a time the athlete stated", () => {
+  assert(timesIn("I want to go under 20 minutes").has(1200));
+  assert(timesIn("sub-20 would be huge").has(1200));
+  assert(timesIn("sub 3").has(10800), "three hours");
+  assert(timesIn("sub 3").has(180), "both readings, as with 3:15");
+  assert(timesIn("maybe 3 hours 30").has(12600));
+  assert(timesIn("3 hours and 30 minutes").has(12600));
+  assert(timesIn("3 hrs").has(10800));
+  assert(!timesIn("3 hours 30").has(1800), "the 30 belongs to the hours");
+  assert(!timesIn("sub 3:15").has(10800), "a clock time is read as a clock time");
+});
+
+Deno.test("the guard lets through the time an athlete asked for in words", () => {
+  assertEquals(goalTimeRejection(plan(1200), ctx(), ["I want to go under 20 minutes"]), null);
+});
+
+Deno.test("an answer changed in conversation decides what the guard guards", () => {
+  const finishing = plan(11100, { intake_changes: { goal_type: "finish" } });
+  assertEquals(goalTimeRejection(finishing, ctx(), []), null, "no longer a guarded goal type");
+  const toPR = plan(11100, { intake_changes: { goal_type: "pr" } });
+  assert(goalTimeRejection(toPR, ctx(), []) !== null, "and now one that is");
 });
 
 Deno.test("#239: formatFinish writes times the way the app does", () => {
