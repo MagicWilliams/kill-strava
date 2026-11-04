@@ -6,6 +6,20 @@ tags: [tempo, decision-log]
 
 Newest first. One entry per session that ships features or makes a product decision.
 
+## 2026-11-04: A plain voice for the app and the coach
+
+### Decisions
+- **No em dashes anywhere David reads, and no stock AI phrasing.** Work is split across #264 (coach), #265 (plan function), #266 (app copy), #267 (comments, docs, CI guard) and #268 (stored text).
+- **The prompt is the root cause.** The model copied how its prompt was written, including "niggles", "honest" and "X, not Y" lines. So the prompt changes first and tests hold it to the same rules.
+- **Dashes are enforced in code; banned words stay a prompt rule.** A dash can be mechanically replaced. Swapping a word inside a finished sentence produces garbage.
+- **Left as written:** text the athlete typed, applied migrations and dated `progress.md` entries.
+
+### Shipped
+- #264: coach prompt rewrite, the dash scrubber on all coach output, and prompt tests.
+
+### Next up
+- #265 and #266, then #267. #268 runs last and needs David's sign-off on a dry run.
+
 ## 2026-10-15 (later): Drift Detector PRD, revised after the repo audit
 
 ### Decisions
