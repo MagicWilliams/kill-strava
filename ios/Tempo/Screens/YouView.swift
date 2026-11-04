@@ -6,6 +6,8 @@ struct YouView: View {
     @EnvironmentObject private var store: RunStore
     @EnvironmentObject private var router: TabRouter
     @Environment(\.units) private var units
+    @ObservedObject private var consent = CoachConsentStore.shared
+    @State private var reviewingConsent = false
 
     var body: some View {
         Screen(title: "You", subtitle: subtitle) {
@@ -158,7 +160,31 @@ struct YouView: View {
             settingRow("Max HR", "\(store.effectiveMaxHR) bpm" + (store.maxHRIsMeasured ? "" : " (est.)"))
             settingRow("Data source", "Apple Health")
             unitsRow
+            coachSharingRow
         }
+        .sheet(isPresented: $reviewingConsent) {
+            CoachConsentView { _ in reviewingConsent = false }
+        }
+    }
+
+    /// Where a decline, or a change of heart after agreeing, gets changed. Not routed through
+    /// the coach like the rows above: this is the one setting that decides whether there is a
+    /// coach to ask.
+    private var coachSharingRow: some View {
+        Button { reviewingConsent = true } label: {
+            HStack {
+                Text("Coach data sharing").font(Tokens.Font.ui(13)).foregroundStyle(Tokens.Palette.textSecondary)
+                Spacer()
+                Text(consent.maySend ? "On" : "Off")
+                    .font(Tokens.Font.mono(13)).foregroundStyle(Tokens.Palette.textPrimary)
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(Tokens.Palette.textTertiary)
+            }
+            .frame(minHeight: 24)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(Pressable())
     }
 
     /// The one setting here that doesn't go through the Coach: a display preference, not a

@@ -17,6 +17,7 @@ struct CoachView: View {
     @EnvironmentObject private var router: TabRouter
     @Environment(\.dismiss) private var dismiss
     @StateObject private var chat = ChatStore()
+    @ObservedObject private var consent = CoachConsentStore.shared
     /// This thread's own row, for the title and the day its predecessor ended. Nil until the
     /// read answers, and on the interview path, where there is no list to show a title on.
     @State private var thread: CoachThreads.Row?
@@ -148,10 +149,18 @@ struct CoachView: View {
                     .padding(.horizontal, 20).padding(.bottom, 6)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
-            if !chat.isThinking && !chat.messages.isEmpty && !onboarding {
-                quickReplyRow
+            if consent.maySend {
+                if !chat.isThinking && !chat.messages.isEmpty && !onboarding {
+                    quickReplyRow
+                }
+                inputBar
+            } else {
+                // The transcript stays readable: it lives in Supabase, and reading it sends
+                // nothing to anyone. It is the next message that needs the athlete's OK.
+                Card { CoachConsentNotice() }
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, 12)
             }
-            inputBar
         }
         .background(Tokens.Palette.canvas)
         .toolbar(.hidden, for: .navigationBar)
@@ -170,6 +179,10 @@ struct CoachView: View {
         // here. `sendIntake` ignores one that has already gone.
         .onChange(of: store.intakeHandoff?.id) { _, _ in
             Task { await chat.sendIntake(runStore: store) }
+        }
+        .onChange(of: consent.maySend) { _, maySend in
+            guard maySend else { return }
+            Task { await chat.consentGranted(context: store.coachContext(onboarding: onboarding)) }
         }
     }
 

@@ -113,6 +113,7 @@ struct BlockReviewView: View {
     @State private var writingRetrospective = false
     @State private var retrospectiveFailed = false
     @State private var closing = false
+    @ObservedObject private var consent = CoachConsentStore.shared
 
     init(goal: GoalInfo) {
         _goal = State(initialValue: goal)
@@ -174,6 +175,10 @@ struct BlockReviewView: View {
         .background(Tokens.Palette.canvas)
         .toolbar(.hidden, for: .navigationBar)
         .task { await load() }
+        .onChange(of: consent.maySend) { _, maySend in
+            guard maySend, isClosed, retrospective == nil else { return }
+            Task { await writeRetrospective(context: store.coachContext()) }
+        }
         .sheet(isPresented: $closing) {
             CloseBlockSheet(goal: goal, planID: planSide?.plan.id, raceRun: raceRun) { closed in
                 closing = false
@@ -462,6 +467,8 @@ struct BlockReviewView: View {
                     Text("The coach is reading the block…")
                         .font(Tokens.Font.ui(13)).foregroundStyle(Tokens.Palette.textTertiary)
                 }
+            } else if !consent.maySend {
+                if isClosed { CoachConsentNotice() }
             } else if retrospectiveFailed {
                 Text("Couldn't reach the coach.")
                     .font(Tokens.Font.ui(13)).foregroundStyle(Tokens.Palette.textTertiary)

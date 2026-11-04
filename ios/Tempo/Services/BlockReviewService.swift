@@ -261,7 +261,9 @@ enum BlockReviewService {
 
         let reply: Reply
         do {
-            reply = try await Supa.client.functions.invoke("coach", options: FunctionInvokeOptions(body: req))
+            reply = try await CoachGateway.invoke(.coach, body: req)
+        } catch is CoachGateway.ConsentRequired {
+            return nil
         } catch {
             Telemetry.error("block.review_failed", error)
             return nil

@@ -20,6 +20,7 @@ struct RunDetailView: View {
     @Environment(\.units) private var units
     @StateObject private var model = RunDetailStore()
     @StateObject private var shoes = ShoeStore()
+    @ObservedObject private var consent = CoachConsentStore.shared
     @State private var showFullMap = false
     @State private var showFullPhoto = false
     @State private var editingJournal = false
@@ -86,6 +87,10 @@ struct RunDetailView: View {
         .background(Tokens.Palette.canvas)
         .toolbar(.hidden, for: .navigationBar)
         .task { await model.load(run: run, runStore: store) }
+        .onChange(of: consent.maySend) { _, maySend in
+            guard maySend else { return }
+            Task { await model.retryTakeaway(run: run, runStore: store) }
+        }
         .task { await shoes.load() }
         .task(id: photoKey) { await model.loadPhoto(key: photoKey) }
         .fullScreenCover(isPresented: $showFullMap) { fullMap }
@@ -420,18 +425,22 @@ struct RunDetailView: View {
                 Text(takeaway)
                     .font(Tokens.Font.ui(14)).foregroundStyle(Tokens.Palette.textPrimary)
                     .lineSpacing(3)
+            } else if !consent.maySend {
+                CoachConsentNotice()
             } else if !model.takeawayLoading {
                 Text("Couldn't reach the coach — the read appears next time you open this run.")
                     .font(Tokens.Font.ui(13)).foregroundStyle(Tokens.Palette.textTertiary)
             }
-            Button {
-                router.showCoach()
-            } label: {
-                Text("Discuss with Coach")
-                    .font(Tokens.Font.ui(13, .semibold))
-                    .foregroundStyle(Tokens.Palette.accentText)
+            if consent.maySend {
+                Button {
+                    router.showCoach()
+                } label: {
+                    Text("Discuss with Coach")
+                        .font(Tokens.Font.ui(13, .semibold))
+                        .foregroundStyle(Tokens.Palette.accentText)
+                }
+                .buttonStyle(.plain)
             }
-            .buttonStyle(.plain)
         }
     }
 
@@ -984,6 +993,14 @@ final class RunDetailStore: ObservableObject {
             takeawayLoading = false
             return
         }
+        takeawayLoading = true
+        takeaway = await TakeawayService.ensureTakeaway(for: run, detail: detail, store: runStore)
+        takeawayLoading = false
+    }
+
+    /// The athlete agreed with this page open. `load` already found no read and has latched.
+    func retryTakeaway(run: RunSummary, runStore: RunStore) async {
+        guard takeaway == nil, !takeawayLoading else { return }
         takeawayLoading = true
         takeaway = await TakeawayService.ensureTakeaway(for: run, detail: detail, store: runStore)
         takeawayLoading = false

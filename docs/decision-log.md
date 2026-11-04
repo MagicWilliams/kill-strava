@@ -6,6 +6,24 @@ tags: [tempo, decision-log]
 
 Newest first. One entry per session that ships features or makes a product decision.
 
+## 2026-11-04: Permission before anything goes to Claude
+
+### Decisions
+- **Nothing reaches Anthropic without an explicit yes** (App Review 5.1.2(i)). Every `coach` and `plan` call goes through `CoachGateway`, which checks `CoachConsent.maySend`. Not knowing is a no. A lint test fails if anything else touches the functions client.
+- **Consent comes before the intake, not just before the interview.** Every answer on the intake form exists to be handed to the coach, so someone who says no skips it and lands in the app.
+- **Existing athletes are asked at launch, once**, over the app rather than on first visit to the Coach tab. A takeaway generates in the background with no coach screen open, so waiting would just leave the coach silently off.
+- **A decline stays quiet.** It isn't asked again. Coach surfaces say the coach is off and offer the way back, and the You tab has a row to change it either way, including withdrawing.
+- **The screen lists more than the brief did**, because the payloads do: heart rate, splits, cadence, elevation, fitness numbers, best times, check-ins and what the athlete told the coach. PRD-02 rule 5 holds the copy to the flow, not to the shorter summary.
+- **The decision is stored on the phone and on `profiles`**, newest wins, and a tie between different answers resolves to the decline. No server-side check in the functions yet: the app is the only thing that calls them.
+
+### Shipped
+- `Engine/CoachConsent` (the rule), `Services/CoachGateway` (the one way out), `Services/CoachConsentStore`, `Screens/CoachConsentView`, migration `0024_coach_consent.sql` (not applied by the PR).
+
+### Next up
+- David: apply 0024, tap through the device check in the PR, sign off the copy.
+- Fill the `[UPDATE WHEN THE CONSENT SCREEN SHIPS]` placeholder in `docs/app-store-listing.md` once that file lands on `main`.
+- `site/privacy.html` (#250) summarises the same flow more briefly than this screen; bring it up to the same list.
+
 ## 2026-10-15 (later): Drift Detector PRD, revised after the repo audit
 
 ### Decisions

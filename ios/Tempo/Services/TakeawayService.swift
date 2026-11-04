@@ -23,6 +23,10 @@ enum TakeawayService {
             .value
         if let cached = row?.coach_takeaway { return cached }
 
+        // The gateway would refuse this anyway. Stopping here saves pulling the run's samples
+        // out of HealthKit for a payload that can't go, on every run that syncs.
+        guard CoachConsentStore.shared.maySend else { return nil }
+
         guard !inFlight.contains(run.id) else { return nil }
         inFlight.insert(run.id)
         defer { inFlight.remove(run.id) }
@@ -67,9 +71,9 @@ enum TakeawayService {
             corrected_note: row?.correction_note
         )
 
-        guard let reply: Reply = try? await Supa.client.functions.invoke(
-            "coach",
-            options: FunctionInvokeOptions(body: Request(mode: "takeaway", run: payload, context: store.coachContext()))
+        guard let reply: Reply = try? await CoachGateway.invoke(
+            .coach,
+            body: Request(mode: "takeaway", run: payload, context: store.coachContext())
         ), let text = TakeawayReply.usable(reply.reply) else { return nil }
 
         struct Patch: Encodable { let coach_takeaway: String }
