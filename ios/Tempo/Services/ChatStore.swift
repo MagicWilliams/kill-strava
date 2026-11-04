@@ -985,7 +985,13 @@ final class ChatStore: ObservableObject {
             )
             return reply
         } catch {
-            Telemetry.error("coach.invoke_failed", error)
+            // Backing out of the chat mid-reply, or a second send superseding this one,
+            // cancels the URLSession task under us. #201 routed four such catch sites
+            // through `errorUnlessCancelled`; this one was missed, and on 2026-10-29 two
+            // NSURLErrorDomain -999 cancellations landed as `coach.invoke_failed` error
+            // rows that read like a new coach regression (#248). A real invoke failure —
+            // non-2xx, offline, decode drift — still reports exactly as before.
+            Telemetry.errorUnlessCancelled("coach.invoke_failed", error)
             return nil
         }
     }
