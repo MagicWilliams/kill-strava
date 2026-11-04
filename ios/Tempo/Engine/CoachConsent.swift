@@ -51,7 +51,7 @@ enum CoachConsent {
     enum ServerRead: Equatable {
         /// The columns exist. Nil means they are empty: this athlete has never answered.
         case record(Record?)
-        /// Migration 0024 isn't applied yet, so the phone's copy is all there is.
+        /// migration 0025 isn't applied yet, so the phone's copy is all there is.
         case columnMissing
         /// The read failed. It says nothing about what the athlete decided.
         case unreadable
@@ -69,7 +69,7 @@ enum CoachConsent {
     /// Settle the phone's copy and the server's into one status.
     ///
     /// Both exist because each covers a hole in the other. The phone's copy works before
-    /// migration 0024 is applied and through a failed write. The server's survives a reinstall,
+    /// migration 0025 is applied and through a failed write. The server's survives a reinstall,
     /// which empties UserDefaults while the anonymous session lives on in the Keychain.
     ///
     /// Newest wins, so withdrawing consent offline can't be undone by an older "agreed" on the

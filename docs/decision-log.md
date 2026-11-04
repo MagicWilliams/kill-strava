@@ -17,10 +17,10 @@ Newest first. One entry per session that ships features or makes a product decis
 - **The decision is stored on the phone and on `profiles`**, newest wins, and a tie between different answers resolves to the decline. No server-side check in the functions yet: the app is the only thing that calls them.
 
 ### Shipped
-- `Engine/CoachConsent` (the rule), `Services/CoachGateway` (the one way out), `Services/CoachConsentStore`, `Screens/CoachConsentView`, migration `0024_coach_consent.sql` (not applied by the PR).
+- `Engine/CoachConsent` (the rule), `Services/CoachGateway` (the one way out), `Services/CoachConsentStore`, `Screens/CoachConsentView`, migration `0025_coach_consent.sql` (not applied by the PR).
 
 ### Next up
-- David: apply 0024, tap through the device check in the PR, sign off the copy.
+- David: apply 0025, tap through the device check in the PR, sign off the copy.
 - Fill the `[UPDATE WHEN THE CONSENT SCREEN SHIPS]` placeholder in `docs/app-store-listing.md` once that file lands on `main`.
 - `site/privacy.html` (#250) summarises the same flow more briefly than this screen; bring it up to the same list.
 
