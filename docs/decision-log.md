@@ -16,10 +16,10 @@ Newest first. One entry per session that ships features or makes a product decis
 - **Per-user limits don't bound the bill alone,** because anonymous accounts can still be minted per IP. The hard bound is a spend limit on the Anthropic side.
 
 ### Shipped
-- Migration 0024 (`usage_limits`, `usage_counters`, `claim_usage`), the gate in `coach` and `plan`, and the limited state in every caller. Written, not applied or deployed.
+- Migration 0024 (`usage_limits`, `usage_counters`, `claim_usage`), the gate in `coach` and `plan`, and the limited state in every caller. Live on production: `coach` v24 and `plan` v10, which also took #245 and #246 live.
 
 ### Next up
-- David applies the migration, deploys both functions and sets the auth and Anthropic limits (steps in the PR).
+- David sets the Anthropic spend limit and the anonymous sign-in limit, and sends one coach message on his phone as the device check.
 - Cap the size of a request: limits count calls, and the client still decides how large each one is.
 
 ## 2026-10-15 (later): Drift Detector PRD, revised after the repo audit
