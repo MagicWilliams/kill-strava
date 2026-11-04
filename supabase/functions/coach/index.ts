@@ -18,6 +18,8 @@ import { runEditing, shapeRunInput, speaksRunFacts } from "./run_corrections.ts"
 import { goalLifecycle } from "./goal_lifecycle.ts";
 import { parseThreadSummary } from "./summary.ts";
 import { goalRejections, HELD_BACK_PLAN } from "./goal_guard.ts";
+import { usageRefusal } from "../_shared/usage_gate.ts";
+import { usageKindForMode } from "../_shared/usage_limit.ts";
 import { cleanAction, cleanCoachTurns, stripDashes } from "../_shared/plain_text.ts";
 import {
   BLOCK_REVIEW_INSTRUCTIONS,
@@ -114,6 +116,12 @@ Deno.serve(async (req) => {
     if (anthropicMessages.length === 0) {
       return Response.json({ error: "history must end with a user turn" }, { status: 400 });
     }
+
+    // Last thing before the money: a request refused above never counts against anyone, and
+    // one refused here has spent nothing. One claim covers every round below, because a tool
+    // continuation or an empty-reply retry is the same turn to the athlete.
+    const refusal = await usageRefusal(req.headers.get("Authorization"), usageKindForMode(mode));
+    if (refusal) return refusal;
 
     const resp = await fetch(ANTHROPIC_URL, {
       method: "POST",
