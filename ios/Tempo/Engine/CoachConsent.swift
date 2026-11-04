@@ -51,7 +51,7 @@ enum CoachConsent {
     enum ServerRead: Equatable {
         /// The columns exist. Nil means they are empty: this athlete has never answered.
         case record(Record?)
-        /// migration 0025 isn't applied yet, so the phone's copy is all there is.
+        /// Migration 0025 isn't applied yet, so the phone's copy is all there is.
         case columnMissing
         /// The read failed. It says nothing about what the athlete decided.
         case unreadable
