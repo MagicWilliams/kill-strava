@@ -23,13 +23,15 @@ Copy rules this draft follows, from the [[decision-log]] and [[prd-02-drift-dete
 
 ## Must clear before you submit
 
+Status as of 2026-11-04.
+
 | # | What | Why it matters | Who |
 |---|---|---|---|
-| 1 | **Ask permission before data goes to Anthropic.** The app has no such screen today. | Guideline 5.1.2(i): you must "clearly disclose where personal data will be shared with third parties, including with third-party AI, and obtain explicit permission". This is the likeliest rejection. | Needs a build |
-| 2 | **Privacy policy URL is live.** It returns 404 until PR #250 merges. | Required field. Tempo also reads HealthKit. | Merge |
+| 1 | **Ask permission before data goes to Anthropic.** The screen is in PR #263, still open. Migration 0025 is on production, but no shipped build has the screen. | Guideline 5.1.2(i): you must "clearly disclose where personal data will be shared with third parties, including with third-party AI, and obtain explicit permission". This is the likeliest rejection. | Merge, then a build |
+| 2 | **Privacy policy URL.** Done: PR #250 merged and the page returns 200. | Required field. Tempo also reads HealthKit. | Done |
 | 3 | **Fix the public pages.** `privacy.html` and `index.html` say "small TestFlight beta", and `index.html` has no contact details. | The support URL must lead to real contact information. | Small PR |
 | 4 | **Delete from inside the app.** Today deletion means emailing you. | Guideline 5.1.1(v) requires in-app deletion if an app "supports account creation". Anonymous accounts are a grey area, so a reviewer could go either way. | Your call |
-| 5 | **Limit coach usage per user.** `coach` has no rate limit, and anyone can get an anonymous account. | Not a review issue. A public listing makes this an open door to your Anthropic bill. | Needs a build |
+| 5 | **Cap total spend.** Per-user limits are live (PR #262: migration 0024, `coach` v24, `plan` v10). PR #262 lists the Anthropic spend limit and the anonymous sign-in limit as not set yet. | Not a review issue. Anonymous accounts can still be created per IP, so per-user limits alone don't cap your Anthropic bill. | You, in both dashboards |
 | 6 | **Version number.** `MARKETING_VERSION` is `0.1.0`. | Legal, but it would show publicly. Suggest `1.0.0`. | One line |
 
 ## App information
@@ -117,9 +119,9 @@ Tempo is a training tool, not a medical device. It doesn't diagnose or treat any
 
 | Field | Value |
 |---|---|
-| Support URL | `https://magicwilliams.github.io/kill-strava/` (live after #250, needs contact details: item 3) |
+| Support URL | `https://magicwilliams.github.io/kill-strava/` (live, needs contact details: item 3) |
 | Marketing URL | Leave blank for now |
-| Privacy Policy URL | `https://magicwilliams.github.io/kill-strava/privacy.html` (live after #250) |
+| Privacy Policy URL | `https://magicwilliams.github.io/kill-strava/privacy.html` (live) |
 | Copyright | `2026 David Latimore II` (Apple adds the ©. Use your seller name if it's Delight Studio.) |
 | Version | `1.0.0` (item 6) |
 | What's New | Not available on a first version |
