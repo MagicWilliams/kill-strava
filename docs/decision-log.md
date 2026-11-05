@@ -6,6 +6,26 @@ tags: [tempo, decision-log]
 
 Newest first. One entry per session that ships features or makes a product decision.
 
+## 2026-11-04 (later): One proposal at a time, and the athlete's word reaches the card
+
+Found in two fresh-account setups from that day: one run correction proposed four times, three memory cards in one reply, and "5 days, Friday long runs" lost when Confirm wrote the form's 6 days and Sunday.
+
+### Decisions
+- **At most one card can be answered in a conversation, and it must reflect the latest thing the athlete said.** A newer card replaces an older one. When the athlete says something and the coach answers without proposing the card again, it closes. A card also closes after 24 hours.
+- **A card the coach forgets to repeat closes rather than stays up.** Forgetting costs one message. The other way round, a stale Confirm writes the wrong plan. Reversible: `OpenProposal.status` is one function.
+- **Closing is worked out from the transcript, not stored.** No migration, and old conversations are covered as soon as this ships.
+- **An acknowledgement gets no card tools.** A tap reached the model as "Confirmed — X", which it read as agreement to X. It can describe a next step in words and ask.
+- **The form is where the conversation starts, not where it ends.** Answers changed in chat travel in `create_plan.intake_changes`, and only those outrank the form. The model's echo of the form still doesn't, which is the #184 lesson.
+- **During setup, memories save without a card,** like every other interview answer. Outside setup they are the lowest-ranked card.
+- **A time said in plain speech counts as stated** ("under 20 minutes", "sub-3"). This reverses a #239 choice: reading only colons turned back the time the athlete had just asked for.
+
+### Shipped
+- `Engine/OpenProposal.swift`, `IntakeStamp.revised`, a target and week line on the plan card, and `coach/proposals.ts` with its prompt rules. The coach function is written, not deployed.
+
+### Next up
+- Held until after Friday's run, like #269: this PR stays unmerged because other sessions deploy `coach` from `main`. Then merge #269, rebase this onto it (its prompt moves to `prompts.ts`), deploy `coach`, and merge straight after.
+- Device check: run a fresh intake, change an answer in chat, and confirm the card shows the change.
+
 ## 2026-11-04: Per-user usage limits before the public listing
 
 ### Decisions
