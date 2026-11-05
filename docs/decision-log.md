@@ -22,6 +22,20 @@ Newest first. One entry per session that ships features or makes a product decis
 - David sets the Anthropic spend limit and the anonymous sign-in limit, and sends one coach message on his phone as the device check.
 - Cap the size of a request: limits count calls, and the client still decides how large each one is.
 
+## 2026-11-03: App Store listing drafted
+
+### Decisions
+- **Marketing assets never show real data.** Screenshots and the preview come from a fictional runner on a local stack, because the repo is public. See `appstore/README.md`.
+- **The listing only claims what ships today.** "On track" means projected finish against goal, not the Drift Detector, whose hero chart hasn't shipped. It makes no privacy slogans or medical claims, and names no competitors.
+
+### Shipped
+- [[app-store-listing]]: metadata, age rating, App Privacy answers and review notes.
+- Header, search and universal art, 8 screenshots at 6.9" and 6.1", and a 24-second preview.
+
+### Next up
+- Blockers in [[app-store-listing]]: in-app consent before data goes to Anthropic (guideline 5.1.2(i)), the privacy URL (#250), coach rate limiting.
+- David's calls: the app name, given "Tempo: Home Workout & Fitness" is already in the category, and whether a public listing should wait for the Drift Detector (PRD-02 rule 8).
+
 ## 2026-10-15 (later): Drift Detector PRD, revised after the repo audit
 
 ### Decisions
