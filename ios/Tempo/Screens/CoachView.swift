@@ -46,7 +46,7 @@ struct CoachView: View {
             if session.status == "done" {
                 suggestions.append("Break down today's run")
                 suggestions.append("What's the focus tomorrow?")
-            } else if (session.isQuality || session.type == "long"), store.todayCheckIn == nil {
+            } else if (session.isQuality || session.type == "long"), store.checkInForToday == nil {
                 suggestions.append("What's today's session for?")
                 suggestions.append("Something feels off today")
             } else {
