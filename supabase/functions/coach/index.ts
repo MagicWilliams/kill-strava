@@ -21,6 +21,7 @@ import { parseThreadSummary } from "./summary.ts";
 import { goalRejections, HELD_BACK_PLAN } from "./goal_guard.ts";
 import { usageRefusal } from "../_shared/usage_gate.ts";
 import { usageKindForMode } from "../_shared/usage_limit.ts";
+import { MAX_REQUEST_BYTES, promptBytes, readBodyWithin, tooLargeResponse } from "../_shared/request_size.ts";
 
 const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
 const MODEL = "claude-sonnet-5";
@@ -275,7 +276,9 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { messages, context, mode, run, block, features } = await req.json();
+    const body = await readBodyWithin(req, MAX_REQUEST_BYTES.coach);
+    if (body === null) return tooLargeResponse("coach");
+    const { messages, context, mode, run, block, features } = JSON.parse(body);
 
     // #206: a build that computes run corrections itself says so in `features`; anything
     // else (every build installed before it) keeps the totals schema it was written against.
@@ -324,6 +327,8 @@ Deno.serve(async (req) => {
     if (anthropicMessages.length === 0) {
       return Response.json({ error: "history must end with a user turn" }, { status: 400 });
     }
+
+    if (promptBytes(system, anthropicMessages) > MAX_REQUEST_BYTES.coach) return tooLargeResponse("coach");
 
     // Last thing before the money: a request refused above never counts against anyone, and
     // one refused here has spent nothing. One claim covers every round below, because a tool

@@ -6,6 +6,20 @@ tags: [tempo, decision-log]
 
 Newest first. One entry per session that ships features or makes a product decision.
 
+## 2026-11-04 (later): A size cap on each coach and plan call
+
+### Decisions
+- **Size the cap from what the app can build, not from today's traffic.** One athlete's logs would set it too low for the next one. The `coach` cap sits above a full 200-message recap with the context at the app's own ceilings, and a test pins that.
+- **Measure the prompt as well as the body.** The coach pretty-prints `context`, `run` and `block`, and the indentation grows with depth, so a 10 KB body of nested arrays renders to 25 MB. A body check alone would have been easy to walk around.
+- **A size refusal isn't a usage limit.** It spends nothing and counts against nothing, and it comes back as its own 413 with its own telemetry event, because a real athlete reaching it means the cap is wrong.
+- **A too-large thread doesn't stop the recap backlog,** the way a used-up allowance does. Recaps run oldest first, so stopping would hold back every newer one forever.
+
+### Shipped
+- `MAX_REQUEST_BYTES` and the checks in `coach` and `plan`, tests through the real handlers, and the refusal state in the app. Written, not deployed.
+
+### Next up
+- David deploys both functions (steps in the PR).
+
 ## 2026-11-04: Per-user usage limits before the public listing
 
 ### Decisions

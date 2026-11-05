@@ -28,6 +28,7 @@ import {
 import { extractFeatures, projectedFinishS, QUALIFYING_MI, type RunRow } from "./features.ts";
 import { DistanceRequired, goalInsertRow, isMissingColumnError, requiresTargetTime, resolveGoal } from "./goal.ts";
 import { usageRefusal } from "../_shared/usage_gate.ts";
+import { MAX_REQUEST_BYTES, readBodyWithin, tooLargeResponse } from "../_shared/request_size.ts";
 
 const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
 const MODEL = "claude-sonnet-5";
@@ -112,6 +113,11 @@ Deno.serve(async (req) => {
   if (!apiKey) return Response.json({ error: "ANTHROPIC_API_KEY not configured" }, { status: 500 });
 
   try {
+    // `race_name` and `race_date` go into the system prompt as sent, so an unbounded body
+    // reaches the model here too. First, because nothing below is worth doing for one.
+    const rawBody = await readBodyWithin(req, MAX_REQUEST_BYTES.plan);
+    if (rawBody === null) return tooLargeResponse("plan");
+
     const supa = createClient(
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_ANON_KEY")!,
@@ -121,7 +127,7 @@ Deno.serve(async (req) => {
     if (userErr || !userData?.user) return Response.json({ error: "unauthorized" }, { status: 401 });
     const uid = userData.user.id;
 
-    const body = (await req.json()) as Record<string, unknown>;
+    const body = JSON.parse(rawBody) as Record<string, unknown>;
     // Null for a "just finish" goal — checked against goal_type once the goal is resolved.
     const goal_time_s = typeof body.goal_time_s === "number" && body.goal_time_s > 0 ? Math.round(body.goal_time_s) : null;
     const race_name = (body.race_name ?? null) as string | null;
