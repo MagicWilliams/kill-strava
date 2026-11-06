@@ -7,8 +7,8 @@ the work queue**; this file is the rulebook.
 
 An iOS marathon-coaching app (SwiftUI + HealthKit + Supabase + Claude), open source, free,
 in **public TestFlight** since 2026-11-05. David is one user among testers, and still the only
-reviewer. Production holds other people's data, the repo is public, and there is no staging.
-Those three facts drive most rules below.
+reviewer. Production holds other people's data and the repo is public. Those two facts drive
+most rules below.
 
 - `ios/` — SwiftUI app. Project is generated from `project.yml` by XcodeGen; `.xcodeproj` is
   gitignored. Always `xcodegen generate` after touching `project.yml` or adding files.
@@ -28,8 +28,9 @@ in the cloud, **CI is your compiler**: open the PR, read the Actions result, ite
 Do not guess that Swift compiles. On David's Mac, build locally before pushing.
 
 **3. The database is live and it holds real people's training.** David's 2,000+ runs and the
-plan he is training on, plus testers' runs, plans, journals and coach conversations. There is
-no staging copy.
+plan he is training on, plus testers' runs, plans, journals and coach conversations. Staging is
+a throwaway project for simulators and CI, not a copy of this data. A real device always talks
+to production.
 
 ## Verification contract
 
@@ -102,7 +103,9 @@ problems. GitHub is not on that list.
 - **Every deploy and migration does, at once.** `coach`, `plan` and the schema are shared, with
   no staged rollout, and they serve every build still installed, not only the newest. Server
   changes have to keep working with installed builds. CI can't prove that, so the PR says how it
-  holds. Apply a migration before merging app code that reads it.
+  holds. Whoever applies a change does it on staging first, and applies a migration before
+  merging app code that reads it. Staging has only throwaway accounts, so it can't show what a
+  change does to real rows.
 
 ## The recorder is unmeasured
 
