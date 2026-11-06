@@ -251,22 +251,42 @@ extension RunStore {
         // from the athlete but not from the edge logs. This is the same correction the
         // profile read got on 2026-08-23; that sweep missed this call site, which is why
         // `ZeroRowSingleLintTests` now watches for the shape instead of trusting a sweep.
-        let checkIns: [CheckInInfo]? = try? await Supa.client
-            .from("check_ins")
-            .select("date,feels_ok,note")
-            .eq("date", value: PlanDates.todayString)
-            .limit(1)
-            .execute()
-            .value
-        if let checkIn = checkIns?.first {
-            todayCheckIn = checkIn
+        //
+        // `do`/`catch` rather than `try?` because an empty array and a thrown error have to
+        // stay apart (#226): zero rows is a definitive "no check-in today" and must clear
+        // what we hold, while a failed read must keep it, like every other read in this
+        // function. `try?` collapses the two and the old `if let` could only ever assign,
+        // never clear, so yesterday's check-in survived midnight.
+        let response: CheckInToday.Response
+        do {
+            let rows: [CheckInInfo] = try await Supa.client
+                .from("check_ins")
+                .select("date,feels_ok,note")
+                .eq("date", value: PlanDates.todayString)
+                .limit(1)
+                .execute()
+                .value
+            response = .rows(rows)
+        } catch {
+            response = .unreachable
         }
+        todayCheckIn = CheckInToday.resolve(response, held: todayCheckIn)
     }
 
     // MARK: Derived plan state
 
     var todaySession: SessionInfo? {
         sessions.first { $0.date == PlanDates.todayString }
+    }
+
+    /// Today's check-in, or nil, including when the stored `todayCheckIn` is yesterday's.
+    ///
+    /// Every read goes through here: the views, readiness, and the coach payload. The stored
+    /// property is what a read last saw and is allowed to go stale between refreshes, which
+    /// is what keeps a failed read non-destructive; this is the accessor that stops a stale
+    /// answer reaching a screen or Claude (#226). See `Engine/CheckInToday.swift`.
+    var checkInForToday: CheckInInfo? {
+        CheckInToday.forToday(held: todayCheckIn, today: PlanDates.todayString)
     }
 
     /// 1-based index of the current plan week.

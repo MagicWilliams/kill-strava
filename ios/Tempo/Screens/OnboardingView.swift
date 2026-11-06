@@ -16,6 +16,7 @@ import SwiftUI
 /// nothing left to say, so "Finish setup later" takes the same exit by hand.
 struct OnboardingView: View {
     @EnvironmentObject private var store: RunStore
+    @EnvironmentObject private var router: TabRouter
     @Environment(\.units) private var units
 
     private enum Step { case welcome, connect, consent, intake, interview }
@@ -50,7 +51,7 @@ struct OnboardingView: View {
                 }
             case .interview:
                 VStack(spacing: 0) {
-                    finishLaterBar
+                    exitBar
                     CoachView(onboarding: true)
                 }
             }
@@ -60,22 +61,30 @@ struct OnboardingView: View {
 
     // MARK: - Interview exit
 
-    /// Quiet on purpose: the interview is still the way in, and this is the escape hatch, not
-    /// a second CTA competing with it.
-    private var finishLaterBar: some View {
-        HStack {
+    /// Secondary while the plan question is open, since the interview is still the way in. Once
+    /// there is a plan or goal it is the primary thing on screen: see `OnboardingFacts.Exit`.
+    private var exitBar: some View {
+        let exit = OnboardingFacts.Exit(hasPlan: store.plan != nil, hasGoal: store.goal != nil)
+        return HStack {
             Spacer()
-            Button(action: finishSetup) {
-                Text(finishing ? "Opening Tempo…" : "Finish setup later")
-                    .font(Tokens.Font.ui(13, .medium))
-                    .foregroundStyle(Tokens.Palette.textSecondary)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
+            Button {
+                guard !finishing else { return }
+                if exit == .openPlan { router.show(.plan) }
+                finishSetup()
+            } label: {
+                Text(finishing ? "Opening Tempo…" : exit.title)
+                    .font(Tokens.Font.ui(13, exit.isPrimary ? .bold : .medium))
+                    .foregroundStyle(exit.isPrimary ? Tokens.Palette.onVolt : Tokens.Palette.textSecondary)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 9)
+                    .background(exit.isPrimary ? Tokens.Palette.volt : Tokens.Palette.surface)
+                    .clipShape(Capsule())
             }
             .buttonStyle(Pressable())
             .disabled(finishing)
         }
-        .padding(.horizontal, 8)
+        .padding(.horizontal, 16)
+        .padding(.top, 4)
     }
 
     private func finishSetup() {

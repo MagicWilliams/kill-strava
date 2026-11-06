@@ -115,7 +115,7 @@ struct ReadinessDetailView: View {
     @ViewBuilder private var checkInCard: some View {
         Card {
             SectionLabel("Today's check-in")
-            if let checkIn = store.todayCheckIn {
+            if let checkIn = store.checkInForToday {
                 HStack(spacing: 8) {
                     Image(systemName: checkIn.feelsOk ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
                         .foregroundStyle(checkIn.feelsOk ? Tokens.Palette.success : Tokens.Palette.warning)
