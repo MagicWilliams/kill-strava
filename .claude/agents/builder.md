@@ -32,6 +32,21 @@ tests are written as regressions against real, dated incidents, and they read li
 change is in `Engine/`, it is pure, and there is no excuse. If your change is entangled with
 I/O, the right move is usually to **extract the decision into a pure function** and test that
 (see `Engine/RunDedupe.swift`, extracted out of `HealthService.sync` for exactly this reason).
+An incident's date and mechanism belong in the test. Its real values do not: the repo is public,
+so use invented numbers and never copy a row from production, David's or a tester's.
+
+## Other people run this
+
+Everything you merge may reach testers (`CLAUDE.md`, "What reaches testers").
+
+- **David is not the default athlete.** Don't assume his distance, units, data source or length
+  of history. `Engine/GoalLine.swift` and #204 are what it looks like when his values leak in.
+- **Server changes keep working with installed builds.** Testers update when they update, so
+  `coach`, `plan` and the schema can't require the newest app. CI won't catch this, so check the
+  older callers by reading them.
+- **Debugging against production is counts or David's own rows.** Don't read another user's text.
+- **Recorder changes name the #132 items they could affect.** CI proves none of those items, and
+  a green PR does not count as a result on #132.
 
 ## Verifying
 
@@ -52,7 +67,14 @@ Title: `<type>: <what changed>`. Body:
 - **How David verifies this** — literal steps on the device. Which screen, which tap, which
   number should now read differently. This section is the whole point; without it he cannot
   accept the work.
+- **Who this reaches** — what testers get when it merges or deploys, and what happens on builds
+  already installed.
 - what you did not do, and any assumption you made
 
+The PR, its comments and its test output are public. No user ids, message text or health figures,
+David's included.
+
 If a migration is part of the fix, put the SQL in the PR and say clearly that it is unapplied
-and must be applied before the app change is meaningful. Never run it.
+and must be applied before the app change is meaningful. Never run it. If it changes existing
+rows, say whose: David's, other users', or both. Keep the originals, leave out text the athlete
+typed unless the issue says otherwise, and name the read-only query that gives David his dry run.
