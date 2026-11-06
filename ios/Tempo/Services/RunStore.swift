@@ -213,7 +213,7 @@ final class RunStore: ObservableObject {
         await matchRunsToSessions()
         await autoAdaptMissedQuality()
         await recomputeProjection()
-        fitness = LoadModel.compute(runs: runs, checkInOK: todayCheckIn?.feelsOk)
+        fitness = LoadModel.compute(runs: runs, checkInOK: checkInForToday?.feelsOk)
         await loadTodayTakeaway()
         await loadLatestRead()
         publishWidgetSnapshot()   // #76 — the widgets show exactly what this refresh produced
@@ -243,7 +243,7 @@ final class RunStore: ObservableObject {
         recomputeOverlaps()
 
         await matchRunsToSessions()
-        fitness = LoadModel.compute(runs: runs, checkInOK: todayCheckIn?.feelsOk)
+        fitness = LoadModel.compute(runs: runs, checkInOK: checkInForToday?.feelsOk)
         // Today's session: shows the cached read, or generates it and republishes widgets.
         await loadTodayTakeaway()
         publishWidgetSnapshot()
@@ -275,7 +275,7 @@ final class RunStore: ObservableObject {
         guard let i = runs.firstIndex(where: { $0.id == runID }), runs[i].journal != entry else { return }
         let rpeChanged = runs[i].journal.rpe != entry.rpe
         runs[i].journal = entry
-        if rpeChanged { fitness = LoadModel.compute(runs: runs, checkInOK: todayCheckIn?.feelsOk) }
+        if rpeChanged { fitness = LoadModel.compute(runs: runs, checkInOK: checkInForToday?.feelsOk) }
     }
 
     // MARK: - Training blocks (#100)
@@ -1053,7 +1053,7 @@ extension RunStore {
                 )
             },
             onboarding: onboarding ? onboardingContext() : nil,
-            check_in_today: todayCheckIn.map { $0.feelsOk ? "feeling okay" + ($0.note.map { ": \($0)" } ?? "") : "something's off" + ($0.note.map { ": \($0)" } ?? "") },
+            check_in_today: checkInForToday.map { $0.feelsOk ? "feeling okay" + ($0.note.map { ": \($0)" } ?? "") : "something's off" + ($0.note.map { ": \($0)" } ?? "") },
             recent_runs: recentRuns(days: 21).map {
                 CoachContext.RunCtx(
                     id: $0.id.uuidString,

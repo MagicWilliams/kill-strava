@@ -46,7 +46,7 @@ struct CoachView: View {
             if session.status == "done" {
                 suggestions.append("Break down today's run")
                 suggestions.append("What's the focus tomorrow?")
-            } else if (session.isQuality || session.type == "long"), store.todayCheckIn == nil {
+            } else if (session.isQuality || session.type == "long"), store.checkInForToday == nil {
                 suggestions.append("What's today's session for?")
                 suggestions.append("Something feels off today")
             } else {
@@ -79,11 +79,17 @@ struct CoachView: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            // Pinned, not the first row of the transcript. The transcript opens scrolled to its
+            // newest message, so in anything longer than a screen the only Back button started
+            // out of sight, on a pushed screen with no tab bar: the way out of a conversation
+            // was to know it was up there and scroll for it (David, 2026-11-04).
+            header
+                .padding(.horizontal, 20)
+                .padding(.top, 8)
             ScrollViewReader { proxy in
                 ScrollView {
                     VStack(spacing: 0) {
                         VStack(alignment: .leading, spacing: 18) {
-                            header
                             if let note = pickingUpNote { pickingUpCard(note) }
                             ForEach(Array(chat.messages.enumerated()), id: \.element.id) { index, msg in
                                 if index == 0 || !Calendar.current.isDate(msg.timestamp, inSameDayAs: chat.messages[index - 1].timestamp) {

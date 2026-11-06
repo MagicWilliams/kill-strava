@@ -79,6 +79,100 @@ enum GoalLine {
         }
     }
 
+    // MARK: - The You tab's goal card (#231)
+
+    /// The second line of the goal card, under the race label, when the goal has no target
+    /// time. Named rather than inlined so the card and its tests cannot drift apart.
+    static let noTargetTime = "no target time"
+
+    /// The goal-type phrase, for the types that say something the date and the distance
+    /// don't.
+    ///
+    /// Nil for the three that add nothing: `unsure` is what the coach saves when the athlete
+    /// didn't state a target (it is the value David's 27 Nov tune-up actually carries),
+    /// `time` is a time goal with no time on it — a contradiction, and printing "A time"
+    /// beside no time would read as a promise — and nil is every goal written before the
+    /// intake (#102).
+    static func goalTypePhrase(_ goalType: String?) -> String? {
+        guard let type = IntakeAnswers.GoalType(rawValue: goalType ?? "") else { return nil }
+        switch type {
+        case .finish: return "Just finish"
+        case .pr:     return "Chasing a PR"
+        case .time, .unsure: return nil
+        }
+    }
+
+    /// What the card says under the race label when there is no target time: "Nov 27 · no
+    /// target time", "Just finish · Nov 27", "Chasing a PR · Nov 27 · no target time".
+    ///
+    /// The scar: on 15 Oct the You tab's subtitle read "Race · 6 weeks out" and the card
+    /// directly beneath it read "No goal yet. The coach proposes one from your data", with a
+    /// Talk to Coach button — both on screen at once. There *was* a goal: the 27 Nov tune-up,
+    /// `goal_type = "unsure"`, no `goal_time_seconds`, which is deliberate for a race with no
+    /// target. The card branched on the target time, so a goal without one read as no goal at
+    /// all — exactly the collapse `State.untimed` was split out to prevent (#44), one screen
+    /// late.
+    ///
+    /// So the line states what is known and names the one thing that is missing, instead of
+    /// offering to set a goal that already exists.
+    ///
+    /// `on` is race day already formatted for the card ("Nov 27"), nil when the goal carries
+    /// no date. A phrase rather than a `switch` in the view, so the tune-up word (#232) plugs
+    /// in here when it lands.
+    static func untimedLine(goalType: String?, on raceDate: String?) -> String {
+        var parts: [String] = []
+        if let phrase = goalTypePhrase(goalType) { parts.append(phrase) }
+        if let raceDate, !raceDate.isEmpty { parts.append(raceDate) }
+        // "Just finish" *is* the goal; there is no target time absent from it, and saying so
+        // would read as a gap rather than as the athlete's choice. Every other type is
+        // waiting on a number the coach has not proposed yet, and the card should say which.
+        if goalType != IntakeAnswers.GoalType.finish.rawValue { parts.append(noTargetTime) }
+        let line = parts.joined(separator: " · ")
+        guard let first = line.first else { return line }
+        return first.uppercased() + String(line.dropFirst())
+    }
+
+    /// The goal's distance as the intake form names it — "5K", "Half", "Marathon" — keyed by
+    /// metres off `IntakeAnswers.Distance` rather than a second hand-written table, so the
+    /// label and the math read one number. A distance that is none of them (a custom 30K) is
+    /// spelled out in the athlete's own unit.
+    static func distanceLabel(raceMeters: Double, units: Units) -> String {
+        // Within 1%: a half arrives as 21,097 or 21,098 and a mile as 1,609 or 1,609.34,
+        // depending which of the app's constants wrote it.
+        let known = IntakeAnswers.Distance.allCases.first { d in
+            d.meters.map { abs(raceMeters - Double($0)) / Double($0) < 0.01 } ?? false
+        }
+        return known?.label ?? units.formatDistance(meters: raceMeters, decimals: 1)
+    }
+
+    /// "Turkey Trot · 5K" — the title of the goal card, the race named once with its
+    /// distance. Nil only when there is no goal.
+    ///
+    /// The card used to title itself `"<time> · <race name>"`, which named no distance at
+    /// all. That silence is how a 5K saved as a marathon (#215) sat on the You tab for two
+    /// weeks with nothing on screen contradicting it: "Race" is equally true of both. The
+    /// metres come from `RaceRecap.raceMeters(goal:)` — the same reading TARGET and PROJECTED
+    /// use — so the title cannot name one race while the numbers beneath it answer for
+    /// another.
+    ///
+    /// The distance is left off a name that already carries it: "Chicago Marathon", not
+    /// "Chicago Marathon · Marathon". A goal with no name reads "Marathon race" rather than a
+    /// bare "Race", because a goal always has a distance even when it has no name.
+    ///
+    /// **Overlap note.** #230 (PR #249, open and green when this was written) adds
+    /// `RaceCountdown.raceLabel` with this same rule, keyed the same way, for the three tab
+    /// subtitles. Whichever lands second should delete its copy and call the other; both
+    /// suites pin the same strings, so the fold is mechanical.
+    static func raceLabel(goal: GoalInfo?, units: Units) -> String? {
+        guard let goal else { return nil }
+        let distance = distanceLabel(raceMeters: RaceRecap.raceMeters(goal: goal), units: units)
+        guard let name = goal.raceName?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !name.isEmpty else {
+            return "\(distance) race"
+        }
+        return name.localizedCaseInsensitiveContains(distance) ? name : "\(name) · \(distance)"
+    }
+
     /// The You tab goal card's **TARGET**: the goal time spread over the goal's own distance,
     /// in the athlete's unit. Units.missing when the goal has no target time.
     ///

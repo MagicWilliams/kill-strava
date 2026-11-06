@@ -158,6 +158,7 @@ struct RootTabView: View {
         NavigationStack(path: $router.path) {
             ZStack {
                 Tokens.Palette.canvas.ignoresSafeArea()
+                SwipeBack().frame(width: 0, height: 0)
                 content
                     .safeAreaInset(edge: .bottom, spacing: 0) {
                         // A bottom inset respects the keyboard, so a bar left here while typing
@@ -182,7 +183,20 @@ struct RootTabView: View {
                 case .changes: ChangesView()
                 case .overlapReview: OverlapReviewView()
                 case .blockReview(let goal): BlockReviewView(goal: goal)
-                case .coachThread(let id): CoachView(threadID: id)
+                case .coachThread(let id):
+                    // The one pushed screen with the tab bar still under it. A conversation is
+                    // where a training intake lands and a place people stay, so the rest of the
+                    // app can't be two screens away (David, 2026-11-04). Same layout the Coach
+                    // tab had before #87 made threads a push, keyboard rule included.
+                    CoachView(threadID: id)
+                        .safeAreaInset(edge: .bottom, spacing: 0) {
+                            if !keyboardUp {
+                                TempoTabBar(
+                                    selection: Binding(get: { router.selection }, set: { router.show($0) }),
+                                    onReselect: { router.show($0) }
+                                )
+                            }
+                        }
                 }
             }
         }
@@ -212,6 +226,9 @@ struct RootTabView: View {
 
 struct TempoTabBar: View {
     @Binding var selection: Tab
+    /// A tap on the tab already selected. Inside a conversation, that is the way back to the
+    /// list of them.
+    var onReselect: ((Tab) -> Void)? = nil
     @Namespace private var indicator
 
     var body: some View {
@@ -219,7 +236,10 @@ struct TempoTabBar: View {
             ForEach(Tab.allCases) { tab in
                 let active = tab == selection
                 Button {
-                    guard tab != selection else { return }
+                    guard tab != selection else {
+                        onReselect?(tab)
+                        return
+                    }
                     Haptics.select()
                     selection = tab
                 } label: {
@@ -287,6 +307,40 @@ private struct KeyboardTracking: ViewModifier {
 private extension View {
     func trackingKeyboard(_ isUp: Binding<Bool>) -> some View {
         modifier(KeyboardTracking(isUp: isUp))
+    }
+}
+
+/// Puts swipe-back on every pushed screen.
+///
+/// The app draws its own headers, so the navigation bar is hidden, and iOS takes the edge swipe
+/// away along with the bar. On the simulator, 2026-11-04, a swipe from the left edge of a
+/// conversation did nothing, while the same swipe popped a page in Settings. Added to a stack's
+/// root once, and it stays up for the stack's life, which is what keeps it alive as the
+/// gesture's (weak) delegate.
+private struct SwipeBack: UIViewControllerRepresentable {
+    func makeUIViewController(context: Context) -> Controller { Controller() }
+    func updateUIViewController(_ controller: Controller, context: Context) {}
+
+    final class Controller: UIViewController, UIGestureRecognizerDelegate {
+        override func viewDidAppear(_ animated: Bool) {
+            super.viewDidAppear(animated)
+            navigationController?.interactivePopGestureRecognizer?.delegate = self
+        }
+
+        /// Never on the root: a pop with nothing to pop to wedges the stack.
+        func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+            (navigationController?.viewControllers.count ?? 0) > 1
+        }
+
+        /// Everything else waits for the edge swipe to fail, which it does at once for a touch
+        /// that didn't start on the edge. Without this a conversation still would not swipe
+        /// back when other pushed screens did: its transcript has its own drag gestures.
+        func gestureRecognizer(
+            _ gestureRecognizer: UIGestureRecognizer,
+            shouldBeRequiredToFailBy otherGestureRecognizer: UIGestureRecognizer
+        ) -> Bool {
+            true
+        }
     }
 }
 

@@ -8,7 +8,7 @@ struct YouView: View {
     @Environment(\.units) private var units
 
     var body: some View {
-        Screen(title: "You", subtitle: subtitle) {
+        Screen(title: "You", subtitle: countdown.subtitle(), compactSubtitle: countdown.subtitle(.compact)) {
             goal
             pastBlocks
             yearStats
@@ -19,11 +19,15 @@ struct YouView: View {
         .refreshable { await store.refresh() }
     }
 
-    private var subtitle: String? {
-        guard let goal = store.goal, let day = goal.raceDay else { return "No goal yet" }
-        let weeks = max((Calendar.current.dateComponents([.day], from: .now, to: day).day ?? 0) / 7, 0)
-        let role = goal.raceRole.label.map { " · \($0)" } ?? ""
-        return "\(goal.raceName ?? "Race")\(role) · \(weeks) weeks out"
+    /// The same state Plan and Progress read (#230). This header used to count from `.now`
+    /// and then floor into weeks, which on 15 Oct made You say "6 weeks out" to Progress's
+    /// "7 weeks" about the same 27 Nov race — two lost days, one from counting off the
+    /// current instant and one from the floor.
+    ///
+    /// You is the only header that prints the race's role, so it is the only one that asks
+    /// for it: "Turkey Trot · 5K · tune-up · 43 days · 7 weeks" (#238).
+    private var countdown: RaceCountdown.State {
+        RaceCountdown.state(goal: store.goal, now: .now, units: units, includingRole: true)
     }
 
     @ViewBuilder private var goal: some View {
@@ -43,31 +47,76 @@ struct YouView: View {
                     }
                 }
             }
-            if let g = store.goal, let t = g.goalTimeSeconds {
-                Button { router.show(.plan) } label: {
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text("\(PaceModel.formatFinish(t)) · \(g.raceName ?? "Race")")
-                            .font(Tokens.Font.display(23)).foregroundStyle(Tokens.Palette.textPrimary)
-                        HStack(spacing: 18) {
-                            metric("TARGET", GoalLine.targetPace(goal: g, units: units))
-                            if let day = g.raceDay {
-                                metric("RACE", day.formatted(.dateTime.month(.abbreviated).day()))
-                            }
-                            if let projected = store.plan?.projected_finish_s {
-                                metric("PROJECTED", PaceModel.formatFinish(projected))
-                            }
-                        }
-                    }
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(Pressable())
-            } else {
+            // A goal with no target time is still a goal (#231). This used to branch on
+            // `goalTimeSeconds`, so the 27 Nov tune-up — a real goal, deliberately untimed —
+            // got the empty state, offering to set a goal the subtitle above it was already
+            // naming. `GoalLine.State` keeps "no goal" and "no target time" apart (#44); the
+            // card now reads it instead of re-deciding.
+            switch store.goalLine {
+            case .noGoal:
                 Text("No goal yet").font(Tokens.Font.display(23)).foregroundStyle(Tokens.Palette.textPrimary)
                 Text("The coach proposes one from your data, and the plan builds from there.")
                     .font(Tokens.Font.ui(13)).foregroundStyle(Tokens.Palette.textSecondary)
                 PrimaryButton(title: "Talk to Coach") { router.showCoach() }
+            case .untimed:
+                goalCard(
+                    title: raceLabel,
+                    detail: GoalLine.untimedLine(goalType: store.goal?.goal_type, on: raceDayLabel),
+                    target: nil
+                )
+            case .timed(_, _, let seconds):
+                goalCard(
+                    title: "\(PaceModel.formatFinish(seconds)) · \(raceLabel)",
+                    detail: nil,
+                    target: GoalLine.targetPace(goal: store.goal, units: units)
+                )
             }
         }
+    }
+
+    /// The race named once, with its distance (#231). The fallback is unreachable from the
+    /// two cases that use it — `raceLabel` is nil only when there is no goal at all.
+    private var raceLabel: String {
+        GoalLine.raceLabel(goal: store.goal, units: units) ?? GoalLine.unnamedRace
+    }
+
+    /// Race day as the RACE metric prints it, so the two lines of the card can't disagree
+    /// about the date they are both showing.
+    private var raceDayLabel: String? {
+        store.goal?.raceDay?.formatted(.dateTime.month(.abbreviated).day())
+    }
+
+    /// The tappable goal card: title, an optional second line, and the metric row. Both the
+    /// timed and the untimed goal use it, so tapping either opens Plan.
+    ///
+    /// A nil `target` leaves TARGET out of the row rather than printing a dash in it. A dash
+    /// under a column heading reads as a number that failed to load; this one was never set.
+    private func goalCard(title: String, detail: String?, target: String?) -> some View {
+        Button { router.show(.plan) } label: {
+            VStack(alignment: .leading, spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(title)
+                        .font(Tokens.Font.display(23)).foregroundStyle(Tokens.Palette.textPrimary)
+                    if let detail {
+                        Text(detail)
+                            .font(Tokens.Font.ui(13)).foregroundStyle(Tokens.Palette.textSecondary)
+                    }
+                }
+                HStack(spacing: 18) {
+                    if let target {
+                        metric("TARGET", target)
+                    }
+                    if let day = raceDayLabel {
+                        metric("RACE", day)
+                    }
+                    if let projected = store.plan?.projected_finish_s {
+                        metric("PROJECTED", PaceModel.formatFinish(projected))
+                    }
+                }
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(Pressable())
     }
 
     /// Closed training blocks, newest first (#100). Hidden until there is one.
