@@ -49,6 +49,23 @@ final class TabRouter: ObservableObject {
     /// A coach message to scroll to when the Coach tab next shows — set by "See in chat"
     /// on a What changed entry, consumed (cleared) by `CoachView`.
     @Published var coachFocus: UUID?
+    /// Text to drop into the Coach composer when the tab next shows, consumed (cleared) by
+    /// `CoachView`. Prefilled, never sent: the athlete gets to read it, change it, or back out.
+    ///
+    /// This existed for the old "Train for something" CTA and was removed in #220 once the
+    /// training intake (#102) replaced that CTA with a form that hands its own answers over.
+    /// It is back for "Change race or date" (#233), which is the same shape of hand-off: a
+    /// screen that knows what the athlete wants to change but must not write the change
+    /// itself. Carries an id because landing it is a reason to open a conversation, and
+    /// `CoachHomeView` dedupes those reasons by id.
+    @Published var coachDraft: Draft?
+
+    /// One prefilled composer message. The id is what makes two identical drafts two separate
+    /// hand-offs, so asking to change the race twice opens the composer twice.
+    struct Draft: Identifiable, Equatable {
+        let id = UUID()
+        let text: String
+    }
     /// The training intake (#102), presented over the whole app by `.trainingIntake(...)`.
     @Published var trainingIntakeShown = false
     /// The pre-run sheet (#126), presented over the whole app by `.runRecorder(...)`.
@@ -108,6 +125,13 @@ final class TabRouter: ObservableObject {
     func showCoach() {
         path.removeAll()
         selection = .coach
+    }
+
+    /// Land on the Coach tab with `text` already in the composer, unsent. "Change race or
+    /// date" on the Projected finish page (#233) is the one caller.
+    func showCoach(draft text: String) {
+        coachDraft = Draft(text: text)
+        showCoach()
     }
 
     func show(_ tab: Tab) {

@@ -56,6 +56,7 @@ struct ProjectionDetailView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     header
+                    yourRace
                     hero
                     spread
                     chartCard
@@ -122,6 +123,81 @@ struct ProjectionDetailView: View {
             Text("One recent effort, scaled to \(raceName) — and how it has moved")
                 .font(Tokens.Font.ui(13)).foregroundStyle(Tokens.Palette.textSecondary)
         }
+    }
+
+    // MARK: - Your race
+
+    /// The race this whole page answers for, named, dated, and changeable (#233).
+    ///
+    /// Progress showed 4:18:04 as the projected finish for what David believed was a 5K. It
+    /// was projecting to a marathon (#215), and neither the card nor this page said so: the
+    /// hero number, the chart and every caption spoke about "the race" without naming it. Two
+    /// weeks passed before anyone read the database. So the page now opens by stating which
+    /// race it means, above the number, where it is read before the number rather than after.
+    ///
+    /// Hidden with no goal, where the page already explains that there is nothing to project
+    /// to and `raceMeters` is only a marathon-shaped fallback.
+    @ViewBuilder private var yourRace: some View {
+        if let goal = store.goal, let race = RaceCountdown.raceLabel(goal: goal, units: units) {
+            Card {
+                SectionLabel("Your race")
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(race)
+                        .font(Tokens.Font.display(23))
+                        .foregroundStyle(Tokens.Palette.textPrimary)
+                    Text(RaceChange.raceDayLine(state: countdown, on: raceDayLabel))
+                        .font(Tokens.Font.ui(13)).foregroundStyle(Tokens.Palette.textSecondary)
+                    Text(RaceChange.targetLine(goal: store.goalLine))
+                        .mono(12, Tokens.Palette.textSecondary)
+                }
+                Rectangle().fill(Tokens.Palette.divider).frame(height: 1)
+                changeRaceRow(goal)
+            }
+        }
+    }
+
+    /// The same countdown Plan, Progress and You read (#230), so this page counts the same
+    /// days to the same race rather than measuring its own.
+    private var countdown: RaceCountdown.State {
+        RaceCountdown.state(goal: store.goal, now: .now, units: units)
+    }
+
+    /// "Fri, Nov 27". Race day carries no time of day (`PlanDates.day` parses it at local
+    /// midnight), so the weekday and the date are all there is to print.
+    private var raceDayLabel: String? {
+        store.goal?.raceDay?.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day())
+    }
+
+    /// Hands the coach a sentence and gets out of the way.
+    ///
+    /// Changing a race rewrites the goal and regenerates the plan, which is `create_plan`'s
+    /// job: the coach proposes it and the athlete confirms the card, exactly as it happens
+    /// when the change is asked for in chat. A button here that wrote the goal directly would
+    /// be a second, unconfirmed path into the plan the athlete is training on. So this screen
+    /// writes nothing. It opens the composer with the race it just named already in the
+    /// sentence, and the athlete finishes it.
+    private func changeRaceRow(_ goal: GoalInfo) -> some View {
+        Button {
+            guard let draft = RaceChange.draft(goal: goal, units: units, on: raceDayLabel) else { return }
+            router.showCoach(draft: draft)
+        } label: {
+            HStack(spacing: 8) {
+                Text("Change race or date")
+                    .font(Tokens.Font.ui(14, .semibold))
+                    .foregroundStyle(Tokens.Palette.accentText)
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(Tokens.Palette.textTertiary)
+            }
+            // Both bounds, as `ProjectionStatusRow` does and for the same reason (#74): an
+            // HStack with a Spacer reports the sum of its parts, and on this page a third of
+            // a point of drift is enough to let the whole thing drag sideways.
+            .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
+            .frame(height: 22)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(Pressable())
     }
 
     // MARK: - Hero
