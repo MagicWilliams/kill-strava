@@ -142,10 +142,10 @@ struct TodayView: View {
                 takeawayPreview(s)
             } else if needsCheckIn(s) {
                 checkInRow
-            } else if store.todayCheckIn?.feelsOk == false {
+            } else if store.checkInForToday?.feelsOk == false {
                 Text("You flagged something's off today — the coach knows. Adjust or skip guilt-free.")
                     .font(Tokens.Font.ui(12)).foregroundStyle(Tokens.Palette.warning)
-            } else if store.todayCheckIn?.feelsOk == true {
+            } else if store.checkInForToday?.feelsOk == true {
                 HStack(spacing: 6) {
                     Image(systemName: "checkmark").font(.system(size: 11, weight: .bold))
                     Text("Checked in — good to go").font(Tokens.Font.ui(12, .semibold))
@@ -207,7 +207,7 @@ struct TodayView: View {
     }
 
     private func needsCheckIn(_ s: SessionInfo) -> Bool {
-        (s.isQuality || s.type == "long") && s.status == "planned" && store.todayCheckIn == nil
+        (s.isQuality || s.type == "long") && s.status == "planned" && store.checkInForToday == nil
     }
 
     /// Two-tap trust mechanism before hard sessions (spec: agency decision #4).
