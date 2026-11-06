@@ -59,6 +59,9 @@ struct CoachHomeView: View {
         .onChange(of: router.coachFocus) { _, _ in openConversationIfNeeded() }
         // An intake sent while this screen was already up — the form is presented over it.
         .onChange(of: store.intakeHandoff?.id) { _, _ in openConversationIfNeeded() }
+        // A draft handed over from another screen, which has nowhere to land until a
+        // conversation is open.
+        .onChange(of: router.coachDraft?.id) { _, _ in openConversationIfNeeded() }
     }
 
     // MARK: - Loading
@@ -102,6 +105,10 @@ struct CoachHomeView: View {
     ///  - **A just-sent training intake** (#102), whose first turn is the athlete's answers.
     ///    Those have to reach the coach, and `ChatStore.load` is what sends them — so a
     ///    conversation has to be open for it to happen at all.
+    ///  - **A prefilled draft** (#233), from "Change race or date" on the Projected finish
+    ///    page. Unlike the intake, nothing is sent: the composer opens with the sentence in
+    ///    it. Landing on the list with the draft still pending would lose it, because this
+    ///    screen has no composer to put it in.
     ///
     /// A live thread is reused; with none, the intake gets a new one, because answers with
     /// nowhere to go is the failure this guards.
@@ -109,7 +116,8 @@ struct CoachHomeView: View {
         guard router.path.isEmpty, load == .loaded else { return }
         let focus = router.coachFocus
         let intake = store.intakeHandoff?.sentToCoach == false ? store.intakeHandoff?.id : nil
-        let reasons = [focus, intake].compactMap { $0 }.filter { !routed.contains($0) }
+        let draft = router.coachDraft?.id
+        let reasons = [focus, intake, draft].compactMap { $0 }.filter { !routed.contains($0) }
         guard !reasons.isEmpty else { return }
         routed.formUnion(reasons)
         if let live = CoachThreads.active(in: threads, now: .now) {
