@@ -153,16 +153,20 @@ final class RunStore: ObservableObject {
         var response = await readRuns()
         // Held outside the branch because the display rule needs it too: if the re-read
         // fails, `RunFetch.resolve` grafts HealthKit copies on, and that graft has to know
-        // which workouts are already ours as retired rows (#202).
+        // which workouts are already ours as retired rows (#202). That graft only follows an
+        // insert, and an insert only follows a complete read, so empty here is never a guess.
         var retired = Set<String>()
         if !ingested.isEmpty {
             var inserted = 0
-            retired = await readRetiredExternalIDs()
-            do {
-                inserted = try await health.sync(ingested, existing: response.knownRows ?? runs,
-                                                 retiredExternalIDs: retired)
-            } catch {
-                Telemetry.errorUnlessCancelled("sync.insert_failed", error)
+            // No complete answer, no ingest: the next refresh proposes all of it again.
+            if let known = await readRetiredExternalIDs().ids {
+                retired = known
+                do {
+                    inserted = try await health.sync(ingested, existing: response.knownRows ?? runs,
+                                                     retiredExternalIDs: retired)
+                } catch {
+                    Telemetry.errorUnlessCancelled("sync.insert_failed", error)
+                }
             }
             if inserted > 0 {
                 switch await readRuns() {
@@ -657,13 +661,17 @@ final class RunStore: ObservableObject {
     /// rejected (#97). These ids go to `RunDedupe` and nowhere else: never into `runs`,
     /// never onto a screen.
     ///
-    /// Paged like the archive: 119 rows today, but the overlap review retires more, and the
-    /// 1,000-row cap does not announce itself. A failed read degrades to the old behavior
-    /// (doomed inserts the constraint rejects) rather than holding up the sync.
-    private func readRetiredExternalIDs() async -> Set<String> {
+    /// Paged like the archive: 120 rows today, but the overlap review retires more, and the
+    /// 1,000-row cap does not announce itself. Anything short of every page holds this pass's
+    /// ingest rather than degrading to a guess; `SyncPass.RetiredRead` says why. It used to
+    /// degrade, on the reasoning that the constraint rejects the doomed inserts, which missed
+    /// the false re-export events and the re-read graft. A failure that never clears would
+    /// stall ingest, so it reports on every refresh rather than once.
+    private func readRetiredExternalIDs() async -> SyncPass.RetiredRead {
         struct Row: Decodable { let external_id: String? }
         var ids = Set<String>()
         var offset = 0
+        var reachedLastPage = false
         do {
             while true {
                 let page: [Row] = try await Supa.client
@@ -675,14 +683,23 @@ final class RunStore: ObservableObject {
                     .execute()
                     .value
                 ids.formUnion(page.compactMap(\.external_id))
-                if page.count < RunFetch.pageSize { break }
+                if page.count < RunFetch.pageSize {
+                    reachedLastPage = true
+                    break
+                }
                 offset += RunFetch.pageSize
                 if offset >= RunFetch.maxRuns { break }
             }
         } catch {
-            Telemetry.error("sync.retired_ids_unreadable", error)
+            Telemetry.errorUnlessCancelled("sync.retired_ids_unreadable", error,
+                                           context: ["ids_read": "\(ids.count)"])
+            return SyncPass.retiredRead(ids: ids, reachedLastPage: false, failure: error)
         }
-        return ids
+        if !reachedLastPage {
+            Telemetry.warn("sync.retired_ids_truncated", "paging leash hit before a short page",
+                           context: ["ids_read": "\(ids.count)"])
+        }
+        return SyncPass.retiredRead(ids: ids, reachedLastPage: reachedLastPage, failure: nil)
     }
 
     /// Read the profile row and report which of the three launch outcomes it is.
