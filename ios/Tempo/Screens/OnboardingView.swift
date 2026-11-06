@@ -1,8 +1,11 @@
 import SwiftUI
 
 /// Hard-gated setup flow (spec: progress.md "Onboarding"):
-/// Welcome (brand) → Connect (HealthKit moment, run count) → "Where are you right now?"
-/// (the training intake, #102) → coach interview.
+/// Welcome (brand) → Connect (HealthKit moment, run count) → permission to send data to
+/// Anthropic → "Where are you right now?" (the training intake, #102) → coach interview.
+/// The permission comes ahead of the intake because every answer on that form exists to be
+/// handed to the coach. Saying no skips both and opens the app: runs, history and the recorder
+/// don't need the coach, and it can be turned on later from the You tab.
 /// The intake answers the structured questions by tap; the interview reflects them back,
 /// proposes the plan, and asks only what the form didn't.
 /// The coach's `complete_onboarding` tool flips `needsOnboarding`, and RootTabView
@@ -16,11 +19,12 @@ struct OnboardingView: View {
     @EnvironmentObject private var router: TabRouter
     @Environment(\.units) private var units
 
-    private enum Step { case welcome, connect, intake, interview }
+    private enum Step { case welcome, connect, consent, intake, interview }
     @State private var step: Step = .welcome
     @State private var connecting = false
     @State private var connected = false
     @State private var finishing = false
+    @ObservedObject private var consent = CoachConsentStore.shared
 
     var body: some View {
         ZStack {
@@ -28,6 +32,14 @@ struct OnboardingView: View {
             switch step {
             case .welcome: welcome
             case .connect: connect
+            case .consent:
+                CoachConsentView(eyebrow: "Step 2 of 4") { decision in
+                    if decision == .declined {
+                        finishSetup()
+                    } else {
+                        step = .intake
+                    }
+                }
             case .intake:
                 TrainingIntakeView(
                     entry: .onboarding,
@@ -57,13 +69,8 @@ struct OnboardingView: View {
             Spacer()
             Button {
                 guard !finishing else { return }
-                finishing = true
                 if exit == .openPlan { router.show(.plan) }
-                Task {
-                    await store.markOnboarded()
-                    // Normally this view is gone by now; if it isn't, the tap must work again.
-                    finishing = false
-                }
+                finishSetup()
             } label: {
                 Text(finishing ? "Opening Tempo…" : exit.title)
                     .font(Tokens.Font.ui(13, exit.isPrimary ? .bold : .medium))
@@ -78,6 +85,16 @@ struct OnboardingView: View {
         }
         .padding(.horizontal, 16)
         .padding(.top, 4)
+    }
+
+    private func finishSetup() {
+        guard !finishing else { return }
+        finishing = true
+        Task {
+            await store.markOnboarded()
+            // Normally this view is gone by now; if it isn't, the tap must work again.
+            finishing = false
+        }
     }
 
     // MARK: - Welcome (brand moment)
@@ -115,7 +132,7 @@ struct OnboardingView: View {
     private var connect: some View {
         VStack(alignment: .leading, spacing: 0) {
             Spacer()
-            SectionLabel("Step 1 of 3", color: Tokens.Palette.accentText)
+            SectionLabel("Step 1 of 4", color: Tokens.Palette.accentText)
             Text("Connect your runs")
                 .font(Tokens.Font.display(34))
                 .foregroundStyle(Tokens.Palette.textPrimary)
@@ -134,7 +151,9 @@ struct OnboardingView: View {
 
             if connected {
                 PrimaryButton(title: "Continue") {
-                    step = .intake
+                    // A relaunch restarts onboarding at Welcome. Someone who already agreed
+                    // isn't asked twice.
+                    step = consent.maySend ? .intake : .consent
                 }
             } else {
                 PrimaryButton(title: connecting ? "Reading Apple Health…" : "Connect Apple Health") {

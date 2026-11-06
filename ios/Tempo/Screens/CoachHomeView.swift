@@ -15,6 +15,7 @@ import SwiftUI
 struct CoachHomeView: View {
     @EnvironmentObject private var store: RunStore
     @EnvironmentObject private var router: TabRouter
+    @ObservedObject private var consent = CoachConsentStore.shared
 
     private enum Load: Equatable { case loading, loaded, failed }
 
@@ -34,6 +35,7 @@ struct CoachHomeView: View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 14) {
                 header
+                if !consent.maySend { Card { CoachConsentNotice() } }
                 changesRow
                 SectionLabel("Conversations").padding(.top, 6)
                 content
@@ -59,6 +61,11 @@ struct CoachHomeView: View {
         .onChange(of: router.coachFocus) { _, _ in openConversationIfNeeded() }
         // An intake sent while this screen was already up — the form is presented over it.
         .onChange(of: store.intakeHandoff?.id) { _, _ in openConversationIfNeeded() }
+        // Agreeing is what lets a waiting intake go and the owed recaps get written.
+        .onChange(of: consent.maySend) { _, maySend in
+            guard maySend else { return }
+            Task { await reload() }
+        }
     }
 
     // MARK: - Loading
@@ -108,7 +115,9 @@ struct CoachHomeView: View {
     private func openConversationIfNeeded() {
         guard router.path.isEmpty, load == .loaded else { return }
         let focus = router.coachFocus
-        let intake = store.intakeHandoff?.sentToCoach == false ? store.intakeHandoff?.id : nil
+        // Not consumed while the coach is off: `routed` would remember it, and the answers
+        // would still have nowhere to go on the reload after the athlete agrees.
+        let intake = store.intakeHandoff?.sentToCoach == false && consent.maySend ? store.intakeHandoff?.id : nil
         let reasons = [focus, intake].compactMap { $0 }.filter { !routed.contains($0) }
         guard !reasons.isEmpty else { return }
         routed.formUnion(reasons)
@@ -160,7 +169,7 @@ struct CoachHomeView: View {
                     .font(Tokens.Font.ui(13)).foregroundStyle(Tokens.Palette.textSecondary)
             }
             Spacer()
-            newChatButton
+            if consent.maySend { newChatButton }
         }
         .padding(.top, 8)
     }
@@ -221,7 +230,9 @@ struct CoachHomeView: View {
             note("Couldn't reach the server, so your conversations can't be read right now. Pull to refresh.")
         case .loaded:
             if threads.isEmpty {
-                note("No conversations yet. Tap New chat and the coach will open with a read on your training.")
+                note(consent.maySend
+                     ? "No conversations yet. Tap New chat and the coach will open with a read on your training."
+                     : "No conversations yet.")
             } else {
                 let live = CoachThreads.active(in: threads, now: .now)?.id
                 ForEach(threads) { thread in

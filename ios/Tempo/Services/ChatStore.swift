@@ -165,6 +165,12 @@ final class ChatStore: ObservableObject {
     weak var runStore: RunStore?
 
     private var loaded = false
+    /// `load` has read the transcript, so the opener knows whether there is one to resume.
+    private var historyReady = false
+    /// The conversation has been opened with the coach. Apart from `loaded` because reading
+    /// the history is fine without consent and the opener isn't: an athlete who agrees while
+    /// looking at this thread gets the opener then, with nothing to reload.
+    private var opened = false
     private static let autoApplyTypes = CoachAcknowledgement.onboardingAutoApplyTypes
 
     // Wire types
@@ -248,6 +254,22 @@ final class ChatStore: ObservableObject {
                     )
                 }
         }
+        historyReady = true
+        await openIfPermitted(context: context)
+    }
+
+    /// The athlete just agreed, on a thread that was showing why the coach was off.
+    ///
+    /// If the history is still loading there is nothing to do here: `load` checks consent
+    /// when it finishes, and will see the answer.
+    func consentGranted(context: CoachContext) async {
+        guard historyReady else { return }
+        await openIfPermitted(context: context)
+    }
+
+    private func openIfPermitted(context: CoachContext) async {
+        guard !opened, CoachConsentStore.shared.maySend else { return }
+        opened = true
         // A freshly sent intake is the turn to answer, onboarding or not — it replaces the
         // generic opener rather than queueing behind it.
         if let runStore, runStore.intakeHandoff?.sentToCoach == false {
@@ -277,7 +299,9 @@ final class ChatStore: ObservableObject {
 
     func send(_ text: String, context: CoachContext) async {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, !isThinking else { return }
+        // Before the append. Past it the message would be in the transcript with no reply
+        // coming and "Coach unreachable" under it, about a server that was never asked.
+        guard !trimmed.isEmpty, !isThinking, CoachConsentStore.shared.maySend else { return }
         errorText = nil
         usageNotice = nil
         append(.user, trimmed)
@@ -298,7 +322,10 @@ final class ChatStore: ObservableObject {
     /// card. Marked sent before the round trip so a second Coach-tab appearance can't send it
     /// twice; a failed round trip leaves the visible turn in place for the athlete to nudge.
     func sendIntake(runStore: RunStore) async {
-        guard let handoff = runStore.intakeHandoff, !handoff.sentToCoach, !isThinking else { return }
+        // Held rather than burned: `markIntakeSent` below can't be undone, and these answers
+        // are the first thing to send the moment the athlete agrees.
+        guard let handoff = runStore.intakeHandoff, !handoff.sentToCoach, !isThinking,
+              CoachConsentStore.shared.maySend else { return }
         runStore.markIntakeSent()
         errorText = nil
         usageNotice = nil
@@ -415,6 +442,11 @@ final class ChatStore: ObservableObject {
         } catch {
             messages[idx].actionState = .failed
             persist(.failed, for: messageID)
+            if error is CoachGateway.ConsentRequired {
+                // The athlete said no. That is their answer, not a failure worth an error row.
+                errorText = CoachConsent.Copy.planNeedsConsent
+                return false
+            }
             // The card comes back as Retry, which is still true. What it needs is the wait,
             // not "didn't go through", and `coach.usage_limited` has already logged it.
             if case ActionError.usageLimited(let refusal) = error {
@@ -797,10 +829,7 @@ final class ChatStore: ObservableObject {
         }
         let rep: Rep
         do {
-            rep = try await Supa.client.functions.invoke(
-                "plan",
-                options: FunctionInvokeOptions(body: request)
-            )
+            rep = try await CoachGateway.invoke(.plan, body: request)
         } catch FunctionsError.httpError(400, let body)
             where PlanRequest.refusal(inErrorBody: body) == PlanRequest.distanceRequired {
             // A new race with no distance (#184). Nothing was written; the card needs re-proposing.
@@ -1017,11 +1046,15 @@ final class ChatStore: ObservableObject {
         var context = context
         context.memory = memoryContext
         do {
-            let reply: CoachReply = try await Supa.client.functions.invoke(
-                "coach",
-                options: FunctionInvokeOptions(body: CoachRequest(messages: history, context: context))
+            let reply: CoachReply = try await CoachGateway.invoke(
+                .coach,
+                body: CoachRequest(messages: history, context: context)
             )
             return .reply(reply)
+        } catch is CoachGateway.ConsentRequired {
+            // Every caller checks before it gets here, so this is consent withdrawn mid-turn.
+            // Nothing was sent, and `failed` is what stays quiet about it.
+            return .failed
         } catch {
             if let refusal = UsageLimit.refusal(from: error, surface: "chat") {
                 return .limited(refusal)
