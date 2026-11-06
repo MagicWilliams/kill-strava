@@ -258,7 +258,7 @@ final class ChatStore: ObservableObject {
         if onboardingMode {
             opener = "Begin (or resume) my onboarding interview. Confirm what you already know from onboarding.known instead of re-asking, and pick up wherever we left off."
         } else if messages.isEmpty {
-            opener = "Open the conversation: introduce yourself in one short line, then give me an honest, specific read on my training right now based on my data. Close with one useful question."
+            opener = "Open the conversation: introduce yourself in one short line, then give me a specific assessment of my training right now based on my data. Close with one useful question."
         } else {
             return
         }
@@ -289,7 +289,7 @@ final class ChatStore: ObservableObject {
         switch await requestReply(history: Array(history), context: context) {
         case .reply(let reply): handleReply(reply)
         case .limited(let refusal): usageNotice = refusal.message
-        case .failed: errorText = "Coach unreachable — check your connection and try again."
+        case .failed: errorText = "Coach unreachable. Check your connection and try again."
         }
     }
 
@@ -311,7 +311,7 @@ final class ChatStore: ObservableObject {
         switch await requestReply(history: Array(history), context: runStore.coachContext(onboarding: onboardingMode)) {
         case .reply(let reply): handleReply(reply)
         case .limited(let refusal): usageNotice = refusal.message
-        case .failed: errorText = "Coach unreachable — your answers are saved above. Send a message to pick it back up."
+        case .failed: errorText = "Coach unreachable. Your answers are saved above. Send a message to pick it back up."
         }
     }
 
@@ -322,7 +322,7 @@ final class ChatStore: ObservableObject {
 
     private static func busyLabel(for type: String) -> String {
         switch type {
-        case "create_plan":          return "Building your plan — assessing your history (~15s)…"
+        case "create_plan":          return "Building your plan from your history (~15s)…"
         case "update_plan_settings": return "Rebuilding your plan with the new structure…"
         case "update_session":       return "Adjusting your session…"
         case "amend_run", "add_run": return "Updating your log…"
@@ -424,7 +424,7 @@ final class ChatStore: ObservableObject {
             Telemetry.error("coach.action_failed", error, context: Self.failureContext(type: action.type, error: error))
             errorText = (error as? ActionError)?.message
                 ?? (error as? RunCorrection.Rejection)?.message
-                ?? "That change didn't go through — Confirm to retry."
+                ?? "That change didn't go through. Confirm to retry."
             // No acknowledgement on a failure: the retry card is the response.
             return false
         }
@@ -433,13 +433,13 @@ final class ChatStore: ObservableObject {
         persist(.applied, for: messageID, action: stamped)
         // Causal order: the tap, then what it did. Both go in before the acknowledgement round
         // trip, so the coach is answering a transcript that already reads correctly.
-        append(.user, "Confirmed — \(action.displaySummary)")
+        append(.user, "Confirmed: \(action.displaySummary)")
         if let narration { append(.coach, narration) }
         let reloaded = await runStore.reloadFromSupabase()
         if !reloaded {
             // The write landed; only the re-read didn't. Saying nothing here is what makes
             // a saved edit look discarded — the card goes green and the numbers don't move.
-            errorText = "Saved — but your runs couldn't be re-read just now. Pull to refresh on Today."
+            errorText = "Saved, but your runs couldn't be re-read just now. Pull to refresh on Today."
         }
         // The re-read has to come first. Ask before it and the coach answers out of the
         // pre-correction context — "that puts you at 25 for the week" about the very run it
@@ -467,7 +467,7 @@ final class ChatStore: ObservableObject {
               messages[idx].actionState.isOpenOffer else { return }
         messages[idx].actionState = .dismissed
         persist(.dismissed, for: messageID)
-        append(.user, "Dismissed — \(action.displaySummary)")
+        append(.user, "Dismissed: \(action.displaySummary)")
         // Nothing was written, so there is nothing to re-read — the current context is current.
         await queued { [weak self] in
             await self?.acknowledgeIfWarranted(.dismissed, action: action, runStore: runStore)
@@ -941,7 +941,7 @@ final class ChatStore: ObservableObject {
                             default: break
                             }
                         } catch {
-                            self.errorText = "Couldn't save that — tell the coach again."
+                            self.errorText = "Couldn't save that. Tell the coach again."
                         }
                     }
                     if settingsTouched, let goal = store.goal, PlanRequest.canRegenerate(goal) {
@@ -975,7 +975,7 @@ final class ChatStore: ObservableObject {
             // The v11 guard is supposed to make this unreachable. If it fires, the guard
             // has a hole — and only telemetry would ever tell us.
             Telemetry.warn("coach.empty_reply", "reached the supposedly-unreachable path")
-            errorText = "Coach sent an empty reply — try again."
+            errorText = "Coach sent an empty reply. Try again."
         }
     }
 

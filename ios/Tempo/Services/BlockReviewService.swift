@@ -89,8 +89,8 @@ enum BlockReviewService {
             case .notSignedIn:    return "Not signed in."
             case .invalid:        return "Enter your official finish time, or choose how the race went."
             case .raceRunFailed:  return "Couldn't log the race as a run, so nothing was closed. Try again."
-            case .goalNotUpdated: return "Couldn't save the result — nothing was closed. If the database hasn't been updated for block reviews yet (migration 0013), this is why."
-            case .planNotUpdated: return "The result saved, but the plan didn't close. Try again — it's safe to repeat."
+            case .goalNotUpdated: return "Couldn't save the result, so nothing was closed. If the database hasn't been updated for block reviews yet (migration 0013), this is why."
+            case .planNotUpdated: return "The result saved, but the plan didn't close. Try again. It's safe to repeat."
             }
         }
     }

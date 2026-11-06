@@ -152,11 +152,11 @@ enum RunFetch {
 
     enum Copy {
         static let stale =
-            "Couldn't reach the server — showing your last synced runs. Pull to refresh."
+            "Couldn't reach the server, so these are your last synced runs. Pull to refresh."
         static let uncorrected =
-            "Couldn't reach the server — showing raw Apple Health numbers, so any corrections you've made aren't applied."
+            "Couldn't reach the server, so these are raw Apple Health numbers and any corrections you've made aren't applied."
         static let missingRecent =
-            "Your newest runs are showing raw Apple Health numbers — the server didn't answer the re-read."
+            "Your newest runs are showing raw Apple Health numbers because the server didn't answer the re-read."
         static let nothing =
             "Couldn't reach the server, and there's nothing in Apple Health to fall back on."
         static let editNotReflected =

@@ -114,19 +114,19 @@ enum RaceCountdown {
             case .noGoal:
                 // Neutral on purpose (#101): not training for anything is a state the
                 // athlete chose, not a step they skipped.
-                return "No race on the calendar — just running"
+                return "No race on the calendar, just running"
             case .undated(let race):
-                return "\(race) — no race date yet"
+                return "\(race), no race date yet"
             case .ahead(let race, _, _):
                 return [race, countdown(width)].compactMap { $0 }.joined(separator: " · ")
             case .raceDay(let race):
-                return "Race day — \(race)"
+                return "Race day: \(race)"
             case .past(let race):
                 // A countdown past its race is the same defect as the hardcoded date: a
                 // number that reads as current and isn't. "0 weeks to Chicago" says the
                 // race is this week. So the header stops counting and points at the only
                 // thing left to do — pick the next race.
-                return "\(race) is behind you — set the next goal with the coach"
+                return "\(race) is behind you. Set the next goal with the coach"
             }
         }
 

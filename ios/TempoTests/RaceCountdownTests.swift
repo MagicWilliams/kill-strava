@@ -84,7 +84,7 @@ final class RaceCountdownTests: XCTestCase {
     /// Not "0 weeks to Chicago", and not "1 week" either — it's today.
     func testRaceDayIsItsOwnState() {
         XCTAssertEqual(state("Chicago", date("2026-08-27")), .raceDay(race: "Chicago"))
-        XCTAssertEqual(state("Chicago", date("2026-08-27")).subtitle(), "Race day — Chicago")
+        XCTAssertEqual(state("Chicago", date("2026-08-27")).subtitle(), "Race day: Chicago")
     }
 
     /// Race day starts at midnight and lasts all day; a 6am launch is still race day.
@@ -103,7 +103,7 @@ final class RaceCountdownTests: XCTestCase {
         XCTAssertEqual(state("Chicago", date("2026-08-26")), .past(race: "Chicago"))
         XCTAssertEqual(
             state("Chicago", date("2025-10-12")).subtitle(),
-            "Chicago is behind you — set the next goal with the coach"
+            "Chicago is behind you. Set the next goal with the coach"
         )
     }
 
@@ -131,7 +131,7 @@ final class RaceCountdownTests: XCTestCase {
     /// to-do list; between blocks, not training for anything is a choice, not a gap.
     func testNoGoalSaysSoRatherThanGuessingARace() {
         XCTAssertEqual(state(nil, nil), .noGoal)
-        XCTAssertEqual(state(nil, nil).subtitle(), "No race on the calendar — just running")
+        XCTAssertEqual(state(nil, nil).subtitle(), "No race on the calendar, just running")
         XCTAssertFalse(state(nil, nil).subtitle().contains("Chicago"), "no fallback race survived the deletion")
         XCTAssertFalse(state(nil, nil).subtitle().contains("propose"), "no nudge toward a goal")
         XCTAssertNil(state(nil, nil).race, "nothing to name")
@@ -141,7 +141,7 @@ final class RaceCountdownTests: XCTestCase {
     /// so it counts nothing.
     func testGoalWithoutARaceDateCountsNothing() {
         XCTAssertEqual(state("Chicago", nil), .undated(race: "Chicago"))
-        XCTAssertEqual(state("Chicago", nil).subtitle(), "Chicago — no race date yet")
+        XCTAssertEqual(state("Chicago", nil).subtitle(), "Chicago, no race date yet")
         XCTAssertNil(state("Chicago", nil).hero)
     }
 
