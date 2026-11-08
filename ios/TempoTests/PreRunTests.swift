@@ -111,7 +111,7 @@ final class PreRunTests: XCTestCase {
         XCTAssertEqual(PreRun.targetToggleDetail(session(), shown: true, units: .mi),
                        "7:45 /mi on screen and in your ear. Hide it mid-run with one tap.")
         XCTAssertEqual(PreRun.targetToggleDetail(session(), shown: false, units: .mi),
-                       "Off — running free. No pace target on screen or in your ear.")
+                       "Off. No pace target on screen or in your ear.")
         XCTAssertEqual(PreRun.targetToggleDetail(session(pace: nil), shown: true, units: .mi),
                        "6 mi on screen and in your ear. Hide it mid-run with one tap.")
     }

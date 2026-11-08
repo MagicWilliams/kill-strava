@@ -86,13 +86,13 @@ struct ProgressScreen: View {
             return "A finish projection needs a race to project toward."
         }
         guard let projection, let goalTime else {
-            return "Projection sharpens as runs land — updated after every sync."
+            return "The projection updates after every sync as new runs come in."
         }
         let delta = goalTime - projection
         if delta >= 0 {
             return "Current fitness projects \(PaceModel.formatFinish(abs(delta))) under goal. Updated after every run."
         }
-        return "Current fitness projects \(PaceModel.formatFinish(abs(delta))) over goal — the gap is the training block's job. Updated after every run."
+        return "Current fitness projects \(PaceModel.formatFinish(abs(delta))) over goal. This block is meant to close that. Updated after every run."
     }
 
     /// Real weekly mileage, trailing 8 weeks. Current (in-progress) week is outlined.
@@ -203,7 +203,7 @@ struct ProgressScreen: View {
             if store.plan != nil, !store.planWeeks.isEmpty {
                 phaseBar
                 if let phase = store.currentPhase {
-                    Text("\(phase.capitalized) phase — \(weeksLeftInPhase) week\(weeksLeftInPhase == 1 ? "" : "s") left in it.")
+                    Text("\(phase.capitalized) phase, \(weeksLeftInPhase) week\(weeksLeftInPhase == 1 ? "" : "s") left.")
                         .font(Tokens.Font.ui(12)).foregroundStyle(Tokens.Palette.textSecondary)
                 }
             } else {

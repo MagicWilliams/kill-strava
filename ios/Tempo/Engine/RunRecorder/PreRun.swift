@@ -120,7 +120,7 @@ enum PreRun {
 
     /// The "Show today's target" row's explanation, for the toggle's two positions.
     static func targetToggleDetail(_ target: RecorderState.SessionTarget, shown: Bool, units: Units) -> String {
-        guard shown else { return "Off — running free. No pace target on screen or in your ear." }
+        guard shown else { return "Off. No pace target on screen or in your ear." }
         let what = target.paceSecPerMile.flatMap { $0 > 0 ? units.formatPace(secondsPerMile: $0) : nil }
             ?? targetLine(target, units: units) ?? "Today's target"
         return what + " on screen and in your ear. Hide it mid-run with one tap."
@@ -209,7 +209,7 @@ enum PreRun {
         var caption: String {
             switch self {
             case .strong(let m): "Locked, \u{00B1}\(m) m. Ready when you are."
-            case .weak(let m): "\u{00B1}\(m) m. You can start; distance sharpens as the signal settles."
+            case .weak(let m): "\u{00B1}\(m) m. You can start. Distance gets more accurate as the GPS settles."
             case .searching: "You can start now. Distance fills in once GPS locks."
             case .off: "Tempo can't see your location."
             }

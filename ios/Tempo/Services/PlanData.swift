@@ -307,15 +307,15 @@ extension RunStore {
         let week = currentPlanWeek ?? 1
         let target = planWeeks.first { $0.week_index == week - 1 }?.target_mileage
         let today = todaySession.map { s in
-            "\(s.title ?? s.type)\(s.detail.map { " — \($0)" } ?? "") (\(s.status))"
+            "\(s.title ?? s.type)\(s.detail.map { ": \($0)" } ?? "") (\(s.status))"
         }
         return CoachContext.PlanCtx(
             race: goal.raceName ?? "Race",
             race_date: goal.raceDate,
-            goal_time: goal.goalTimeSeconds.map(PaceModel.formatFinish) ?? "—",
+            goal_time: goal.goalTimeSeconds.map(PaceModel.formatFinish) ?? Units.missing,
             week: week,
             weeks_total: plan.weeks,
-            phase: currentPhase ?? "—",
+            phase: currentPhase ?? Units.missing,
             week_target_mi: target,
             today_session: today,
             projected_finish: plan.projected_finish_s.map(PaceModel.formatFinish),
@@ -392,11 +392,11 @@ extension RunStore {
         do {
             try await Supa.client.from("sessions").update(Patch(
                 date: easy.date, status: nil,
-                adaptation_note: "Moved from \(dayName(missed.date)) — it was missed, so it takes \(dayName(easy.date))'s easy slot."
+                adaptation_note: "Moved from \(dayName(missed.date)) because it was missed. It takes \(dayName(easy.date))'s easy slot."
             )).eq("id", value: missed.id.uuidString).execute()
             try await Supa.client.from("sessions").update(Patch(
                 date: nil, status: "skipped",
-                adaptation_note: "Skipped — its slot went to \(missed.title ?? missed.type)."
+                adaptation_note: "Skipped. Its slot went to \(missed.title ?? missed.type)."
             )).eq("id", value: easy.id.uuidString).execute()
         } catch { return }   // adaptation is best-effort; never disturb state on failure
 

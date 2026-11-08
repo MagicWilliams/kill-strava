@@ -118,14 +118,14 @@ enum Units: String, CaseIterable, Codable, Sendable {
         return clock == Self.missing ? clock : clock + " " + paceSuffix
     }
 
-    /// "7:00 /mi". The pace of `meters` covered in `seconds`, or "—" before any distance.
+    /// "7:00 /mi". The pace of `meters` covered in `seconds`, or Units.missing before any distance.
     func formatPace(seconds: Double, meters m: Double) -> String {
         pace(seconds: seconds, meters: m).map { formatPace($0) } ?? Self.missing
     }
 
     /// "m:ss" with no unit, rounded to the whole second before it is split into minutes
     /// and seconds. 59.5 is "1:00". Minutes are not wrapped into hours, since a pace is never
-    /// that slow. "—" for a negative or non-finite value.
+    /// that slow. Units.missing for a negative or non-finite value.
     static func clock(_ seconds: Double) -> String {
         guard seconds.isFinite, seconds >= 0 else { return missing }
         let s = Int(seconds.rounded())
@@ -133,5 +133,5 @@ enum Units: String, CaseIterable, Codable, Sendable {
     }
 
     /// What a pace or distance reads as when there isn't one.
-    static let missing = "—"
+    static let missing = "--"
 }

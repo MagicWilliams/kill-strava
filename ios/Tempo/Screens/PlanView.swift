@@ -86,7 +86,7 @@ struct PlanView: View {
                 Text(state.subtitle()).font(Tokens.Font.ui(14)).foregroundStyle(Tokens.Palette.textSecondary)
             }
             if let week = store.currentPlanWeek, let plan = store.plan {
-                Text("Week \(week) of \(plan.weeks) · \(store.currentPhase?.capitalized ?? "—") phase · \(Int(Double(week - 1) / Double(max(plan.weeks, 1)) * 100))% complete")
+                Text("Week \(week) of \(plan.weeks) · \(store.currentPhase?.capitalized ?? Units.missing) phase · \(Int(Double(week - 1) / Double(max(plan.weeks, 1)) * 100))% complete")
                     .font(Tokens.Font.ui(13)).foregroundStyle(Tokens.Palette.textSecondary)
             }
         }

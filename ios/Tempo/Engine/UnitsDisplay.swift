@@ -85,7 +85,7 @@ extension Units {
         runPace(movingSeconds: movingSeconds, meters: Double(meters))
     }
 
-    /// "8:45 /mi" / "5:26 /km" for a run, or "—" with no pace.
+    /// "8:45 /mi" / "5:26 /km" for a run, or Units.missing with no pace.
     func formatRunPace(movingSeconds: Int, meters: Int) -> String {
         runPace(movingSeconds: movingSeconds, meters: meters).map { formatPace($0) } ?? Self.missing
     }
