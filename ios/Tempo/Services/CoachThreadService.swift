@@ -181,6 +181,9 @@ enum CoachThreadService {
     /// once regenerated two plans at once.
     @discardableResult
     static func summarizePending(_ rows: [CoachThreads.Row], context: CoachContext, now: Date = .now) async -> Bool {
+        // This runs on every Coach-tab appearance. The gateway would refuse each write-up, but
+        // only after reading that thread's whole transcript to build it.
+        guard CoachConsentStore.shared.maySend else { return false }
         var wrote = false
         for row in CoachThreads.awaitingSummary(rows, now: now) {
             switch await summarize(row, context: context) {
@@ -256,7 +259,9 @@ enum CoachThreadService {
         )
         let reply: Reply
         do {
-            reply = try await Supa.client.functions.invoke("coach", options: FunctionInvokeOptions(body: request))
+            reply = try await CoachGateway.invoke(.coach, body: request)
+        } catch is CoachGateway.ConsentRequired {
+            return .notWritten
         } catch {
             if let refusal = UsageLimit.refusal(from: error, surface: "summarize") {
                 // Oldest first, so stopping the backlog for a thread that is too large would

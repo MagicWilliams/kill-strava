@@ -15,6 +15,7 @@ import SwiftUI
 struct CoachHomeView: View {
     @EnvironmentObject private var store: RunStore
     @EnvironmentObject private var router: TabRouter
+    @ObservedObject private var consent = CoachConsentStore.shared
 
     private enum Load: Equatable { case loading, loaded, failed }
 
@@ -34,6 +35,7 @@ struct CoachHomeView: View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 14) {
                 header
+                if !consent.maySend { Card { CoachConsentNotice() } }
                 changesRow
                 SectionLabel("Conversations").padding(.top, 6)
                 content
@@ -59,6 +61,14 @@ struct CoachHomeView: View {
         .onChange(of: router.coachFocus) { _, _ in openConversationIfNeeded() }
         // An intake sent while this screen was already up — the form is presented over it.
         .onChange(of: store.intakeHandoff?.id) { _, _ in openConversationIfNeeded() }
+        // Agreeing is what lets a waiting intake go and the owed recaps get written.
+        .onChange(of: consent.maySend) { _, maySend in
+            guard maySend else { return }
+            Task { await reload() }
+        }
+        // A draft handed over from another screen, which has nowhere to land until a
+        // conversation is open.
+        .onChange(of: router.coachDraft?.id) { _, _ in openConversationIfNeeded() }
     }
 
     // MARK: - Loading
@@ -102,14 +112,21 @@ struct CoachHomeView: View {
     ///  - **A just-sent training intake** (#102), whose first turn is the athlete's answers.
     ///    Those have to reach the coach, and `ChatStore.load` is what sends them — so a
     ///    conversation has to be open for it to happen at all.
+    ///  - **A prefilled draft** (#233), from "Change race or date" on the Projected finish
+    ///    page. Unlike the intake, nothing is sent: the composer opens with the sentence in
+    ///    it. Landing on the list with the draft still pending would lose it, because this
+    ///    screen has no composer to put it in.
     ///
     /// A live thread is reused; with none, the intake gets a new one, because answers with
     /// nowhere to go is the failure this guards.
     private func openConversationIfNeeded() {
         guard router.path.isEmpty, load == .loaded else { return }
         let focus = router.coachFocus
-        let intake = store.intakeHandoff?.sentToCoach == false ? store.intakeHandoff?.id : nil
-        let reasons = [focus, intake].compactMap { $0 }.filter { !routed.contains($0) }
+        // Not consumed while the coach is off: `routed` would remember it, and the answers
+        // would still have nowhere to go on the reload after the athlete agrees.
+        let intake = store.intakeHandoff?.sentToCoach == false && consent.maySend ? store.intakeHandoff?.id : nil
+        let draft = router.coachDraft?.id
+        let reasons = [focus, intake, draft].compactMap { $0 }.filter { !routed.contains($0) }
         guard !reasons.isEmpty else { return }
         routed.formUnion(reasons)
         if let live = CoachThreads.active(in: threads, now: .now) {
@@ -160,7 +177,7 @@ struct CoachHomeView: View {
                     .font(Tokens.Font.ui(13)).foregroundStyle(Tokens.Palette.textSecondary)
             }
             Spacer()
-            newChatButton
+            if consent.maySend { newChatButton }
         }
         .padding(.top, 8)
     }
@@ -221,7 +238,9 @@ struct CoachHomeView: View {
             note("Couldn't reach the server, so your conversations can't be read right now. Pull to refresh.")
         case .loaded:
             if threads.isEmpty {
-                note("No conversations yet. Tap New chat and the coach will open with a read on your training.")
+                note(consent.maySend
+                     ? "No conversations yet. Tap New chat and the coach will open with a read on your training."
+                     : "No conversations yet.")
             } else {
                 let live = CoachThreads.active(in: threads, now: .now)?.id
                 ForEach(threads) { thread in

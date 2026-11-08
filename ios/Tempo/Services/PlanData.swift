@@ -251,22 +251,42 @@ extension RunStore {
         // from the athlete but not from the edge logs. This is the same correction the
         // profile read got on 2026-08-23; that sweep missed this call site, which is why
         // `ZeroRowSingleLintTests` now watches for the shape instead of trusting a sweep.
-        let checkIns: [CheckInInfo]? = try? await Supa.client
-            .from("check_ins")
-            .select("date,feels_ok,note")
-            .eq("date", value: PlanDates.todayString)
-            .limit(1)
-            .execute()
-            .value
-        if let checkIn = checkIns?.first {
-            todayCheckIn = checkIn
+        //
+        // `do`/`catch` rather than `try?` because an empty array and a thrown error have to
+        // stay apart (#226): zero rows is a definitive "no check-in today" and must clear
+        // what we hold, while a failed read must keep it, like every other read in this
+        // function. `try?` collapses the two and the old `if let` could only ever assign,
+        // never clear, so yesterday's check-in survived midnight.
+        let response: CheckInToday.Response
+        do {
+            let rows: [CheckInInfo] = try await Supa.client
+                .from("check_ins")
+                .select("date,feels_ok,note")
+                .eq("date", value: PlanDates.todayString)
+                .limit(1)
+                .execute()
+                .value
+            response = .rows(rows)
+        } catch {
+            response = .unreachable
         }
+        todayCheckIn = CheckInToday.resolve(response, held: todayCheckIn)
     }
 
     // MARK: Derived plan state
 
     var todaySession: SessionInfo? {
         sessions.first { $0.date == PlanDates.todayString }
+    }
+
+    /// Today's check-in, or nil, including when the stored `todayCheckIn` is yesterday's.
+    ///
+    /// Every read goes through here: the views, readiness, and the coach payload. The stored
+    /// property is what a read last saw and is allowed to go stale between refreshes, which
+    /// is what keeps a failed read non-destructive; this is the accessor that stops a stale
+    /// answer reaching a screen or Claude (#226). See `Engine/CheckInToday.swift`.
+    var checkInForToday: CheckInInfo? {
+        CheckInToday.forToday(held: todayCheckIn, today: PlanDates.todayString)
     }
 
     /// 1-based index of the current plan week.
@@ -287,15 +307,15 @@ extension RunStore {
         let week = currentPlanWeek ?? 1
         let target = planWeeks.first { $0.week_index == week - 1 }?.target_mileage
         let today = todaySession.map { s in
-            "\(s.title ?? s.type)\(s.detail.map { " — \($0)" } ?? "") (\(s.status))"
+            "\(s.title ?? s.type)\(s.detail.map { ": \($0)" } ?? "") (\(s.status))"
         }
         return CoachContext.PlanCtx(
             race: goal.raceName ?? "Race",
             race_date: goal.raceDate,
-            goal_time: goal.goalTimeSeconds.map(PaceModel.formatFinish) ?? "—",
+            goal_time: goal.goalTimeSeconds.map(PaceModel.formatFinish) ?? Units.missing,
             week: week,
             weeks_total: plan.weeks,
-            phase: currentPhase ?? "—",
+            phase: currentPhase ?? Units.missing,
             week_target_mi: target,
             today_session: today,
             projected_finish: plan.projected_finish_s.map(PaceModel.formatFinish),
@@ -372,11 +392,11 @@ extension RunStore {
         do {
             try await Supa.client.from("sessions").update(Patch(
                 date: easy.date, status: nil,
-                adaptation_note: "Moved from \(dayName(missed.date)) — it was missed, so it takes \(dayName(easy.date))'s easy slot."
+                adaptation_note: "Moved from \(dayName(missed.date)) because it was missed. It takes \(dayName(easy.date))'s easy slot."
             )).eq("id", value: missed.id.uuidString).execute()
             try await Supa.client.from("sessions").update(Patch(
                 date: nil, status: "skipped",
-                adaptation_note: "Skipped — its slot went to \(missed.title ?? missed.type)."
+                adaptation_note: "Skipped. Its slot went to \(missed.title ?? missed.type)."
             )).eq("id", value: easy.id.uuidString).execute()
         } catch { return }   // adaptation is best-effort; never disturb state on failure
 

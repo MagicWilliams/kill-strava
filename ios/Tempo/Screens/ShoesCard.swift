@@ -139,10 +139,10 @@ struct ShoesCard: View {
         case .fine:
             EmptyView()
         case .nearing(let left):
-            Text("\(wholeUnits(miles: Double(left))) to \(units.number(miles: Double(threshold), decimals: 0)) — time to line up the next pair.")
+            Text("\(wholeUnits(miles: Double(left))) to \(units.number(miles: Double(threshold), decimals: 0)). Time to line up the next pair.")
                 .font(Tokens.Font.ui(12, .medium)).foregroundStyle(Tokens.Palette.warning)
         case .due:
-            Text("Past \(wholeUnits(miles: Double(threshold))) — worth retiring.")
+            Text("Past \(wholeUnits(miles: Double(threshold))). Time to retire them.")
                 .font(Tokens.Font.ui(12, .medium)).foregroundStyle(Tokens.Palette.warning)
         }
     }
@@ -241,7 +241,7 @@ struct AddShoeSheet: View {
 
                     Card {
                         SectionLabel("Name", color: Tokens.Palette.accentText)
-                        TextField("e.g. Pegasus 41 — blue", text: $name)
+                        TextField("e.g. Pegasus 41, blue", text: $name)
                             .font(Tokens.Font.ui(17))
                             .focused($nameFocused)
                             .submitLabel(.done)
