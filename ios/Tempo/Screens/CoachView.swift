@@ -177,6 +177,8 @@ struct CoachView: View {
         }
         .background(Tokens.Palette.canvas)
         .toolbar(.hidden, for: .navigationBar)
+        .onAppear(perform: takeDraft)
+        .onChange(of: router.coachDraft?.id) { _, _ in takeDraft() }
         .task {
             chat.onboardingMode = onboarding
             chat.runStore = store
@@ -197,6 +199,17 @@ struct CoachView: View {
             guard maySend else { return }
             Task { await chat.consentGranted(context: store.coachContext(onboarding: onboarding)) }
         }
+    }
+
+    /// Move a draft handed over by the router into the composer, unsent, and clear it so
+    /// coming back here later does not refill the box ("Change race or date", #233).
+    ///
+    /// An athlete's own half-typed message wins: nothing is overwritten. And never during the
+    /// setup interview, which asks its own questions and has no screen to have come from.
+    private func takeDraft() {
+        guard !onboarding, let handed = router.coachDraft else { return }
+        router.coachDraft = nil
+        if draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { draft = handed.text }
     }
 
     /// Scroll to the message What changed asked for, if it is in the loaded history. Left

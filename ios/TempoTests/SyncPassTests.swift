@@ -29,6 +29,112 @@ final class SyncPassTests: XCTestCase {
 
     private static let now = Date(timeIntervalSince1970: 1_800_000_000)   // 2027-01-15, fixed
 
+    // MARK: - An unfinished read of the retired uuids is not an empty one (2026-11-05)
+
+    func testAFinishedReadCarriesItsIDs() {
+        let read = SyncPass.retiredRead(ids: ["a", "b"], reachedLastPage: true, failure: nil)
+        XCTAssertEqual(read, .complete(["a", "b"]))
+        XCTAssertEqual(read.ids, ["a", "b"])
+    }
+
+    func testAFinishedReadOfNothingIsStillAnAnswer() {
+        // Over-holding would be the other half of the bug: an athlete who has never retired a
+        // run gets this answer on every refresh, and their sync must go ahead on it.
+        let read = SyncPass.retiredRead(ids: [], reachedLastPage: true, failure: nil)
+        XCTAssertEqual(read.ids, [], "empty and known, not nil")
+    }
+
+    func testBothSpellingsOfCancellationAreCancelledNotUnreadable() {
+        // The exact error from the incident, and the URLSession form of the same thing.
+        for error: Error in [CancellationError(), URLError(.cancelled)] {
+            XCTAssertEqual(SyncPass.retiredRead(ids: [], reachedLastPage: false, failure: error), .cancelled)
+        }
+    }
+
+    func testARealFailureIsUnreadable() {
+        let decoding = DecodingError.dataCorrupted(.init(codingPath: [], debugDescription: "column missing"))
+        for error: Error in [URLError(.timedOut), URLError(.notConnectedToInternet), decoding] {
+            XCTAssertEqual(SyncPass.retiredRead(ids: [], reachedLastPage: false, failure: error), .unreadable)
+        }
+    }
+
+    func testAFailureOnALaterPageDiscardsThePagesAlreadyRead() {
+        // A partial set misses the same way an empty one does, only for fewer runs.
+        let read = SyncPass.retiredRead(ids: ["page-one"], reachedLastPage: false, failure: URLError(.timedOut))
+        XCTAssertEqual(read, .unreadable)
+        XCTAssertNil(read.ids)
+    }
+
+    func testTheFailureOutranksAReachedLastPage() {
+        // Neither call site in the read passes this today. The rule still has one answer.
+        let read = SyncPass.retiredRead(ids: ["a"], reachedLastPage: true, failure: URLError(.timedOut))
+        XCTAssertNil(read.ids)
+    }
+
+    func testRunningOutOfLeashIsNotAnAnswer() {
+        // No error, plenty of ids, and still no idea what the next page held.
+        let read = SyncPass.retiredRead(ids: ["a"], reachedLastPage: false, failure: nil)
+        XCTAssertEqual(read, .unreadable)
+        XCTAssertNil(read.ids)
+    }
+
+    func testNothingButACompleteReadOffersIDsToFilterAgainst() {
+        XCTAssertNil(SyncPass.RetiredRead.cancelled.ids)
+        XCTAssertNil(SyncPass.RetiredRead.unreadable.ids)
+    }
+
+    /// Why the pass holds: the numbers an unknown set produces, in miniature. On 2026-11-05
+    /// the 120 retired uuids split into 47 kept and 73 "never stored", and that second number
+    /// is what `reExportSignal` reads, so one cancelled read made two false events.
+    func testReconcilingAgainstAnEmptySetIsWhatInventsAReExport() {
+        let keeper = run(externalID: "keeper-uuid", minutesAfterKeeper: 0)
+        let nearTwin = run(externalID: "retired-near", minutesAfterKeeper: 1, meters: 11_000)
+        let farTwin = run(externalID: "retired-far", minutesAfterKeeper: 600, meters: 11_000)
+        let candidates = [keeper, nearTwin, farTwin]
+
+        let known = RunDedupe.reconcile(candidates: candidates, existing: [keeper],
+                                        retiredExternalIDs: ["retired-near", "retired-far"])
+        XCTAssertTrue(known.inserts.isEmpty)
+        XCTAssertEqual(known.droppedAlreadyStored, 3)
+        XCTAssertEqual(known.droppedUnknownUUID, 0)
+
+        let guessed = RunDedupe.reconcile(candidates: candidates, existing: [keeper],
+                                          retiredExternalIDs: [])
+        XCTAssertEqual(guessed.inserts.map(\.externalID), ["retired-far"], "the 47")
+        XCTAssertEqual(guessed.droppedAlreadyStored, 1)
+        XCTAssertEqual(guessed.droppedUnknownUUID, 1, "the 73")
+    }
+
+    /// And the harm a held pass rules out: this graft only runs after an insert, and an insert
+    /// now only follows a complete read, so `resolve` can no longer be handed a guess.
+    func testAGuessedEmptySetWouldGraftARetiredDuplicateOntoTheScreen() {
+        let keeper = run(externalID: "keeper-uuid", minutesAfterKeeper: 0)
+        let farTwin = run(externalID: "retired-far", minutesAfterKeeper: 600, meters: 11_000)
+
+        let guessed = RunFetch.resolve(.incomplete([keeper]), ingested: [farTwin],
+                                       onScreen: [keeper], retiredExternalIDs: [])
+        XCTAssertEqual(guessed.runs?.count, 2, "the premise: an empty set double counts it")
+
+        let known = RunFetch.resolve(.incomplete([keeper]), ingested: [farTwin],
+                                     onScreen: [keeper], retiredExternalIDs: ["retired-far"])
+        XCTAssertEqual(known.runs, [keeper])
+    }
+
+    /// A HealthKit copy with its uuid, placed relative to one fixed keeper. Distances differ
+    /// between keeper and twins so neither is mistaken for the other clock of the same run.
+    private func run(externalID: String, minutesAfterKeeper: Double, meters: Int = 13_000) -> RunSummary {
+        RunSummary(
+            id: UUID(),
+            start: Self.now.addingTimeInterval(minutesAfterKeeper * 60),
+            distanceM: meters,
+            durationS: 3_000,
+            avgHR: nil,
+            corrected: false,
+            source: "healthkit",
+            externalID: externalID
+        )
+    }
+
     // MARK: - The work that follows the write is bounded
 
     func testTheArchiveBacklogDoesNotBecomeAQueryPerRun() {
