@@ -6,6 +6,32 @@ tags: [tempo, decision-log]
 
 Newest first. One entry per session that ships features or makes a product decision.
 
+## 2026-11-05: The rulebook catches up with the public TestFlight
+
+### Decisions
+- **Tempo is no longer a beta of one.** The public TestFlight opened today, so `CLAUDE.md` and the Scout, Builder and EM definitions stop assuming David is the only user. Hard limits 1 and 2 are unchanged. Limit 3 now names testers' data, and it corrects "no staging copy": staging exists, for simulators and CI, but it holds no copy of production data.
+- **Production reads and cleanups state whose rows they cover.** Accounts are anonymous, so a row never says whose it is.
+- **Telemetry triage separates David from other users,** with events, distinct users and app version. A tester's error is not his, and tester activity doesn't mean he ran the build.
+- **Public GitHub gets counts only.** That covers issues, PRs, commits, migrations and test fixtures, and it applies to David's health figures as well as other people's data. `site/privacy.html` doesn't list GitHub as a place user data goes.
+- **Deploys and migrations reach everyone at once, on every installed build. A green merge may reach testers.** Nothing filters `testflight.yml` by path, so even a docs-only merge uploads a build.
+- **The recorder counts as unmeasured until #132 has results.** Testers can record runs now, and all nine checklist items are still open. A recorded run saves to their Apple Health, so a wrong distance ends up outside Tempo.
+- **`p0` now reads "broken for David or testers".** "The only user" was no longer true. David can veto this wording.
+- **Interim rule, pending his call below:** agents don't read testers' free text without his go-ahead for that task.
+
+### Shipped
+- Docs only: `CLAUDE.md`, `.claude/agents/` (`em`, `scout`, `builder`) and this entry. Nothing was deployed or applied, and no rule about deploying or merging changed.
+
+### Next up
+Calls for David. These change a rule or need something only he can see, so nothing here decides them.
+1. **Do the EM's standing go-aheads still apply?** It may merge on green (2026-08-27) and apply migrations and deploy functions (2026-10-09). Both were given when he was the only user, neither is in `CLAUDE.md`, and `CLAUDE.md` still says "never" for applying and deploying. His private asks page also has an open question from 2026-10-29 about pre-approving deploys, so the deploy go-ahead is less settled than it looks. Recommendation: keep both and write them into `CLAUDE.md`, with a dry run, the migration before the merge, a report of what reached testers, and his approval for any change to existing rows that aren't his.
+2. **Do builds reach external testers automatically?** Agents can't see this App Store Connect setting. Recommendation: promote builds to the external group by hand, so merging on green stays safe and docs-only uploads don't reach testers.
+3. **May agents read testers' free text to debug?** The privacy page says David can access the database to fix problems. It doesn't mention agents. Recommendation: keep the interim rule, and update the page if that ever changes.
+4. **What does the #268 cleanup cover?** It would rewrite stored text, and its dry run shows every affected row. Recommendation: David's rows only, with other users' rows reported as a count.
+5. **Does the recorder stay open to testers before #132 is done?** Nothing gates it, and the listing draft in the open PR #261 advertises it. Two recorder problems from his 2026-10-29 run are also still waiting on his OK to be filed. Recommendation: David runs the checklist now, and "What to Test" says the recorder is unmeasured until then.
+6. **Where do David's account ids live?** No file an agent can read records them, and triage can't split without them. They shouldn't go in this repo. Recommendation: he confirms which accounts are his, including old anonymous ones and test accounts, and they go in private agent config.
+
+Not in this change, because the task was `CLAUDE.md` and the agents: `docs/AUTONOMY.md`, `docs/TESTFLIGHT.md`, `docs/prd-03-tempo-mcp.md`, `/triage` and `/brief`, and comments in `Telemetry.swift`, `Supa.swift` and `testflight.yml` still describe one user. Hard limit 1 also needs a look: it says there's no path to observing the UI, but simulator builds against staging and `ScreenshotTour` now give agents one. It stays as written because that isn't a beta-of-one question, and a simulator still doesn't prove device behaviour.
+
 ## 2026-11-04: Per-user usage limits before the public listing
 
 ### Decisions
