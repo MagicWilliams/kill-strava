@@ -45,7 +45,13 @@ struct ProgressScreen: View {
         } label: {
             Card(glow: true) {
                 HStack {
-                    SectionLabel("Projected finish", color: Tokens.Palette.accentText)
+                    // Named, not bare "Projected finish": a 5K saved as a marathon (#215)
+                    // put 4:18:04 on this card under a label that was equally true of
+                    // both races, and the only way to catch it was to read the database.
+                    SectionLabel(
+                        RaceChange.projectedFinishLabel(goal: store.goal, units: units),
+                        color: Tokens.Palette.accentText
+                    )
                     Spacer()
                     if let projection, let goalTime {
                         if projection <= goalTime {
