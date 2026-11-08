@@ -28,7 +28,7 @@ final class GoalLineTests: XCTestCase {
     /// honestly empty.
     func testNoGoalShowsDashesRatherThanTheReferenceAthletesTime() {
         XCTAssertEqual(noGoal, .noGoal)
-        XCTAssertEqual(noGoal.finishTime, "—:—:—")
+        XCTAssertEqual(noGoal.finishTime, "--:--:--")
         XCTAssertNotEqual(noGoal.finishTime, "3:15:00", "the placeholder was never this user's goal")
     }
 
@@ -84,16 +84,16 @@ final class GoalLineTests: XCTestCase {
     func testAGoalWithoutATargetTimeSaysSo() {
         let s = state(seconds: nil)
         XCTAssertEqual(s, .untimed(race: "Chicago", on: "2026-10-11"))
-        XCTAssertEqual(s.finishTime, "—:—:—")
+        XCTAssertEqual(s.finishTime, "--:--:--")
         XCTAssertNil(s.seconds)
-        XCTAssertEqual(s.coachLine, "Chicago on 2026-10-11 — no target time set yet.")
+        XCTAssertEqual(s.coachLine, "Chicago on 2026-10-11: no target time set yet.")
     }
 
     /// The scar `?? 0` left: a missing target reached the coach as "target 0:00:00", a
     /// number stating the athlete intends to finish instantly. Zero is not a goal time.
     func testAZeroTargetIsNotATargetTime() {
         let s = state(seconds: 0)
-        XCTAssertEqual(s.finishTime, "—:—:—")
+        XCTAssertEqual(s.finishTime, "--:--:--")
         XCTAssertNil(s.seconds)
         XCTAssertFalse(s.coachLine.contains("0:00:00"), "the ?? 0 fallback does not come back")
     }
@@ -104,7 +104,7 @@ final class GoalLineTests: XCTestCase {
         XCTAssertEqual(state(on: nil).coachLine, "Chicago, target 3:15:00")
         XCTAssertEqual(state(on: "").coachLine, "Chicago, target 3:15:00", "an empty date is no date")
         XCTAssertEqual(state(on: "", seconds: nil).coachLine,
-                       "Chicago — no race date or target time set yet.")
+                       "Chicago: no race date or target time set yet.")
     }
 
     /// `race_name` is nullable. A goal with no name borrows the same "Race" placeholder
@@ -118,7 +118,7 @@ final class GoalLineTests: XCTestCase {
     func testAnEmptyGoalRowNamesNoRaceAndNoTime() {
         let s = GoalLine.state(raceName: nil, raceDate: nil, goalTimeSeconds: nil, hasGoal: true)
         XCTAssertEqual(s, .untimed(race: "Race", on: nil))
-        XCTAssertEqual(s.finishTime, "—:—:—")
+        XCTAssertEqual(s.finishTime, "--:--:--")
         XCTAssertFalse(s.coachLine.contains("Chicago"))
     }
 
@@ -168,8 +168,118 @@ final class GoalLineTests: XCTestCase {
     }
 
     func testAGoalWithNoTargetTimeHasNoTargetPace() {
-        XCTAssertEqual(GoalLine.targetPace(goal: goal(seconds: nil, distance: "5k", meters: 5_000), units: .mi), "—")
-        XCTAssertEqual(GoalLine.targetPace(goal: goal(seconds: 0, distance: "5k", meters: 5_000), units: .mi), "—")
-        XCTAssertEqual(GoalLine.targetPace(goal: nil, units: .mi), "—")
+        XCTAssertEqual(GoalLine.targetPace(goal: goal(seconds: nil, distance: "5k", meters: 5_000), units: .mi), "--")
+        XCTAssertEqual(GoalLine.targetPace(goal: goal(seconds: 0, distance: "5k", meters: 5_000), units: .mi), "--")
+        XCTAssertEqual(GoalLine.targetPace(goal: nil, units: .mi), "--")
+    }
+
+    // MARK: - The You card for a goal with no target time (#231)
+    //
+    // 15 Oct, You tab: the subtitle read "Race · 6 weeks out" and the card directly beneath
+    // it read "No goal yet. The coach proposes one from your data", with a Talk to Coach
+    // button — both at once. The goal was the 27 Nov tune-up: `goal_type = "unsure"`, no
+    // `goal_time_seconds`, deliberately. The card branched on the target time, so a goal
+    // without one read as no goal at all. `State.untimed` had existed since #44 for exactly
+    // this; the card just never read it.
+
+    private func untimed(name: String? = "Turkey Trot", type: String? = "unsure",
+                         distance: String = "5k", meters: Int? = 5_000) -> GoalInfo {
+        GoalInfo(id: UUID(), race_name: name, race_date: "2026-11-27", goal_time_seconds: nil,
+                 distance: distance, distance_m: meters, goal_type: type)
+    }
+
+    /// The regression, in the state the card now switches on: a goal with no target time is
+    /// an untimed goal, never `.noGoal`, so the empty state cannot fire on it.
+    func testAnUntimedGoalIsNeverTheNoGoalEmptyState() {
+        let g = untimed()
+        let s = GoalLine.state(raceName: g.raceName, raceDate: g.raceDate,
+                               goalTimeSeconds: g.goalTimeSeconds, hasGoal: true)
+        XCTAssertEqual(s, .untimed(race: "Turkey Trot", on: "2026-11-27"))
+        XCTAssertNotEqual(s, .noGoal, "the 27 Nov tune-up is a goal")
+        XCTAssertFalse(GoalLine.untimedLine(goalType: g.goal_type, on: "Nov 27")
+            .localizedCaseInsensitiveContains("no goal"),
+                       "the card may not offer to set a goal that already exists")
+    }
+
+    /// The three lines the issue specifies, verbatim. "Just finish" is the one type that does
+    /// *not* trail "no target time": the goal is to finish, so there is no target absent from
+    /// it, and naming one would read as a gap rather than the athlete's choice.
+    func testTheUntimedLineSaysWhichKindOfGoalItIs() {
+        XCTAssertEqual(GoalLine.untimedLine(goalType: "finish", on: "Nov 27"),
+                       "Just finish · Nov 27")
+        XCTAssertEqual(GoalLine.untimedLine(goalType: "pr", on: "Nov 27"),
+                       "Chasing a PR · Nov 27 · no target time")
+        XCTAssertEqual(GoalLine.untimedLine(goalType: "unsure", on: "Nov 27"),
+                       "Nov 27 · no target time")
+        XCTAssertEqual(GoalLine.untimedLine(goalType: nil, on: "Nov 27"),
+                       "Nov 27 · no target time",
+                       "every goal written before the intake (#102) has no type")
+    }
+
+    /// `unsure` is what the coach saved for the tune-up, and `time` is a time goal that has
+    /// lost its time — a contradiction. Neither earns a phrase: one has nothing to say, the
+    /// other would say something the goal does not contain.
+    func testOnlyTheGoalTypesThatSaySomethingGetAPhrase() {
+        XCTAssertEqual(GoalLine.goalTypePhrase("finish"), "Just finish")
+        XCTAssertEqual(GoalLine.goalTypePhrase("pr"), "Chasing a PR")
+        XCTAssertNil(GoalLine.goalTypePhrase("unsure"))
+        XCTAssertNil(GoalLine.goalTypePhrase("time"))
+        XCTAssertNil(GoalLine.goalTypePhrase(nil))
+        XCTAssertNil(GoalLine.goalTypePhrase("tune-up"), "not a goal_type — that is #232's role")
+    }
+
+    /// `race_date` is nullable, so the date can be missing from a line that is otherwise fine.
+    /// What is left still has to read as a sentence, which means the line that opens on "no
+    /// target time" opens on a capital.
+    func testAnUndatedUntimedGoalDropsTheDateRatherThanPrintingAnEmptyOne() {
+        XCTAssertEqual(GoalLine.untimedLine(goalType: "unsure", on: nil), "No target time")
+        XCTAssertEqual(GoalLine.untimedLine(goalType: nil, on: ""), "No target time",
+                       "an empty date is no date, as everywhere else here")
+        XCTAssertEqual(GoalLine.untimedLine(goalType: "finish", on: nil), "Just finish")
+        XCTAssertEqual(GoalLine.untimedLine(goalType: "pr", on: nil), "Chasing a PR · no target time")
+    }
+
+    // MARK: - The card's title names the distance (#231, #230)
+
+    /// The title used to be `"<time> · <race name>"`. A 5K saved as a marathon (#215) sat on
+    /// this screen for two weeks because nothing on it said which race the plan was for.
+    func testTheRaceLabelNamesTheDistanceBesideTheName() {
+        XCTAssertEqual(GoalLine.raceLabel(goal: untimed(), units: .mi), "Turkey Trot · 5K")
+        XCTAssertEqual(GoalLine.raceLabel(goal: untimed(distance: "half", meters: 21_098), units: .mi),
+                       "Turkey Trot · Half")
+    }
+
+    /// Not twice, though: the athlete's own name for the race usually carries the distance.
+    func testANameThatAlreadyCarriesTheDistanceKeepsIt() {
+        XCTAssertEqual(
+            GoalLine.raceLabel(goal: untimed(name: "Chicago Marathon", distance: "marathon", meters: 42_195), units: .mi),
+            "Chicago Marathon")
+        XCTAssertEqual(GoalLine.raceLabel(goal: untimed(name: "Turkey Trot 5k"), units: .mi),
+                       "Turkey Trot 5k", "the match is case-insensitive")
+    }
+
+    /// `race_name` is nullable, and a goal always has a distance even when it has no name —
+    /// so the unnamed case says the distance rather than the bare "Race" the old card used.
+    func testAnUnnamedGoalIsNamedByItsDistance() {
+        XCTAssertEqual(GoalLine.raceLabel(goal: untimed(name: nil, distance: "marathon", meters: 42_195), units: .mi),
+                       "Marathon race")
+        XCTAssertEqual(GoalLine.raceLabel(goal: untimed(name: "   "), units: .mi), "5K race",
+                       "a name of spaces is no name")
+        XCTAssertNil(GoalLine.raceLabel(goal: nil, units: .mi), "no goal, nothing to name")
+    }
+
+    /// The metres come from `RaceRecap.raceMeters(goal:)`, the same reading TARGET and
+    /// PROJECTED use, so the title can't name one race while the numbers answer for another.
+    /// A custom distance has no label of its own and is spelled out in the athlete's unit.
+    func testTheDistanceIsReadOffTheSameMetresTheNumbersUse() {
+        XCTAssertEqual(GoalLine.distanceLabel(raceMeters: RaceRecap.raceMeters(goalDistance: "half"), units: .mi),
+                       "Half", "21,097.5 and 21,098 are one distance")
+        XCTAssertEqual(GoalLine.distanceLabel(raceMeters: Units.metersPerMile, units: .mi), "1 mi")
+        XCTAssertEqual(GoalLine.distanceLabel(raceMeters: 30_000, units: .km), "30.0 km")
+        XCTAssertEqual(GoalLine.raceLabel(goal: untimed(distance: "custom", meters: 30_000), units: .km),
+                       "Turkey Trot · 30.0 km")
+        // A goal written before 0014 has no `distance_m`; the label still carries it.
+        XCTAssertEqual(GoalLine.raceLabel(goal: untimed(distance: "10k", meters: nil), units: .mi),
+                       "Turkey Trot · 10K")
     }
 }

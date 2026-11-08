@@ -33,7 +33,7 @@ struct OverlapReviewView: View {
                         doneCard
                     }
                     if failed {
-                        Text("That didn't save — nothing was changed. Try again.")
+                        Text("That didn't save, so nothing was changed. Try again.")
                             .font(Tokens.Font.ui(12))
                             .foregroundStyle(Tokens.Palette.danger)
                     }
@@ -99,9 +99,9 @@ struct OverlapReviewView: View {
             Text(units.formatDistance(meters: Double(run.distanceM))).display(20)
             stat("Start", run.start.formatted(date: .omitted, time: .shortened))
             stat("Moving", BestEfforts.formatTime(run.durationS))
-            stat("Elapsed", run.elapsedS.map(BestEfforts.formatTime) ?? "—")
+            stat("Elapsed", run.elapsedS.map(BestEfforts.formatTime) ?? Units.missing)
             stat("Pace", units.formatRunPace(movingSeconds: run.durationS, meters: run.distanceM))
-            stat("Avg HR", run.avgHR.map { "\($0) bpm" } ?? "—")
+            stat("Avg HR", run.avgHR.map { "\($0) bpm" } ?? Units.missing)
             stat("Source", run.source)
             if run.corrected {
                 Tag(text: "edited", fg: Tokens.Palette.info, bg: Tokens.Palette.surface)
@@ -127,7 +127,7 @@ struct OverlapReviewView: View {
                 choice("Keep right") { await decide(pair, .keep(pair.later.id)) }
             }
             choice("Both are real") { await decide(pair, .bothReal) }
-            Text("Keeping one retires the other — it stops counting toward totals and records, but is never deleted.")
+            Text("Keeping one retires the other. It stops counting toward totals and records but is never deleted.")
                 .font(Tokens.Font.ui(11))
                 .foregroundStyle(Tokens.Palette.textTertiary)
         }

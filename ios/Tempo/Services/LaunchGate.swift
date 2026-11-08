@@ -48,7 +48,7 @@ enum LaunchGate: Equatable {
     enum Copy {
         static let noSession = "Couldn't sign in to Tempo's server."
         static let noProfile = "Couldn't load your profile."
-        static let hint = "Your training history is safe on the server — this is a connection problem, not lost data."
+        static let hint = "Your training history is safe on the server. This is a connection problem, and no data was lost."
     }
 }
 

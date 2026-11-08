@@ -12,6 +12,38 @@ import XCTest
 /// only the facts they actually gave.
 final class OnboardingFactsTests: XCTestCase {
 
+    // MARK: - The way out of the interview
+
+    /// With nothing settled the exit stays an escape hatch. A plan or goal makes it the main
+    /// thing on screen, because at that point only the coach was still holding the door.
+    func testTheExitGetsLouderOnceThePlanQuestionIsSettled() {
+        let open = OnboardingFacts.Exit(hasPlan: false, hasGoal: false)
+        XCTAssertEqual(open, .finishLater)
+        XCTAssertFalse(open.isPrimary)
+
+        let planned = OnboardingFacts.Exit(hasPlan: true, hasGoal: true)
+        XCTAssertEqual(planned, .openPlan)
+        XCTAssertTrue(planned.isPrimary)
+
+        let coachingOnly = OnboardingFacts.Exit(hasPlan: false, hasGoal: true)
+        XCTAssertEqual(coachingOnly, .openApp, "no schedule, so there is no plan to promise")
+        XCTAssertTrue(coachingOnly.isPrimary)
+    }
+
+    /// The tab bar inside a conversation goes through this: leaving must pop the conversation
+    /// as well as switch the tab, or the thread stays stacked over the tab that was asked for.
+    @MainActor
+    func testLeavingAConversationForATabPopsIt() {
+        let router = TabRouter()
+        router.selection = .coach
+        router.openCoachThread(UUID())
+
+        router.show(.plan)
+
+        XCTAssertEqual(router.selection, .plan)
+        XCTAssertTrue(router.path.isEmpty)
+    }
+
     // MARK: - Starting point
 
     /// Each step-1 answer reaches the coach under its own name. The prompt's just-running
@@ -105,12 +137,12 @@ final class OnboardingFactsTests: XCTestCase {
             daysPerWeek: 5, longRunDay: 6, riskTolerance: "standard",
             given: [], planOnFile: true,
             maxHR: nil, birthdate: nil,
-            activePlan: "Chicago on 2026-10-11, goal 3:15:00 — keep unless the goal changes"
+            activePlan: "Chicago on 2026-10-11, goal 3:15:00. Keep unless the goal changes"
         )
         XCTAssertEqual(known["days_per_week"], "5")
         XCTAssertEqual(known["long_run_day"], "Saturday")
         XCTAssertEqual(known["risk_tolerance"], "standard")
-        XCTAssertEqual(known["active_plan"], "Chicago on 2026-10-11, goal 3:15:00 — keep unless the goal changes")
+        XCTAssertEqual(known["active_plan"], "Chicago on 2026-10-11, goal 3:15:00. Keep unless the goal changes")
     }
 
     /// Max HR and birthdate are nullable columns: present means somebody said so.

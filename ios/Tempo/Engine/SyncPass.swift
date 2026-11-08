@@ -1,8 +1,8 @@
 import Foundation
 
-/// The pure decisions inside one sync pass: what a completed write says about itself,
-/// how much HealthKit work is allowed to follow it, and when a dropped candidate is worth
-/// saying out loud.
+/// The pure decisions inside one sync pass: whether it knows enough to propose anything,
+/// what a completed write says about itself, how much HealthKit work is allowed to follow
+/// it, and when a dropped candidate is worth saying out loud.
 ///
 /// This file exists because of a bug that never crashed and never logged (#37). HR
 /// enrichment used to run *between* the dedupe and the insert — one serial HealthKit query
@@ -16,6 +16,57 @@ import Foundation
 /// bounded by a number a test can see.** That bound lives here rather than inline in
 /// `HealthService` so it can be pinned without a HealthKit store to query.
 enum SyncPass {
+
+    // MARK: - Whether the pass knows which workouts are retired
+
+    /// How a read of the retired rows' HealthKit uuids ended.
+    ///
+    /// The read used to catch its error and return whatever it had, so "couldn't ask" and
+    /// "none retired" were both an empty set: the 2026-08-23 splash freeze and #8's silent
+    /// revert again, one layer down. On 2026-11-05 a cancelled refresh reconciled 2,045
+    /// candidates against that empty set. All 120 retired uuids changed bucket: 47 became
+    /// inserts and 73 became "never stored", so `sync.dedupe_dropped` announced a re-export
+    /// that never happened, and announced it again 6 seconds later when the next pass moved
+    /// the count back. That upsert was cancelled too and the constraint would have rejected
+    /// its rows anyway, so nothing was written and nothing reached a screen.
+    ///
+    /// The screen is what was at risk. A real failure, rather than a cancellation, leaves the
+    /// rest of the pass running: if it also wrote one new run and then failed the re-read,
+    /// `RunFetch.resolve` would graft those 47 beside their keepers (#202), double counted
+    /// in History, weekly mileage and load until the next clean refresh.
+    ///
+    /// So only `.complete` carries ids. A partial set is discarded here rather than passed
+    /// along, because it fails the same way an empty one does, only for fewer runs.
+    enum RetiredRead: Equatable {
+        /// Every page answered, down to a short one. Empty is a real answer: most athletes
+        /// have never retired anything, and their sync must not wait on it.
+        case complete(Set<String>)
+        /// The caller walked away, which says nothing about the server (`Cancellation`).
+        case cancelled
+        /// The server failed partway, or the leash ran out before a short page.
+        case unreadable
+
+        /// The uuids to reconcile against, or nil when this pass may not propose anything.
+        ///
+        /// Nil holds the whole ingest rather than sending a best guess at the constraint. The
+        /// cost is one refresh's delay: HealthKit re-offers every workout on every pass, so
+        /// whatever waited here is simply proposed again by the next one.
+        var ids: Set<String>? {
+            if case .complete(let ids) = self { return ids }
+            return nil
+        }
+    }
+
+    /// Classify a finished read. `failure` outranks anything already collected.
+    ///
+    /// - Parameter reachedLastPage: the read saw a short page. False with no failure means
+    ///   the `RunFetch.maxRuns` leash stopped it, which is an unanswered question, not an end.
+    static func retiredRead(ids: Set<String>, reachedLastPage: Bool, failure: Error?) -> RetiredRead {
+        if let failure {
+            return Cancellation.isCancellation(failure) ? .cancelled : .unreadable
+        }
+        return reachedLastPage ? .complete(ids) : .unreadable
+    }
 
     // MARK: - What was actually written
 

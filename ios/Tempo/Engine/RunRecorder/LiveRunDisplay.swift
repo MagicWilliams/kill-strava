@@ -181,7 +181,7 @@ struct LiveRunDisplay: Equatable {
         return Units.fixed(whole + hundredths / 100, decimals: 2)
     }
 
-    /// "7:41", or "—" for no pace (paused, no distance yet, GPS still finding him).
+    /// "7:41", or Units.missing for no pace (paused, no distance yet, GPS still finding him).
     static func pace(_ secondsPerUnit: Double?) -> String {
         secondsPerUnit.map(Units.clock) ?? Units.missing
     }

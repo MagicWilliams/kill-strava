@@ -56,6 +56,7 @@ struct ProjectionDetailView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     header
+                    yourRace
                     hero
                     spread
                     chartCard
@@ -119,9 +120,84 @@ struct ProjectionDetailView: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 3) {
             Text("Projected finish").font(Tokens.Font.display(28)).foregroundStyle(Tokens.Palette.textPrimary)
-            Text("One recent effort, scaled to \(raceName) — and how it has moved")
+            Text("One recent effort, scaled to \(raceName), and how it has moved")
                 .font(Tokens.Font.ui(13)).foregroundStyle(Tokens.Palette.textSecondary)
         }
+    }
+
+    // MARK: - Your race
+
+    /// The race this whole page answers for, named, dated, and changeable (#233).
+    ///
+    /// Progress showed 4:18:04 as the projected finish for what David believed was a 5K. It
+    /// was projecting to a marathon (#215), and neither the card nor this page said so: the
+    /// hero number, the chart and every caption spoke about "the race" without naming it. Two
+    /// weeks passed before anyone read the database. So the page now opens by stating which
+    /// race it means, above the number, where it is read before the number rather than after.
+    ///
+    /// Hidden with no goal, where the page already explains that there is nothing to project
+    /// to and `raceMeters` is only a marathon-shaped fallback.
+    @ViewBuilder private var yourRace: some View {
+        if let goal = store.goal, let race = RaceCountdown.raceLabel(goal: goal, units: units) {
+            Card {
+                SectionLabel("Your race")
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(race)
+                        .font(Tokens.Font.display(23))
+                        .foregroundStyle(Tokens.Palette.textPrimary)
+                    Text(RaceChange.raceDayLine(state: countdown, on: raceDayLabel))
+                        .font(Tokens.Font.ui(13)).foregroundStyle(Tokens.Palette.textSecondary)
+                    Text(RaceChange.targetLine(goal: store.goalLine))
+                        .mono(12, Tokens.Palette.textSecondary)
+                }
+                Rectangle().fill(Tokens.Palette.divider).frame(height: 1)
+                changeRaceRow(goal)
+            }
+        }
+    }
+
+    /// The same countdown Plan, Progress and You read (#230), so this page counts the same
+    /// days to the same race rather than measuring its own.
+    private var countdown: RaceCountdown.State {
+        RaceCountdown.state(goal: store.goal, now: .now, units: units)
+    }
+
+    /// "Fri, Nov 27". Race day carries no time of day (`PlanDates.day` parses it at local
+    /// midnight), so the weekday and the date are all there is to print.
+    private var raceDayLabel: String? {
+        store.goal?.raceDay?.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day())
+    }
+
+    /// Hands the coach a sentence and gets out of the way.
+    ///
+    /// Changing a race rewrites the goal and regenerates the plan, which is `create_plan`'s
+    /// job: the coach proposes it and the athlete confirms the card, exactly as it happens
+    /// when the change is asked for in chat. A button here that wrote the goal directly would
+    /// be a second, unconfirmed path into the plan the athlete is training on. So this screen
+    /// writes nothing. It opens the composer with the race it just named already in the
+    /// sentence, and the athlete finishes it.
+    private func changeRaceRow(_ goal: GoalInfo) -> some View {
+        Button {
+            guard let draft = RaceChange.draft(goal: goal, units: units, on: raceDayLabel) else { return }
+            router.showCoach(draft: draft)
+        } label: {
+            HStack(spacing: 8) {
+                Text("Change race or date")
+                    .font(Tokens.Font.ui(14, .semibold))
+                    .foregroundStyle(Tokens.Palette.accentText)
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(Tokens.Palette.textTertiary)
+            }
+            // Both bounds, as `ProjectionStatusRow` does and for the same reason (#74): an
+            // HStack with a Spacer reports the sum of its parts, and on this page a third of
+            // a point of drift is enough to let the whole thing drag sideways.
+            .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
+            .frame(height: 22)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(Pressable())
     }
 
     // MARK: - Hero
@@ -130,12 +206,12 @@ struct ProjectionDetailView: View {
         Card(glow: true) {
             ProjectionStatusRow(projection: displayedFinish, goal: goalTime)
             HStack(alignment: .firstTextBaseline, spacing: 12) {
-                Text(displayedFinish.map(PaceModel.formatFinish) ?? "—:—:—")
+                Text(displayedFinish.map(PaceModel.formatFinish) ?? GoalLine.unknownFinish)
                     .font(Tokens.Font.display(40))
                     .foregroundStyle(displayedFinish == nil ? Tokens.Palette.textTertiary : Tokens.Palette.textPrimary)
                 VStack(alignment: .leading, spacing: 1) {
                     SectionLabel("Goal")
-                    Text(goalTime.map(PaceModel.formatFinish) ?? "—:—:—")
+                    Text(goalTime.map(PaceModel.formatFinish) ?? GoalLine.unknownFinish)
                         .font(Tokens.Font.mono(15)).foregroundStyle(Tokens.Palette.textSecondary)
                 }
             }
@@ -149,7 +225,7 @@ struct ProjectionDetailView: View {
 
     private var heroCaption: String {
         guard let projection = displayedFinish else {
-            return "No qualifying effort in the last six weeks — the projection needs a run of at least \(minQualifying), at running pace rather than a walk, to extrapolate from."
+            return "No qualifying effort in the last six weeks. The projection needs a run of at least \(minQualifying), at running pace rather than a walk, to extrapolate from."
         }
         guard let goal = goalTime else {
             return "Set a goal time and the gap to it shows up here."
@@ -158,7 +234,7 @@ struct ProjectionDetailView: View {
         if delta >= 0 {
             return "Current fitness projects \(PaceModel.formatFinish(delta)) under goal."
         }
-        return "Current fitness projects \(PaceModel.formatFinish(-delta)) over goal — the gap is the training block's job."
+        return "Current fitness projects \(PaceModel.formatFinish(-delta)) over goal. This block is meant to close that."
     }
 
     private var recomputeButton: some View {
@@ -198,9 +274,9 @@ struct ProjectionDetailView: View {
         let best = finishes.min()
         let worst = finishes.max()
         return HStack(spacing: 10) {
-            StatTile(value: best.map(PaceModel.formatFinish) ?? "—", label: "Best")
+            StatTile(value: best.map(PaceModel.formatFinish) ?? Units.missing, label: "Best")
             StatTile(
-                value: (best != nil && worst != nil) ? "\((worst! - best!) / 60) min" : "—",
+                value: (best != nil && worst != nil) ? "\((worst! - best!) / 60) min" : Units.missing,
                 label: "Swing"
             )
             StatTile(value: gapValue, label: "Vs goal")
@@ -208,7 +284,7 @@ struct ProjectionDetailView: View {
     }
 
     private var gapValue: String {
-        guard let projection = displayedFinish, let goal = goalTime else { return "—" }
+        guard let projection = displayedFinish, let goal = goalTime else { return Units.missing }
         let delta = projection - goal
         return (delta > 0 ? "+" : "−") + PaceModel.formatFinish(abs(delta))
     }
@@ -226,7 +302,7 @@ struct ProjectionDetailView: View {
 
             if points.count < 2 {
                 Text(points.isEmpty
-                     ? "Nothing to plot in this range — no six-week window held a qualifying run."
+                     ? "Nothing to plot in this range. No six-week window held a qualifying run."
                      : "One reading so far. The line appears once there are two.")
                     .font(Tokens.Font.ui(13)).foregroundStyle(Tokens.Palette.textTertiary)
                     .frame(height: 60)
@@ -356,7 +432,7 @@ struct ProjectionDetailView: View {
                 }
                 .buttonStyle(Pressable())
 
-                Text("The whole projection is this one effort, scaled to \(raceName). When it ages past six weeks, the next-fastest run takes over and the number steps — that step is the window moving, not your fitness.")
+                Text("The whole projection is this one effort, scaled to \(raceName). When it ages past six weeks, the next-fastest run takes over and the number jumps. Your fitness didn't change; the six-week window moved.")
                     .font(Tokens.Font.ui(12)).foregroundStyle(Tokens.Palette.textTertiary)
                     .lineSpacing(3)
             }
@@ -368,7 +444,7 @@ struct ProjectionDetailView: View {
     private var howItWorks: some View {
         Card {
             SectionLabel("How this works")
-            Text("Every week on the chart is the same rule re-run against the runs on file that day: the fastest run of \(minQualifying) or more in the previous six weeks, extrapolated to \(raceName) by Riegel (t₂ = t₁ × (d₂/d₁)^1.06). Nothing was stored month by month — it is all recomputed from your archive, so it stays correct if the formula ever changes.\n\nThat also makes it deliberately jumpy. One fast parkrun drops it by minutes; six weeks later the same run leaves the window and it climbs back, with no change in fitness either way. Read the trend, not the step. Where the line breaks, no run in that six-week window went far enough to extrapolate from — nothing is drawn rather than a number nobody earned.")
+            Text("Every week on the chart is the same rule re-run against the runs on file that day: the fastest run of \(minQualifying) or more in the previous six weeks, extrapolated to \(raceName) by Riegel (t₂ = t₁ × (d₂/d₁)^1.06). Nothing was stored month by month. It is all recomputed from your archive, so it stays correct if the formula ever changes.\n\nThat also makes it jumpy on purpose. One fast parkrun drops it by minutes; six weeks later the same run leaves the window and it climbs back, with no change in fitness either way. Watch the trend rather than each jump. Where the line breaks, no run in that six-week window went far enough to extrapolate from, so nothing is drawn.")
                 .font(Tokens.Font.ui(12)).foregroundStyle(Tokens.Palette.textSecondary)
                 .lineSpacing(3)
         }

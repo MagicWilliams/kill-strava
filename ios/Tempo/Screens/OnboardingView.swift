@@ -13,6 +13,7 @@ import SwiftUI
 /// nothing left to say, so "Finish setup later" takes the same exit by hand.
 struct OnboardingView: View {
     @EnvironmentObject private var store: RunStore
+    @EnvironmentObject private var router: TabRouter
     @Environment(\.units) private var units
 
     private enum Step { case welcome, connect, intake, interview }
@@ -38,7 +39,7 @@ struct OnboardingView: View {
                 }
             case .interview:
                 VStack(spacing: 0) {
-                    finishLaterBar
+                    exitBar
                     CoachView(onboarding: true)
                 }
             }
@@ -48,30 +49,35 @@ struct OnboardingView: View {
 
     // MARK: - Interview exit
 
-    /// Quiet on purpose: the interview is still the way in, and this is the escape hatch, not
-    /// a second CTA competing with it.
-    private var finishLaterBar: some View {
-        HStack {
+    /// Secondary while the plan question is open, since the interview is still the way in. Once
+    /// there is a plan or goal it is the primary thing on screen: see `OnboardingFacts.Exit`.
+    private var exitBar: some View {
+        let exit = OnboardingFacts.Exit(hasPlan: store.plan != nil, hasGoal: store.goal != nil)
+        return HStack {
             Spacer()
             Button {
                 guard !finishing else { return }
                 finishing = true
+                if exit == .openPlan { router.show(.plan) }
                 Task {
                     await store.markOnboarded()
                     // Normally this view is gone by now; if it isn't, the tap must work again.
                     finishing = false
                 }
             } label: {
-                Text(finishing ? "Opening Tempo…" : "Finish setup later")
-                    .font(Tokens.Font.ui(13, .medium))
-                    .foregroundStyle(Tokens.Palette.textSecondary)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
+                Text(finishing ? "Opening Tempo…" : exit.title)
+                    .font(Tokens.Font.ui(13, exit.isPrimary ? .bold : .medium))
+                    .foregroundStyle(exit.isPrimary ? Tokens.Palette.onVolt : Tokens.Palette.textSecondary)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 9)
+                    .background(exit.isPrimary ? Tokens.Palette.volt : Tokens.Palette.surface)
+                    .clipShape(Capsule())
             }
             .buttonStyle(Pressable())
             .disabled(finishing)
         }
-        .padding(.horizontal, 8)
+        .padding(.horizontal, 16)
+        .padding(.top, 4)
     }
 
     // MARK: - Welcome (brand moment)
@@ -86,11 +92,11 @@ struct OnboardingView: View {
                 .fill(Tokens.Palette.voltMark)
                 .frame(width: 56, height: 5)
                 .padding(.top, 10)
-            Text("Marathon coaching, honestly.")
+            Text("Marathon coaching from your own runs.")
                 .font(Tokens.Font.ui(17, .medium))
                 .foregroundStyle(Tokens.Palette.textSecondary)
                 .padding(.top, 18)
-            Text("Your plan is built from your real running — not a template. Your coach reads every run, listens when you push back, and never paywalls the truth.")
+            Text("Your plan is built from your own running. Your coach reads every run and adjusts when you push back.")
                 .font(Tokens.Font.ui(14))
                 .foregroundStyle(Tokens.Palette.textTertiary)
                 .lineSpacing(3)
@@ -114,7 +120,7 @@ struct OnboardingView: View {
                 .font(Tokens.Font.display(34))
                 .foregroundStyle(Tokens.Palette.textPrimary)
                 .padding(.top, 8)
-            Text("Tempo reads finished runs from Apple Health — Apple Watch, and Garmin or Coros by way of their Health sync. No in-app recording needed; keep racing your watch.")
+            Text("Tempo reads finished runs from Apple Health: Apple Watch, plus Garmin or Coros through their Health sync. No in-app recording needed; keep racing your watch.")
                 .font(Tokens.Font.ui(14))
                 .foregroundStyle(Tokens.Palette.textSecondary)
                 .lineSpacing(3)
@@ -155,7 +161,7 @@ struct OnboardingView: View {
                     VStack(alignment: .leading, spacing: 3) {
                         Text("No runs found yet")
                             .font(Tokens.Font.ui(15, .semibold)).foregroundStyle(Tokens.Palette.textPrimary)
-                        Text("Using Garmin? Check Garmin Connect → Settings → Apple Health → share workouts. You can continue — the coach will ask about your recent running instead.")
+                        Text("Using Garmin? Check Garmin Connect → Settings → Apple Health → share workouts. You can continue, and the coach will ask about your recent running instead.")
                             .font(Tokens.Font.ui(12)).foregroundStyle(Tokens.Palette.textSecondary)
                     }
                 }
@@ -166,7 +172,7 @@ struct OnboardingView: View {
                     VStack(alignment: .leading, spacing: 3) {
                         Text("\(store.runs.count) runs found")
                             .font(Tokens.Font.ui(15, .semibold)).foregroundStyle(Tokens.Palette.textPrimary)
-                        Text("\(units.number(miles: store.runs.reduce(0) { $0 + $1.miles }, decimals: 0)) \(units.name(plural: true)) of history — your coach starts from what you actually do.")
+                        Text("\(units.number(miles: store.runs.reduce(0) { $0 + $1.miles }, decimals: 0)) \(units.name(plural: true)) of history. Your coach starts from what you actually do.")
                             .font(Tokens.Font.ui(12)).foregroundStyle(Tokens.Palette.textSecondary)
                     }
                 }

@@ -225,7 +225,7 @@ struct IntakeAnswers: Equatable {
             case .raceDateMissing: return "Pick the race date."
             case .raceDateNotAhead: return "The race date needs to be after today."
             case .goalTimeMissing: return "Set your target time, or pick another goal type."
-            case .goalTimeImplausible: return "That target time doesn't fit the distance — check it."
+            case .goalTimeImplausible: return "That target time doesn't fit the distance. Check it."
             case .startedWeekMissing: return "Which week of the block are you in?"
             case .startedWeekOutOfRange: return "Block week should be between 1 and 30."
             case .weeklyMilesOutOfRange: return "Weekly miles should be between 0 and 200."
@@ -233,7 +233,7 @@ struct IntakeAnswers: Equatable {
             case .longRunDayOutOfRange: return "Pick a long-run day."
             case .longRunCountOutOfRange: return "Long runs should be between 0 and 8."
             case .raceTooSoonForPlan:
-                return "Under two weeks out is too close to build a plan — choose No plan, just coaching."
+                return "Under two weeks out is too close to build a plan. Choose No plan, just coaching."
             }
         }
 
@@ -705,7 +705,7 @@ extension IntakeAnswers {
             : distance.label
         var race = "Training for: \(distanceText)"
         let name = raceName.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !name.isEmpty { race += " — \(name)" }
+        if !name.isEmpty { race += " (\(name))" }
         if let raceDate { race += ", \(Self.humanDay(raceDate, calendar: calendar))" }
         race += " · \(course.label.lowercased())"
         lines.append(race)

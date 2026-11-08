@@ -102,9 +102,12 @@ final class HealthService {
     /// the refresh never reached the write, and nothing was persisted or logged — the same
     /// 348 recomputed on every launch. Nothing that queries HealthKit may run before the
     /// upsert; enrichment happens after it, capped, in `backfillMissingHR`. See `SyncPass`.
+    ///
+    /// `retiredExternalIDs` has no default on purpose: an empty set here asserts that nothing
+    /// is retired, so it has to come from a read that finished (`SyncPass.RetiredRead`).
     @discardableResult
     func sync(_ summaries: [RunSummary], existing: [RunSummary],
-              retiredExternalIDs: Set<String> = []) async throws -> Int {
+              retiredExternalIDs: Set<String>) async throws -> Int {
         guard let userID = Supa.userID?.uuidString, !summaries.isEmpty else { return 0 }
 
         // Dedupe rule lives in RunDedupe (pure + unit-tested) — see that file for why

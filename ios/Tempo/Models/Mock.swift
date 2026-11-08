@@ -27,6 +27,6 @@ enum Mock {
     static let coach: [(String, Bool)] = [
         ("Morning, David. Yesterday's easy 5 looked smooth. How are the legs?", false),
         ("Feeling good, slept well.", true),
-        ("Good — today's the key session. Warm up easy, then settle the reps at \(PaceModel.format(paces.threshold)). Not faster.", false),
+        ("Good. Today's the key session. Warm up easy, then settle the reps at \(PaceModel.format(paces.threshold)). Not faster.", false),
     ]
 }
