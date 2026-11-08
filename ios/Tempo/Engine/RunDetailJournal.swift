@@ -85,7 +85,7 @@ enum RunDetailJournal {
     }
 
     /// The journal's tiles, in order: effort, then shoes. A tile with nothing true to say is
-    /// absent, never "—": an imported Garmin run has no RPE, and a dash would read as "he
+    /// absent, never Units.missing: an imported Garmin run has no RPE, and a dash would read as "he
     /// rated it nothing".
     ///
     /// - Effort shows only for an RPE on the 1–10 scale — the same rule the load model and

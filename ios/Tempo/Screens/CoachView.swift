@@ -17,6 +17,7 @@ struct CoachView: View {
     @EnvironmentObject private var router: TabRouter
     @Environment(\.dismiss) private var dismiss
     @StateObject private var chat = ChatStore()
+    @ObservedObject private var consent = CoachConsentStore.shared
     /// This thread's own row, for the title and the day its predecessor ended. Nil until the
     /// read answers, and on the interview path, where there is no list to show a title on.
     @State private var thread: CoachThreads.Row?
@@ -46,7 +47,7 @@ struct CoachView: View {
             if session.status == "done" {
                 suggestions.append("Break down today's run")
                 suggestions.append("What's the focus tomorrow?")
-            } else if (session.isQuality || session.type == "long"), store.todayCheckIn == nil {
+            } else if (session.isQuality || session.type == "long"), store.checkInForToday == nil {
                 suggestions.append("What's today's session for?")
                 suggestions.append("Something feels off today")
             } else {
@@ -58,7 +59,7 @@ struct CoachView: View {
 
         let today = PlanDates.todayString
         if store.sessions.contains(where: { $0.status == "planned" && $0.date < today && $0.type != "rest" }) {
-            suggestions.append("I missed a session — what now?")
+            suggestions.append("I missed a session. What now?")
         }
 
         if let projected = store.plan?.projected_finish_s,
@@ -79,11 +80,17 @@ struct CoachView: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            // Pinned, not the first row of the transcript. The transcript opens scrolled to its
+            // newest message, so in anything longer than a screen the only Back button started
+            // out of sight, on a pushed screen with no tab bar: the way out of a conversation
+            // was to know it was up there and scroll for it (David, 2026-11-04).
+            header
+                .padding(.horizontal, 20)
+                .padding(.top, 8)
             ScrollViewReader { proxy in
                 ScrollView {
                     VStack(spacing: 0) {
                         VStack(alignment: .leading, spacing: 18) {
-                            header
                             if let note = pickingUpNote { pickingUpCard(note) }
                             ForEach(Array(chat.messages.enumerated()), id: \.element.id) { index, msg in
                                 if index == 0 || !Calendar.current.isDate(msg.timestamp, inSameDayAs: chat.messages[index - 1].timestamp) {
@@ -155,13 +162,23 @@ struct CoachView: View {
                     .padding(.horizontal, 20).padding(.bottom, 6)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
-            if !chat.isThinking && !chat.messages.isEmpty && !onboarding {
-                quickReplyRow
+            if consent.maySend {
+                if !chat.isThinking && !chat.messages.isEmpty && !onboarding {
+                    quickReplyRow
+                }
+                inputBar
+            } else {
+                // The transcript stays readable: it lives in Supabase, and reading it sends
+                // nothing to anyone. It is the next message that needs the athlete's OK.
+                Card { CoachConsentNotice() }
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, 12)
             }
-            inputBar
         }
         .background(Tokens.Palette.canvas)
         .toolbar(.hidden, for: .navigationBar)
+        .onAppear(perform: takeDraft)
+        .onChange(of: router.coachDraft?.id) { _, _ in takeDraft() }
         .task {
             chat.onboardingMode = onboarding
             chat.runStore = store
@@ -178,6 +195,21 @@ struct CoachView: View {
         .onChange(of: store.intakeHandoff?.id) { _, _ in
             Task { await chat.sendIntake(runStore: store) }
         }
+        .onChange(of: consent.maySend) { _, maySend in
+            guard maySend else { return }
+            Task { await chat.consentGranted(context: store.coachContext(onboarding: onboarding)) }
+        }
+    }
+
+    /// Move a draft handed over by the router into the composer, unsent, and clear it so
+    /// coming back here later does not refill the box ("Change race or date", #233).
+    ///
+    /// An athlete's own half-typed message wins: nothing is overwritten. And never during the
+    /// setup interview, which asks its own questions and has no screen to have come from.
+    private func takeDraft() {
+        guard !onboarding, let handed = router.coachDraft else { return }
+        router.coachDraft = nil
+        if draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { draft = handed.text }
     }
 
     /// Scroll to the message What changed asked for, if it is in the loaded history. Left
@@ -430,12 +462,12 @@ struct CoachView: View {
                     // again does nothing (#38).
                     HStack(spacing: 10) {
                         ProgressView().controlSize(.small).tint(Tokens.Palette.textTertiary)
-                        Text("Queued — one change at a time…")
+                        Text("Queued. One change at a time…")
                             .font(Tokens.Font.ui(13)).foregroundStyle(Tokens.Palette.textTertiary)
                     }
                 } else {
                     if state == .failed {
-                        Text("That didn't go through — Confirm to retry.")
+                        Text("That didn't go through. Confirm to retry.")
                             .font(Tokens.Font.ui(12)).foregroundStyle(Tokens.Palette.danger)
                     }
                     HStack(spacing: 8) {

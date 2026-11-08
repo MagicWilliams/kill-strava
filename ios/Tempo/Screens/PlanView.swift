@@ -6,6 +6,7 @@ import SwiftUI
 struct PlanView: View {
     @EnvironmentObject private var store: RunStore
     @EnvironmentObject private var router: TabRouter
+    @ObservedObject private var consent = CoachConsentStore.shared
     @Environment(\.units) private var units
 
     var body: some View {
@@ -30,11 +31,14 @@ struct PlanView: View {
         store.plan.map { "\($0.weeks)-Week Plan" } ?? "Plan"
     }
 
+    /// The race, named with its distance (#230), and the goal time when there is one. No
+    /// countdown: the hero card right below it is the countdown, and saying the day count
+    /// twice on one screen is how the three tabs started disagreeing in the first place.
     private var subtitle: String? {
         if store.todayMode == .justRunning { return "Nothing on the calendar" }
-        guard let goal = store.goal else { return nil }
-        let time = goal.goalTimeSeconds.map { " · goal " + PaceModel.formatFinish($0) } ?? ""
-        return (goal.raceName ?? "Race") + time
+        guard let race = RaceCountdown.raceLabel(goal: store.goal, units: units) else { return nil }
+        let time = store.goal?.goalTimeSeconds.map { " · goal " + PaceModel.formatFinish($0) } ?? ""
+        return race + time
     }
 
     /// No plan is a state, not a failure (#101). This used to be a pitch for building one;
@@ -44,7 +48,9 @@ struct PlanView: View {
         Card(well: .calm) {
             SectionLabel("Between blocks")
             Text("Just running").display(24)
-            Text("No race, no schedule. Every run still counts: Today follows your fitness and freshness, and the coach reads any run you open.")
+            Text(consent.maySend
+                 ? "No race, no schedule. Every run still counts: Today follows your fitness and freshness, and the coach reads any run you open."
+                 : "No race, no schedule. Every run still counts: Today follows your fitness and freshness.")
                 .font(Tokens.Font.ui(13)).foregroundStyle(Tokens.Palette.textSecondary)
         }
     }
@@ -55,25 +61,35 @@ struct PlanView: View {
         PastBlocksCard()
     }
 
+    /// The hero. Every word and every number in it comes from `RaceCountdown` (#230): this
+    /// card used to run `dateComponents([.day], from: .now)` itself, which on 15 Oct read
+    /// **42** days to the 27 Nov race where Progress read 7 weeks — counting from the current
+    /// instant rather than from the start of today loses a day every afternoon.
     private var countdown: some View {
-        Card(glow: true) {
+        let state = RaceCountdown.state(goal: store.goal, now: .now, units: units)
+        return Card(glow: true) {
             HStack {
-                SectionLabel(store.goal?.raceName ?? "Race", color: Tokens.Palette.accentText)
+                SectionLabel(state.race ?? RaceCountdown.unnamedRace, color: Tokens.Palette.accentText)
                 Spacer()
                 if let day = store.goal?.raceDay {
                     Text(day.formatted(.dateTime.month(.abbreviated).day()))
                         .font(Tokens.Font.ui(13, .semibold)).foregroundStyle(Tokens.Palette.textSecondary)
                 }
             }
-            if let day = store.goal?.raceDay {
-                let days = max(Calendar.current.dateComponents([.day], from: .now, to: day).day ?? 0, 0)
+            if let hero = state.hero {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    Text("\(days)").font(Tokens.Font.display(46)).foregroundStyle(Tokens.Palette.textPrimary)
-                    Text("days to go").font(Tokens.Font.ui(14)).foregroundStyle(Tokens.Palette.textSecondary)
+                    Text(hero.number).font(Tokens.Font.display(46)).foregroundStyle(Tokens.Palette.textPrimary)
+                    Text(hero.caption).font(Tokens.Font.ui(14)).foregroundStyle(Tokens.Palette.textSecondary)
                 }
+            } else {
+                // Race day, a race already run, or a goal with no date: there is no number
+                // left to count down. The old card printed a clamped `0 days to go` for all
+                // three, which reads as a countdown that still has time on it — the same
+                // defect as the hardcoded date (#36). The state says which it is instead.
+                Text(state.subtitle()).font(Tokens.Font.ui(14)).foregroundStyle(Tokens.Palette.textSecondary)
             }
             if let week = store.currentPlanWeek, let plan = store.plan {
-                Text("Week \(week) of \(plan.weeks) · \(store.currentPhase?.capitalized ?? "—") phase · \(Int(Double(week - 1) / Double(max(plan.weeks, 1)) * 100))% complete")
+                Text("Week \(week) of \(plan.weeks) · \(store.currentPhase?.capitalized ?? Units.missing) phase · \(Int(Double(week - 1) / Double(max(plan.weeks, 1)) * 100))% complete")
                     .font(Tokens.Font.ui(13)).foregroundStyle(Tokens.Palette.textSecondary)
             }
         }

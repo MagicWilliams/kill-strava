@@ -9,7 +9,7 @@ import XCTest
 final class TakeawayReplyTests: XCTestCase {
 
     /// The exact line `supabase/functions/coach` sends after an empty retry.
-    private let fallback = "Lost my train of thought there — ask me that again."
+    private let fallback = "Lost my train of thought there. Ask me that again."
 
     func testARealReadIsCached() {
         let read = "Easy 6 at 9:12 with HR under 145 the whole way — exactly the aerobic day the plan asked for."

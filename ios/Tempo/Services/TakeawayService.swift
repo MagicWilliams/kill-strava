@@ -38,6 +38,10 @@ enum TakeawayService {
             .value
         if let cached = row?.coach_takeaway { return .read(cached) }
 
+        // The gateway would refuse this anyway. Stopping here saves pulling the run's samples
+        // out of HealthKit for a payload that can't go, on every run that syncs.
+        guard CoachConsentStore.shared.maySend else { return .unavailable }
+
         guard !inFlight.contains(run.id) else { return .unavailable }
         inFlight.insert(run.id)
         defer { inFlight.remove(run.id) }
@@ -84,9 +88,9 @@ enum TakeawayService {
 
         let reply: Reply
         do {
-            reply = try await Supa.client.functions.invoke(
-                "coach",
-                options: FunctionInvokeOptions(body: Request(mode: "takeaway", run: payload, context: store.coachContext()))
+            reply = try await CoachGateway.invoke(
+                .coach,
+                body: Request(mode: "takeaway", run: payload, context: store.coachContext())
             )
         } catch {
             if let refusal = UsageLimit.refusal(from: error, surface: "takeaway") { return .limited(refusal) }

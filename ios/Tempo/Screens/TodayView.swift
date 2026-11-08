@@ -3,6 +3,7 @@ import SwiftUI
 struct TodayView: View {
     @EnvironmentObject private var store: RunStore
     @EnvironmentObject private var router: TabRouter
+    @ObservedObject private var consent = CoachConsentStore.shared
     @Environment(\.zoomNamespace) private var zoom
     @Environment(\.units) private var units
 
@@ -142,13 +143,13 @@ struct TodayView: View {
                 takeawayPreview(s)
             } else if needsCheckIn(s) {
                 checkInRow
-            } else if store.todayCheckIn?.feelsOk == false {
-                Text("You flagged something's off today — the coach knows. Adjust or skip guilt-free.")
+            } else if store.checkInForToday?.feelsOk == false {
+                Text("You flagged something's off today, and the coach knows. Adjust or skip it.")
                     .font(Tokens.Font.ui(12)).foregroundStyle(Tokens.Palette.warning)
-            } else if store.todayCheckIn?.feelsOk == true {
+            } else if store.checkInForToday?.feelsOk == true {
                 HStack(spacing: 6) {
                     Image(systemName: "checkmark").font(.system(size: 11, weight: .bold))
-                    Text("Checked in — good to go").font(Tokens.Font.ui(12, .semibold))
+                    Text("Checked in. Good to go").font(Tokens.Font.ui(12, .semibold))
                 }
                 .foregroundStyle(Tokens.Palette.success)
             }
@@ -192,9 +193,12 @@ struct TodayView: View {
         Card(well: .accent) {
             SectionLabel("Just running", color: Tokens.Palette.accentText)
             Text("Run when it feels right").display(24)
+            let everyRun = consent.maySend
+                ? "Every run still goes in your history and gets a coach's note."
+                : "Every run still goes in your history."
             Text(store.todayMode == .racePassed
-                 ? "The block is done. Every run still lands in your history and gets the coach's read."
-                 : "No plan in Just running mode. Every run still lands in your history and gets the coach's read.")
+                 ? "The block is done. \(everyRun)"
+                 : "No plan in Just running mode. \(everyRun)")
                 .font(Tokens.Font.ui(13)).foregroundStyle(Tokens.Palette.textSecondary)
             startButton(session: nil)
         }
@@ -207,7 +211,7 @@ struct TodayView: View {
     }
 
     private func needsCheckIn(_ s: SessionInfo) -> Bool {
-        (s.isQuality || s.type == "long") && s.status == "planned" && store.todayCheckIn == nil
+        (s.isQuality || s.type == "long") && s.status == "planned" && store.checkInForToday == nil
     }
 
     /// Two-tap trust mechanism before hard sessions (spec: agency decision #4).
@@ -217,7 +221,7 @@ struct TodayView: View {
     /// not the same event, and the hand should be able to tell them apart without the eyes.
     private var checkInRow: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Before this one — feeling okay? Nothing hurting?")
+            Text("Before this one: feeling okay? Nothing hurting?")
                 .font(Tokens.Font.ui(13, .medium)).foregroundStyle(Tokens.Palette.textPrimary)
             HStack(spacing: 8) {
                 Button {
@@ -270,7 +274,7 @@ struct TodayView: View {
         } else if let run = store.matchedRun(for: s) {
             Button { openRun(run) } label: {
                 HStack(spacing: 6) {
-                    Text("Get the coach's read on this run")
+                    Text("Get the coach's note on this run")
                         .font(Tokens.Font.ui(13, .semibold)).foregroundStyle(Tokens.Palette.accentText)
                     Image(systemName: "arrow.right").font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(Tokens.Palette.accentText)
@@ -283,7 +287,7 @@ struct TodayView: View {
     private func doneRow(_ s: SessionInfo) -> some View {
         HStack(spacing: 8) {
             Image(systemName: "checkmark.circle.fill").foregroundStyle(Tokens.Palette.success)
-            Text(store.matchedRun(for: s).map { "Done — \(units.formatDistance(meters: Double($0.distanceM), decimals: 1)) logged" } ?? "Done")
+            Text(store.matchedRun(for: s).map { "Done: \(units.formatDistance(meters: Double($0.distanceM), decimals: 1)) logged" } ?? "Done")
                 .font(Tokens.Font.ui(13, .semibold)).foregroundStyle(Tokens.Palette.success)
             Spacer()
             if let run = store.matchedRun(for: s) {
@@ -449,10 +453,14 @@ struct TodayView: View {
             EmptyView()
         case .invite(let last):
             Card {
-                SectionLabel("Coach's read", color: Tokens.Palette.accentText)
-                Text("The coach reads a run when you open it.")
-                    .font(Tokens.Font.ui(13)).foregroundStyle(Tokens.Palette.textSecondary)
-                readLink("Get the coach's read on your last run", runID: last)
+                if consent.maySend {
+                    SectionLabel("Coach's read", color: Tokens.Palette.accentText)
+                    Text("The coach reads a run when you open it.")
+                        .font(Tokens.Font.ui(13)).foregroundStyle(Tokens.Palette.textSecondary)
+                    readLink("Get the coach's note on your last run", runID: last)
+                } else {
+                    CoachConsentNotice()
+                }
             }
         case .current(let read):
             readCard(read, unread: nil)

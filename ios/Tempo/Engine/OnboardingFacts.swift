@@ -67,4 +67,38 @@ enum OnboardingFacts {
         if let activePlan { known["active_plan"] = activePlan }
         return known
     }
+
+    /// The way out of the interview, and how loud it should be.
+    ///
+    /// "Finish setup later" is right while the plan question is open. Once the plan exists it is
+    /// the wrong sentence: setup is effectively done, the rest of the app is what the athlete
+    /// wants, and only the coach's `complete_onboarding` opened the door. On 2026-11-04 a
+    /// plan went live and the athlete stayed in the chat for another 90 seconds, until asking
+    /// "are we all set now?" prompted the coach to call it.
+    enum Exit: Equatable {
+        case finishLater
+        /// A plan was built. Lands on it.
+        case openPlan
+        /// A goal with no schedule ("No plan, just coaching"), so there is no plan to land on.
+        case openApp
+
+        init(hasPlan: Bool, hasGoal: Bool) {
+            if hasPlan {
+                self = .openPlan
+            } else {
+                self = hasGoal ? .openApp : .finishLater
+            }
+        }
+
+        var title: String {
+            switch self {
+            case .finishLater: return "Finish setup later"
+            case .openPlan: return "Go to my plan"
+            case .openApp: return "Open Tempo"
+            }
+        }
+
+        /// Whether this is the main thing on screen, rather than an escape hatch beside it.
+        var isPrimary: Bool { self != .finishLater }
+    }
 }

@@ -263,14 +263,14 @@ struct MileageProgressionCard: View {
     }
 }
 
-#Preview("Light — history") {
+#Preview("Light: history") {
     MileageProgressionCard(progression: .preview)
         .padding(20)
         .background(Tokens.Palette.canvas)
         .preferredColorScheme(.light)
 }
 
-#Preview("Dark — empty") {
+#Preview("Dark: empty") {
     MileageProgressionCard(progression: MileageProgression.progression(runs: []))
         .padding(20)
         .background(Tokens.Palette.canvas)

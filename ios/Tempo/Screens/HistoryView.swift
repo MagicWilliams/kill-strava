@@ -135,7 +135,7 @@ struct HistoryView: View {
             StatTile(value: totalDistance, label: "Total " + units.tileName)
             StatTile(value: hours, label: "Hours run")
             StatTile(
-                value: records.currentStreakDays > 0 ? "\(records.currentStreakDays)d" : "—",
+                value: records.currentStreakDays > 0 ? "\(records.currentStreakDays)d" : Units.missing,
                 label: records.currentStreakDays > 0 ? "Streak" : "Best \(records.longestStreakDays)d"
             )
         }
@@ -196,7 +196,7 @@ struct HistoryView: View {
                 if !progress.isComplete {
                     // A PR table that is 40% backfilled says so. A confident wrong number is
                     // the failure mode every engine bug on this board shares.
-                    Text("Scanning the archive — \(progress.percent)% done (\(progress.scanned.formatted()) of \(progress.total.formatted()) runs). These can still improve.")
+                    Text("Scanning the archive: \(progress.percent)% done (\(progress.scanned.formatted()) of \(progress.total.formatted()) runs). These can still improve.")
                         .font(Tokens.Font.ui(11))
                         .foregroundStyle(Tokens.Palette.textTertiary)
                         .padding(.top, 2)
@@ -221,7 +221,7 @@ struct HistoryView: View {
                 Text(distance.label).font(Tokens.Font.ui(13)).foregroundStyle(Tokens.Palette.textSecondary)
                 Spacer()
                 Text(BestEfforts.formatTime(best.durationS)).mono(13, Tokens.Palette.textPrimary)
-                Text(pace.map { units.formatPace($0) } ?? "—")
+                Text(pace.map { units.formatPace($0) } ?? Units.missing)
                     .mono(11, Tokens.Palette.textTertiary)
                     .frame(width: 58, alignment: .trailing)
                 if let run {
@@ -426,7 +426,7 @@ struct HistoryView: View {
         case .all:     return store.phase == .loading ? "Reading Apple Health…" : "No runs on file yet."
         case .tenK:    return "No runs of 10K or longer yet."
         case .half:    return "No runs of a half marathon or longer yet."
-        case .records: return "No records yet — they appear once there are runs to rank."
+        case .records: return "No records yet. They appear once there are runs to rank."
         }
     }
 
@@ -477,7 +477,7 @@ struct HistoryView: View {
                     .foregroundStyle(Tokens.Palette.textPrimary)
                     .frame(width: 38, alignment: .trailing)
 
-                Text(units.runPace(movingSeconds: run.durationS, meters: run.distanceM).map { Units.clock($0) } ?? "—")
+                Text(units.runPace(movingSeconds: run.durationS, meters: run.distanceM).map { Units.clock($0) } ?? Units.missing)
                     .mono(12, Tokens.Palette.textSecondary)
                     .frame(width: 42, alignment: .trailing)
 

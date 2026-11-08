@@ -20,6 +20,7 @@ struct RunDetailView: View {
     @Environment(\.units) private var units
     @StateObject private var model = RunDetailStore()
     @StateObject private var shoes = ShoeStore()
+    @ObservedObject private var consent = CoachConsentStore.shared
     @State private var showFullMap = false
     @State private var showFullPhoto = false
     @State private var editingJournal = false
@@ -86,6 +87,10 @@ struct RunDetailView: View {
         .background(Tokens.Palette.canvas)
         .toolbar(.hidden, for: .navigationBar)
         .task { await model.load(run: run, runStore: store) }
+        .onChange(of: consent.maySend) { _, maySend in
+            guard maySend else { return }
+            Task { await model.retryTakeaway(run: run, runStore: store) }
+        }
         .task { await shoes.load() }
         .task(id: photoKey) { await model.loadPhoto(key: photoKey) }
         .fullScreenCover(isPresented: $showFullMap) { fullMap }
@@ -398,7 +403,7 @@ struct RunDetailView: View {
                         VStack(alignment: .leading, spacing: 3) {
                             Text("Race recap")
                                 .font(Tokens.Font.ui(17, .bold)).foregroundStyle(Tokens.Palette.textPrimary)
-                            Text("\(raceGoal.raceName ?? RaceCountdown.unnamedRace) — every mat, both halves, where it turned")
+                            Text("\(raceGoal.raceName ?? RaceCountdown.unnamedRace): every mat, both halves, where it turned")
                                 .font(Tokens.Font.ui(13)).foregroundStyle(Tokens.Palette.textSecondary)
                                 .multilineTextAlignment(.leading)
                         }
@@ -420,18 +425,22 @@ struct RunDetailView: View {
                 Text(takeaway)
                     .font(Tokens.Font.ui(14)).foregroundStyle(Tokens.Palette.textPrimary)
                     .lineSpacing(3)
+            } else if !consent.maySend {
+                CoachConsentNotice()
             } else if !model.takeawayLoading {
-                Text(model.takeawayLimit ?? "Couldn't reach the coach — the read appears next time you open this run.")
+                Text(model.takeawayLimit ?? "Couldn't reach the coach. The note appears next time you open this run.")
                     .font(Tokens.Font.ui(13)).foregroundStyle(Tokens.Palette.textTertiary)
             }
-            Button {
-                router.showCoach()
-            } label: {
-                Text("Discuss with Coach")
-                    .font(Tokens.Font.ui(13, .semibold))
-                    .foregroundStyle(Tokens.Palette.accentText)
+            if consent.maySend {
+                Button {
+                    router.showCoach()
+                } label: {
+                    Text("Discuss with Coach")
+                        .font(Tokens.Font.ui(13, .semibold))
+                        .foregroundStyle(Tokens.Palette.accentText)
+                }
+                .buttonStyle(.plain)
             }
-            .buttonStyle(.plain)
         }
     }
 
@@ -450,7 +459,7 @@ struct RunDetailView: View {
                 SectionLabel("Best efforts in this run")
                 ForEach(model.efforts, id: \.distanceM) { effort in
                     HStack(spacing: 8) {
-                        Text(BestEfforts.distance(forKey: effort.distanceM)?.label ?? "—")
+                        Text(BestEfforts.distance(forKey: effort.distanceM)?.label ?? Units.missing)
                             .font(Tokens.Font.ui(13)).foregroundStyle(Tokens.Palette.textSecondary)
                         if holds.contains(effort.distanceM) {
                             Tag(text: "PR")
@@ -459,7 +468,7 @@ struct RunDetailView: View {
                         Text(BestEfforts.formatTime(effort.durationS)).mono(13, Tokens.Palette.textPrimary)
                         Text(BestEfforts.distance(forKey: effort.distanceM)
                             .flatMap { units.pace(seconds: Double(effort.durationS), meters: $0.meters) }
-                            .map { units.formatPace($0) } ?? "—")
+                            .map { units.formatPace($0) } ?? Units.missing)
                             .mono(11, Tokens.Palette.textTertiary)
                             .frame(width: 58, alignment: .trailing)
                     }
@@ -529,10 +538,10 @@ struct RunDetailView: View {
                     Text("Pace, mileage, and this run's label all use moving time.")
                         .font(Tokens.Font.ui(12)).foregroundStyle(Tokens.Palette.textTertiary)
                 case .continuous:
-                    Text("Ran continuously — moving and elapsed time are the same.")
+                    Text("Ran continuously. Moving and elapsed time are the same.")
                         .font(Tokens.Font.ui(13)).foregroundStyle(Tokens.Palette.textSecondary)
                 case .withinNoise:
-                    Text("No real stops — moving and elapsed time are within seconds of each other.")
+                    Text("No real stops. Moving and elapsed time are within seconds of each other.")
                         .font(Tokens.Font.ui(13)).foregroundStyle(Tokens.Palette.textSecondary)
                 case .unrecordedStop(let sampleMovingS):
                     Text("No pauses were recorded, but the distance samples show only \(format(seconds: sampleMovingS)) of moving. Pace here still uses the full \(format(seconds: clocks.movingS)).")
@@ -776,9 +785,9 @@ struct RunDetailView: View {
                             .frame(width: max(6, geo.size.width * CGFloat(Double(fastest) / Double(split.paceSec))), height: 6)
                             .frame(maxHeight: .infinity, alignment: .center)
                     }
-                    Text(split.avgHR.map { "\($0)" } ?? "–")
+                    Text(split.avgHR.map { "\($0)" } ?? Units.missing)
                         .mono(12, Tokens.Palette.textSecondary).frame(width: 36, alignment: .trailing)
-                    Text(split.elevDeltaM.map { String(format: "%+.0f", units.elevation(meters: $0)) } ?? "–")
+                    Text(split.elevDeltaM.map { String(format: "%+.0f", units.elevation(meters: $0)) } ?? Units.missing)
                         .mono(12, Tokens.Palette.textTertiary).frame(width: 44, alignment: .trailing)
                 }
                 .frame(height: 24)
@@ -817,7 +826,7 @@ struct CoachReadHeaderRow: View {
 
     var body: some View {
         HStack {
-            SectionLabel("Coach's read", color: Tokens.Palette.accentText)
+            SectionLabel("Coach's note", color: Tokens.Palette.accentText)
             Spacer()
             if loading {
                 ProgressView().controlSize(.small).tint(Tokens.Palette.textTertiary)
@@ -987,6 +996,16 @@ final class RunDetailStore: ObservableObject {
             takeawayLoading = false
             return
         }
+        await generateTakeaway(run: run, runStore: runStore)
+    }
+
+    /// The athlete agreed with this page open. `load` already found no read and has latched.
+    func retryTakeaway(run: RunSummary, runStore: RunStore) async {
+        guard takeaway == nil, !takeawayLoading else { return }
+        await generateTakeaway(run: run, runStore: runStore)
+    }
+
+    private func generateTakeaway(run: RunSummary, runStore: RunStore) async {
         takeawayLoading = true
         switch await TakeawayService.takeaway(for: run, detail: detail, store: runStore) {
         case .read(let text): takeaway = text
