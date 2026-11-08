@@ -13,5 +13,6 @@ tags: [tempo, index]
 - [Architecture](ARCHITECTURE.md): the locked stack and build sequence.
 - [Autonomy](AUTONOMY.md): how the agents (builder, scout, EM) run and what they may touch.
 - [TestFlight](TESTFLIGHT.md): how builds reach TestFlight.
+- [App Store listing](app-store-listing.md): the metadata, privacy and age rating answers, and review notes for submission (draft).
 
 The narrative build history is [progress.md](../progress.md) at the repo root.
