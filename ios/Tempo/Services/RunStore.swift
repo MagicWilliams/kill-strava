@@ -121,6 +121,9 @@ final class RunStore: ObservableObject {
         let signedIn = await Supa.signInAnonymouslyIfNeeded()
         if signedIn { await Supa.ensureProfile() }
         let profile = signedIn ? await loadProfile() : .unreadable
+        // Before `launch` is set, not after: the first frame of the app has to know whether to
+        // ask, and the `refresh` below generates takeaways that have to know whether they can.
+        if signedIn, profile != .unreadable { await CoachConsentStore.shared.load() }
 
         launch = LaunchGate.resolve(signedIn: signedIn, profile: profile)
         guard !launch.isUnreachable else {

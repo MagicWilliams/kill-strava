@@ -2,7 +2,7 @@ import Foundation
 import Supabase
 
 extension UsageLimit {
-    /// The refusal inside an error from `Supa.client.functions.invoke`, or nil for any other
+    /// The refusal inside an error from `CoachGateway.invoke`, or nil for any other
     /// error, which the caller goes on to handle as the failure it is.
     ///
     /// Logged at `warn` under one name, never through the caller's `Telemetry.error`: a limit

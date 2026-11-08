@@ -6,6 +6,7 @@ import SwiftUI
 struct PlanView: View {
     @EnvironmentObject private var store: RunStore
     @EnvironmentObject private var router: TabRouter
+    @ObservedObject private var consent = CoachConsentStore.shared
     @Environment(\.units) private var units
 
     var body: some View {
@@ -47,7 +48,9 @@ struct PlanView: View {
         Card(well: .calm) {
             SectionLabel("Between blocks")
             Text("Just running").display(24)
-            Text("No race, no schedule. Every run still counts: Today follows your fitness and freshness, and the coach reads any run you open.")
+            Text(consent.maySend
+                 ? "No race, no schedule. Every run still counts: Today follows your fitness and freshness, and the coach reads any run you open."
+                 : "No race, no schedule. Every run still counts: Today follows your fitness and freshness.")
                 .font(Tokens.Font.ui(13)).foregroundStyle(Tokens.Palette.textSecondary)
         }
     }

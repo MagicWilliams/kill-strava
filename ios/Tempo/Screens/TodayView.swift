@@ -3,6 +3,7 @@ import SwiftUI
 struct TodayView: View {
     @EnvironmentObject private var store: RunStore
     @EnvironmentObject private var router: TabRouter
+    @ObservedObject private var consent = CoachConsentStore.shared
     @Environment(\.zoomNamespace) private var zoom
     @Environment(\.units) private var units
 
@@ -192,9 +193,12 @@ struct TodayView: View {
         Card(well: .accent) {
             SectionLabel("Just running", color: Tokens.Palette.accentText)
             Text("Run when it feels right").display(24)
+            let everyRun = consent.maySend
+                ? "Every run still goes in your history and gets a coach's note."
+                : "Every run still goes in your history."
             Text(store.todayMode == .racePassed
-                 ? "The block is done. Every run still goes in your history and gets a coach's note."
-                 : "No plan in Just running mode. Every run still goes in your history and gets a coach's note.")
+                 ? "The block is done. \(everyRun)"
+                 : "No plan in Just running mode. \(everyRun)")
                 .font(Tokens.Font.ui(13)).foregroundStyle(Tokens.Palette.textSecondary)
             startButton(session: nil)
         }
@@ -449,10 +453,14 @@ struct TodayView: View {
             EmptyView()
         case .invite(let last):
             Card {
-                SectionLabel("Coach's read", color: Tokens.Palette.accentText)
-                Text("The coach reads a run when you open it.")
-                    .font(Tokens.Font.ui(13)).foregroundStyle(Tokens.Palette.textSecondary)
-                readLink("Get the coach's note on your last run", runID: last)
+                if consent.maySend {
+                    SectionLabel("Coach's read", color: Tokens.Palette.accentText)
+                    Text("The coach reads a run when you open it.")
+                        .font(Tokens.Font.ui(13)).foregroundStyle(Tokens.Palette.textSecondary)
+                    readLink("Get the coach's note on your last run", runID: last)
+                } else {
+                    CoachConsentNotice()
+                }
             }
         case .current(let read):
             readCard(read, unread: nil)
