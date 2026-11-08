@@ -101,7 +101,14 @@ final class TabRouter: ObservableObject {
     /// The "Train for something" CTA on the just-running Today and Plan (#101), and the one
     /// way into the training intake (#102) from anywhere in the app. The form hands its
     /// answers to the coach itself: see `View.trainingIntake(router:store:)`.
+    ///
+    /// With the coach off this lands on the Coach tab's notice instead. Every answer on that
+    /// form is for the coach, and ninety seconds of it shouldn't end in being told so.
     func trainForSomething() {
+        guard CoachConsentStore.shared.maySend else {
+            showCoach()
+            return
+        }
         trainingIntakeShown = true
     }
 
@@ -152,6 +159,7 @@ struct RootTabView: View {
 
     /// Whether the software keyboard is on screen. The tab bar steps aside while it is (#186).
     @State private var keyboardUp = false
+    @ObservedObject private var consent = CoachConsentStore.shared
 
     var body: some View {
         switch store.launch {
@@ -165,7 +173,28 @@ struct RootTabView: View {
         case .onboarding:
             OnboardingView()
         case .ready:
+            // An athlete who predates the consent screen and has never answered sees it once,
+            // here, before anything can reach the coach. A background takeaway fires with no
+            // screen open at all, so waiting for them to open the Coach tab would just leave
+            // the coach silently off.
+            //
+            // An overlay and not a swap or a cover. The app stays alive underneath, so a save
+            // that lands still routes. And the recorder's cover goes up over this, so a run
+            // recovered at launch is back on screen first and the question waits behind it.
             mainApp
+                .accessibilityHidden(consent.shouldPrompt)
+                .overlay {
+                    if consent.shouldPrompt {
+                        CoachConsentView { _ in }
+                            .transition(.opacity)
+                    }
+                }
+                .motion(Motion.reveal, value: consent.shouldPrompt)
+                // The launch's refresh ran with the gate shut, so today's takeaway never went.
+                .onChange(of: consent.maySend) { _, maySend in
+                    guard maySend else { return }
+                    Task { await store.refresh() }
+                }
         }
     }
 
