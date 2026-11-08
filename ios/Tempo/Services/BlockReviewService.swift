@@ -89,8 +89,8 @@ enum BlockReviewService {
             case .notSignedIn:    return "Not signed in."
             case .invalid:        return "Enter your official finish time, or choose how the race went."
             case .raceRunFailed:  return "Couldn't log the race as a run, so nothing was closed. Try again."
-            case .goalNotUpdated: return "Couldn't save the result — nothing was closed. If the database hasn't been updated for block reviews yet (migration 0013), this is why."
-            case .planNotUpdated: return "The result saved, but the plan didn't close. Try again — it's safe to repeat."
+            case .goalNotUpdated: return "Couldn't save the result, so nothing was closed. If the database hasn't been updated for block reviews yet (migration 0013), this is why."
+            case .planNotUpdated: return "The result saved, but the plan didn't close. Try again. It's safe to repeat."
             }
         }
     }
@@ -244,14 +244,20 @@ enum BlockReviewService {
         )
     }
 
-    /// The cached retrospective, or a fresh one written and cached. Nil on failure — the
-    /// screen says so and offers a retry; a failure is never cached as if it were a review.
+    enum RetrospectiveOutcome {
+        case written(String)
+        case limited(UsageLimit.Refusal)
+        case failed
+    }
+
+    /// The cached retrospective, or a fresh one written and cached. On failure the screen says
+    /// so and offers a retry; a failure is never cached as if it were a review.
     ///
     /// `context` is taken as a value, captured before the close-out reloads the store: once
     /// the plan is `done` the store holds no plan, and the coach would be told there isn't one.
-    static func retrospective(goal: GoalInfo, review: BlockReview.Review, context: CoachContext) async -> String? {
-        if let cached = goal.review?.text, !cached.isEmpty { return cached }
-        guard goal.outcome != nil, !inFlight.contains(goal.id) else { return nil }
+    static func retrospective(goal: GoalInfo, review: BlockReview.Review, context: CoachContext) async -> RetrospectiveOutcome {
+        if let cached = goal.review?.text, !cached.isEmpty { return .written(cached) }
+        guard goal.outcome != nil, !inFlight.contains(goal.id) else { return .failed }
         inFlight.insert(goal.id)
         defer { inFlight.remove(goal.id) }
 
@@ -261,18 +267,21 @@ enum BlockReviewService {
 
         let reply: Reply
         do {
-            reply = try await Supa.client.functions.invoke("coach", options: FunctionInvokeOptions(body: req))
+            reply = try await CoachGateway.invoke(.coach, body: req)
+        } catch is CoachGateway.ConsentRequired {
+            return .failed
         } catch {
+            if let refusal = UsageLimit.refusal(from: error, surface: "block_review") { return .limited(refusal) }
             Telemetry.error("block.review_failed", error)
-            return nil
+            return .failed
         }
         let text = reply.reply.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty else { return nil }
+        guard !text.isEmpty else { return .failed }
 
         struct Patch: Encodable { let review: BlockRetrospective }
         let cache = BlockRetrospective(text: text, generated_at: BlockCloseout.timestamp.string(from: .now))
         _ = try? await Supa.client.from("goals").update(Patch(review: cache))
             .eq("id", value: goal.id.uuidString).execute()
-        return text
+        return .written(text)
     }
 }

@@ -56,7 +56,7 @@ final class UnitsDisplayTests: XCTestCase {
         let viaMiles = Units.km.formatPace(secondsPerMile: try XCTUnwrap(
             TimeAccounting.paceSecPerMile(seconds: 2_908, miles: 10_000 / Units.metersPerMile)))
         XCTAssertEqual(viaMiles, "4:50 /km", "the trap this test exists for")
-        XCTAssertEqual(Units.km.formatRunPace(movingSeconds: 60, meters: 50), "—", "under 0.05 mi has no pace")
+        XCTAssertEqual(Units.km.formatRunPace(movingSeconds: 60, meters: 50), "--", "under 0.05 mi has no pace")
     }
 
     // MARK: - Thresholds, bands and words

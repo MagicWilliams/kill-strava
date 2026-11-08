@@ -181,25 +181,40 @@ enum CoachThreadService {
     /// once regenerated two plans at once.
     @discardableResult
     static func summarizePending(_ rows: [CoachThreads.Row], context: CoachContext, now: Date = .now) async -> Bool {
+        // This runs on every Coach-tab appearance. The gateway would refuse each write-up, but
+        // only after reading that thread's whole transcript to build it.
+        guard CoachConsentStore.shared.maySend else { return false }
         var wrote = false
         for row in CoachThreads.awaitingSummary(rows, now: now) {
-            if await summarize(row, context: context) { wrote = true }
+            switch await summarize(row, context: context) {
+            case .wrote: wrote = true
+            case .notWritten: break
+            // The rest of the backlog would only be refused too. Nothing to tell the athlete:
+            // an untitled thread is a state the list already shows, and the next pass catches
+            // these up, the same as after a failure.
+            case .limited: return wrote
+            }
         }
         return wrote
+    }
+
+    enum SummaryOutcome {
+        case wrote
+        case notWritten
+        case limited
     }
 
     /// One thread's write-up: read its transcript, ask the coach for {title, summary}, store
     /// what comes back.
     ///
-    /// Returns whether the thread now has a recap. False covers an unreachable server, a
-    /// reply the parser wouldn't stand behind (`summary.ts` returns nothing rather than half
-    /// a summary), and an empty thread — all of which leave the row untitled, which the list
-    /// already knows how to show. Nothing is invented locally: a made-up recap is
-    /// indistinguishable from a real one, and it would be fed to the coach as fact at the
-    /// top of the next conversation.
+    /// `notWritten` covers an unreachable server, a reply the parser wouldn't stand behind
+    /// (`summary.ts` returns nothing rather than half a summary), and an empty thread — all
+    /// of which leave the row untitled, which the list already knows how to show. Nothing is
+    /// invented locally: a made-up recap is indistinguishable from a real one, and it would
+    /// be fed to the coach as fact at the top of the next conversation.
     @discardableResult
-    static func summarize(_ row: CoachThreads.Row, context: CoachContext) async -> Bool {
-        guard !summarizing.contains(row.id) else { return false }
+    static func summarize(_ row: CoachThreads.Row, context: CoachContext) async -> SummaryOutcome {
+        guard !summarizing.contains(row.id) else { return .notWritten }
         summarizing.insert(row.id)
         defer { summarizing.remove(row.id) }
 
@@ -221,11 +236,11 @@ enum CoachThreadService {
                 .value
         } catch {
             Telemetry.error("coach.thread_transcript_unreadable", error)
-            return false
+            return .notWritten
         }
         let transcript = ChatHistory.inReadingOrder(newestFirst: page, by: { $0.created_at })
         // An empty thread has nothing to write up, and the function would refuse it anyway.
-        guard !transcript.isEmpty else { return false }
+        guard !transcript.isEmpty else { return .notWritten }
 
         struct Request: Encodable {
             let mode: String
@@ -244,17 +259,20 @@ enum CoachThreadService {
         )
         let reply: Reply
         do {
-            reply = try await Supa.client.functions.invoke("coach", options: FunctionInvokeOptions(body: request))
+            reply = try await CoachGateway.invoke(.coach, body: request)
+        } catch is CoachGateway.ConsentRequired {
+            return .notWritten
         } catch {
+            if UsageLimit.refusal(from: error, surface: "summarize") != nil { return .limited }
             Telemetry.error("coach.thread_summarize_failed", error)
-            return false
+            return .notWritten
         }
         guard let title = reply.title, let summary = reply.summary, !title.isEmpty, !summary.isEmpty else {
             // Not an error: the parser refuses anything half-formed, and the thread is simply
             // offered to the next pass. Logged because a model that never returns a usable
             // write-up would otherwise look like a thread list that just doesn't fill in.
             Telemetry.warn("coach.thread_summary_unusable", "no title/summary in the reply")
-            return false
+            return .notWritten
         }
         do {
             _ = try await Supa.client
@@ -262,10 +280,10 @@ enum CoachThreadService {
                 .update(SummaryPatch(title: title, summary: summary))
                 .eq("id", value: row.id.uuidString)
                 .execute()
-            return true
+            return .wrote
         } catch {
             Telemetry.error("coach.thread_summary_unsaved", error)
-            return false
+            return .notWritten
         }
     }
 

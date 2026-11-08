@@ -7,7 +7,7 @@ struct ProgressScreen: View {
     @Environment(\.units) private var units
 
     var body: some View {
-        Screen(title: "Progress", subtitle: subtitle) {
+        Screen(title: "Progress", subtitle: countdown.subtitle(), compactSubtitle: countdown.subtitle(.compact)) {
             if store.todayMode == .justRunning {
                 // No race, so nothing to project a finish for (#101). Where the athlete
                 // stands right now is the honest headline instead.
@@ -24,13 +24,12 @@ struct ProgressScreen: View {
         .refreshable { await store.refresh() }
     }
 
-    /// The countdown is whatever the athlete's actual goal says — name, date, and the
-    /// no-goal case included. The rule lives in `Engine/RaceCountdown.swift`; the header
-    /// that used to hardcode Chicago is the reason it's pinned there (#36).
-    private var subtitle: String {
-        RaceCountdown.state(
-            raceName: store.goal?.raceName, raceDay: store.goal?.raceDay, now: .now
-        ).subtitle
+    /// The countdown is whatever the athlete's actual goal says — name, distance, date, and
+    /// the no-goal case included. The rule lives in `Engine/RaceCountdown.swift`; the header
+    /// that used to hardcode Chicago is the reason it's pinned there (#36), and Plan and You
+    /// read the same state so the three tabs cannot disagree about one date (#230).
+    private var countdown: RaceCountdown.State {
+        RaceCountdown.state(goal: store.goal, now: .now, units: units)
     }
 
     @ViewBuilder private var projected: some View {
@@ -46,7 +45,13 @@ struct ProgressScreen: View {
         } label: {
             Card(glow: true) {
                 HStack {
-                    SectionLabel("Projected finish", color: Tokens.Palette.accentText)
+                    // Named, not bare "Projected finish": a 5K saved as a marathon (#215)
+                    // put 4:18:04 on this card under a label that was equally true of
+                    // both races, and the only way to catch it was to read the database.
+                    SectionLabel(
+                        RaceChange.projectedFinishLabel(goal: store.goal, units: units),
+                        color: Tokens.Palette.accentText
+                    )
                     Spacer()
                     if let projection, let goalTime {
                         if projection <= goalTime {
@@ -87,13 +92,13 @@ struct ProgressScreen: View {
             return "A finish projection needs a race to project toward."
         }
         guard let projection, let goalTime else {
-            return "Projection sharpens as runs land — updated after every sync."
+            return "The projection updates after every sync as new runs come in."
         }
         let delta = goalTime - projection
         if delta >= 0 {
             return "Current fitness projects \(PaceModel.formatFinish(abs(delta))) under goal. Updated after every run."
         }
-        return "Current fitness projects \(PaceModel.formatFinish(abs(delta))) over goal — the gap is the training block's job. Updated after every run."
+        return "Current fitness projects \(PaceModel.formatFinish(abs(delta))) over goal. This block is meant to close that. Updated after every run."
     }
 
     /// Real weekly mileage, trailing 8 weeks. Current (in-progress) week is outlined.
@@ -204,7 +209,7 @@ struct ProgressScreen: View {
             if store.plan != nil, !store.planWeeks.isEmpty {
                 phaseBar
                 if let phase = store.currentPhase {
-                    Text("\(phase.capitalized) phase — \(weeksLeftInPhase) week\(weeksLeftInPhase == 1 ? "" : "s") left in it.")
+                    Text("\(phase.capitalized) phase, \(weeksLeftInPhase) week\(weeksLeftInPhase == 1 ? "" : "s") left.")
                         .font(Tokens.Font.ui(12)).foregroundStyle(Tokens.Palette.textSecondary)
                 }
             } else {

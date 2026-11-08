@@ -178,6 +178,19 @@ Apple Development certificates last **one year**. When this one expires, the imp
 fails the run ("must hold exactly one valid Apple Development identity; found 0"). Redo
 this section, then revoke the expired one in the portal.
 
+## External testing (friends, Oct 2026)
+
+External groups go through Beta App Review once per version. What the form wants:
+
+- **Privacy Policy URL:** https://magicwilliams.github.io/kill-strava/privacy.html. It is
+  `site/privacy.html`, published by `.github/workflows/pages.yml` on every merge that touches
+  `site/`. If the app starts collecting something new (a new HealthKit type, a new table, a new
+  third party), update that page in the same PR.
+- **Sign-in required: No.** Tempo signs in anonymously on first launch, so leave the demo
+  account fields empty.
+- **Testers' accounts live on their phone.** Deleting the app can lose their Tempo history
+  (their runs stay in Apple Health). Say so in "What to Test".
+
 ## When it breaks
 
 - **Workflow warns "TestFlight not configured"**: a secret or the variable is missing (step 5).

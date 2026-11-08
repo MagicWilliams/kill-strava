@@ -1,0 +1,29 @@
+<!doctype html>
+<!-- Search results asset. Apple's guidance: "state the obvious" and show the firsthand experience,
+     so this is the real Projected Finish card from Progress, cropped and never redrawn. It shows
+     small in search, so everything is large. -->
+<html><head><meta charset="utf-8"><style>
+@font-face { font-family: "Space Grotesk"; src: url("../../ios/Tempo/Resources/Fonts/SpaceGrotesk-Bold.ttf"); font-weight: 700; }
+* { margin: 0; box-sizing: border-box; }
+html, body { width: 100vw; height: 100vh; overflow: hidden; background: #0B0D10; }
+.cap { position: absolute; left: 6vw; right: 6vw; top: 4.6vw; color: #F3F5F8;
+  font: 700 7.8vw/1.04 "Space Grotesk", sans-serif; letter-spacing: -0.03em; }
+.cap em { font-style: normal; color: #CDFB45; }
+/* A window onto the capture: --w is the shown width, --x/--y the capture pixels at top left. */
+.card { position: absolute; left: 6vw; right: 6vw; bottom: 3.6vw; height: 40.5vw; overflow: hidden;
+  border-radius: 3vw; }
+.card img { position: absolute; width: calc(88vw * var(--scale)); left: calc(-88vw * var(--scale) * var(--x));
+  top: calc(-88vw * var(--scale) * var(--y)); }
+</style></head><body>
+<div class="cap">Know if you're<br><em>on track.</em></div>
+<div class="card"><img id="img"></div>
+<script>
+const q = new URLSearchParams(location.search);
+const img = document.getElementById('img');
+img.src = q.get('img');
+// The card in the capture runs from x 4.6% to 95.4% of the width, and starts 32.2% of the width
+// down. These stay as fractions of width so a re-shoot at another size still lines up.
+img.style.setProperty('--scale', 1 / 0.908);
+img.style.setProperty('--x', 0.046);
+img.style.setProperty('--y', 0.322);
+</script></body></html>

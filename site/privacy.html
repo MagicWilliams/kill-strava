@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tempo Privacy Policy</title>
+<meta name="description" content="What Tempo, the running-coach app, collects, where it goes, and how to have it deleted.">
+<style>
+  :root {
+    --bg: #fbfaf7; --fg: #1d1c1a; --muted: #6b675f; --rule: #e4e0d8; --accent: #c2410c;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #141312; --fg: #ece9e3; --muted: #a29d93; --rule: #2e2c29; --accent: #fb923c; }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--fg);
+    font: 17px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  }
+  main { max-width: 680px; margin: 0 auto; padding: 48px 16px 80px; }
+  h1 { font-size: 2rem; line-height: 1.2; margin: 0 0 4px; letter-spacing: -0.01em; }
+  .updated { color: var(--muted); margin: 0 0 32px; }
+  h2 { font-size: 1.15rem; margin: 40px 0 8px; padding-top: 24px; border-top: 1px solid var(--rule); }
+  p, ul { margin: 0 0 14px; }
+  ul { padding-left: 1.2em; }
+  li { margin-bottom: 6px; }
+  a { color: var(--accent); }
+  .summary { border-left: 3px solid var(--accent); padding: 4px 0 4px 16px; margin: 0 0 8px; }
+  .summary li { margin-bottom: 4px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Tempo Privacy Policy</h1>
+  <p class="updated">Last updated 30 October 2026</p>
+
+  <p>Tempo is a running-coach app for iPhone, currently in a small TestFlight beta. It is built and
+  run by one person, David Latimore II (Delight Studio), and its source code is
+  <a href="https://github.com/MagicWilliams/kill-strava">public on GitHub</a>, so anything this page
+  says can be checked against the code.</p>
+
+  <div class="summary">
+    <p><strong>The short version</strong></p>
+    <ul>
+      <li>No sign-up. Tempo never asks for your name, email or a password.</li>
+      <li>Your GPS routes and second-by-second health samples stay on your phone, in Apple Health.</li>
+      <li>Tempo's server stores run summaries, your plan, your journal entries and your coach chat,
+        so that the coach can work.</li>
+      <li>Coach messages are processed by Anthropic's Claude.</li>
+      <li>No ads, no tracking, no analytics companies. Your data is never sold or shared with anyone
+        else, and health data is never used for advertising.</li>
+    </ul>
+  </div>
+
+  <h2>Your account</h2>
+  <p>On first launch Tempo creates an anonymous account: a random ID with no name, email or
+  password attached. That ID is saved in your iPhone's Keychain and is how Tempo's server knows
+  which records are yours.</p>
+  <p>Because nothing else identifies you, the account lives on your phone. If you delete the app
+  or move to a new phone without restoring a backup, Tempo may not be able to reconnect you to your
+  old records. Your runs themselves are unaffected, because they live in Apple Health.</p>
+
+  <h2>What Tempo reads from Apple Health</h2>
+  <p>With your permission, Tempo reads your workouts, heart rate, walking and running distance,
+  step count, active energy, and workout routes. It uses them to show your runs, measure your
+  fitness and training load, and adapt your plan.</p>
+  <p>When you record a run in Tempo, it saves the workout, its route, distance and active energy
+  back to Apple Health. You can change these permissions at any time in the Health app or in
+  Settings &rarr; Privacy &amp; Security &rarr; Health.</p>
+
+  <h2>What stays on your phone</h2>
+  <ul>
+    <li><strong>Location.</strong> Tempo uses your location only while a run you started is being
+      recorded, to map the route and measure distance and pace. It stops when the run ends. The route
+      is saved to Apple Health and is not uploaded to Tempo's server.</li>
+    <li><strong>Motion.</strong> Step data from your phone's motion sensor is used to measure
+      treadmill distance and, if you turn it on, to auto-pause. It isn't uploaded.</li>
+    <li><strong>Raw health samples.</strong> Heart-rate and other sample-by-sample readings are
+      read on your phone to calculate summaries; only the summaries below are uploaded.</li>
+  </ul>
+
+  <h2>What Tempo stores on its server</h2>
+  <p>To coach you over time and keep your plan, Tempo stores:</p>
+  <ul>
+    <li><strong>Run summaries:</strong> date and time, distance, duration, pace, average heart rate,
+      per-split pace and heart rate, and training-load figures calculated from them.</li>
+    <li><strong>Training details you give it:</strong> goals and race dates, your answers to the
+      training setup questions, your training plan, and optionally your birthdate or maximum heart
+      rate (used to set heart-rate zones).</li>
+    <li><strong>Run journal entries:</strong> the effort rating, feel, notes, title and shoe you add to
+      a run, and any photo you attach. You choose each photo; Tempo doesn't otherwise access your
+      camera or photo library.</li>
+    <li><strong>Coach conversations:</strong> the messages you exchange with the coach.</li>
+    <li><strong>Diagnostic events:</strong> short records of errors and retries inside the app (for
+      example, "a sync failed"), with app and iOS version. These contain no health data and are used
+      only to find and fix bugs.</li>
+  </ul>
+  <p>This data is stored with <a href="https://supabase.com/privacy">Supabase</a>, which hosts
+  Tempo's database and files. It is encrypted in transit, and database access rules mean each
+  account can read only its own records. Photos are kept in private storage, not at a public link.</p>
+
+  <h2>The AI coach</h2>
+  <p>When you message the coach, or Tempo builds or adjusts a plan, Tempo sends your message, your
+  recent conversation, and a summary of your training (run summaries, plan, goals and journal notes)
+  to <a href="https://www.anthropic.com/legal/privacy">Anthropic</a>'s Claude API to write the reply.
+  Anthropic processes it to generate the response and, under its commercial terms, does not use it
+  to train its models.</p>
+
+  <h2>Who else sees your data</h2>
+  <p>Only the services named above, Supabase and Anthropic, and only to run the app. As the
+  developer, David can access the database to fix problems. Tempo has no advertising, no
+  third-party analytics or tracking, and does not sell or share personal or health data with
+  anyone. Data from Apple Health is never used for advertising or marketing.</p>
+  <p>Apple separately collects TestFlight crash reports and any feedback you send through
+  TestFlight, under <a href="https://www.apple.com/legal/privacy/">Apple's privacy policy</a>.</p>
+
+  <h2>Keeping and deleting your data</h2>
+  <p>Tempo keeps your data for as long as the beta runs, so your history and plan carry on. To
+  have everything Tempo's server holds about you deleted, email
+  <a href="mailto:david@delight.studio">david@delight.studio</a> and it will be removed within
+  30 days. Because accounts are anonymous, include roughly when you started using Tempo, or
+  send a screenshot of the You tab, so the right records can be found. Deleting Tempo's data
+  doesn't touch anything in Apple Health.</p>
+
+  <h2>Children</h2>
+  <p>Tempo is not intended for children under 13 and doesn't knowingly collect their data.</p>
+
+  <h2>Changes</h2>
+  <p>If this policy changes, the new version will be posted here with a new date. The full
+  history of this page is in the
+  <a href="https://github.com/MagicWilliams/kill-strava/commits/main/site/privacy.html">GitHub
+  repository</a>.</p>
+
+  <h2>Contact</h2>
+  <p>Questions or requests: <a href="mailto:david@delight.studio">david@delight.studio</a>.</p>
+</main>
+</body>
+</html>

@@ -49,6 +49,23 @@ final class TabRouter: ObservableObject {
     /// A coach message to scroll to when the Coach tab next shows — set by "See in chat"
     /// on a What changed entry, consumed (cleared) by `CoachView`.
     @Published var coachFocus: UUID?
+    /// Text to drop into the Coach composer when the tab next shows, consumed (cleared) by
+    /// `CoachView`. Prefilled, never sent: the athlete gets to read it, change it, or back out.
+    ///
+    /// This existed for the old "Train for something" CTA and was removed in #220 once the
+    /// training intake (#102) replaced that CTA with a form that hands its own answers over.
+    /// It is back for "Change race or date" (#233), which is the same shape of hand-off: a
+    /// screen that knows what the athlete wants to change but must not write the change
+    /// itself. Carries an id because landing it is a reason to open a conversation, and
+    /// `CoachHomeView` dedupes those reasons by id.
+    @Published var coachDraft: Draft?
+
+    /// One prefilled composer message. The id is what makes two identical drafts two separate
+    /// hand-offs, so asking to change the race twice opens the composer twice.
+    struct Draft: Identifiable, Equatable {
+        let id = UUID()
+        let text: String
+    }
     /// The training intake (#102), presented over the whole app by `.trainingIntake(...)`.
     @Published var trainingIntakeShown = false
     /// The pre-run sheet (#126), presented over the whole app by `.runRecorder(...)`.
@@ -84,7 +101,14 @@ final class TabRouter: ObservableObject {
     /// The "Train for something" CTA on the just-running Today and Plan (#101), and the one
     /// way into the training intake (#102) from anywhere in the app. The form hands its
     /// answers to the coach itself: see `View.trainingIntake(router:store:)`.
+    ///
+    /// With the coach off this lands on the Coach tab's notice instead. Every answer on that
+    /// form is for the coach, and ninety seconds of it shouldn't end in being told so.
     func trainForSomething() {
+        guard CoachConsentStore.shared.maySend else {
+            showCoach()
+            return
+        }
         trainingIntakeShown = true
     }
 
@@ -110,6 +134,13 @@ final class TabRouter: ObservableObject {
         selection = .coach
     }
 
+    /// Land on the Coach tab with `text` already in the composer, unsent. "Change race or
+    /// date" on the Projected finish page (#233) is the one caller.
+    func showCoach(draft text: String) {
+        coachDraft = Draft(text: text)
+        showCoach()
+    }
+
     func show(_ tab: Tab) {
         path.removeAll()
         selection = tab
@@ -128,6 +159,7 @@ struct RootTabView: View {
 
     /// Whether the software keyboard is on screen. The tab bar steps aside while it is (#186).
     @State private var keyboardUp = false
+    @ObservedObject private var consent = CoachConsentStore.shared
 
     var body: some View {
         switch store.launch {
@@ -141,7 +173,28 @@ struct RootTabView: View {
         case .onboarding:
             OnboardingView()
         case .ready:
+            // An athlete who predates the consent screen and has never answered sees it once,
+            // here, before anything can reach the coach. A background takeaway fires with no
+            // screen open at all, so waiting for them to open the Coach tab would just leave
+            // the coach silently off.
+            //
+            // An overlay and not a swap or a cover. The app stays alive underneath, so a save
+            // that lands still routes. And the recorder's cover goes up over this, so a run
+            // recovered at launch is back on screen first and the question waits behind it.
             mainApp
+                .accessibilityHidden(consent.shouldPrompt)
+                .overlay {
+                    if consent.shouldPrompt {
+                        CoachConsentView { _ in }
+                            .transition(.opacity)
+                    }
+                }
+                .motion(Motion.reveal, value: consent.shouldPrompt)
+                // The launch's refresh ran with the gate shut, so today's takeaway never went.
+                .onChange(of: consent.maySend) { _, maySend in
+                    guard maySend else { return }
+                    Task { await store.refresh() }
+                }
         }
     }
 
@@ -158,6 +211,7 @@ struct RootTabView: View {
         NavigationStack(path: $router.path) {
             ZStack {
                 Tokens.Palette.canvas.ignoresSafeArea()
+                SwipeBack().frame(width: 0, height: 0)
                 content
                     .safeAreaInset(edge: .bottom, spacing: 0) {
                         // A bottom inset respects the keyboard, so a bar left here while typing
@@ -182,7 +236,20 @@ struct RootTabView: View {
                 case .changes: ChangesView()
                 case .overlapReview: OverlapReviewView()
                 case .blockReview(let goal): BlockReviewView(goal: goal)
-                case .coachThread(let id): CoachView(threadID: id)
+                case .coachThread(let id):
+                    // The one pushed screen with the tab bar still under it. A conversation is
+                    // where a training intake lands and a place people stay, so the rest of the
+                    // app can't be two screens away (David, 2026-11-04). Same layout the Coach
+                    // tab had before #87 made threads a push, keyboard rule included.
+                    CoachView(threadID: id)
+                        .safeAreaInset(edge: .bottom, spacing: 0) {
+                            if !keyboardUp {
+                                TempoTabBar(
+                                    selection: Binding(get: { router.selection }, set: { router.show($0) }),
+                                    onReselect: { router.show($0) }
+                                )
+                            }
+                        }
                 }
             }
         }
@@ -212,6 +279,9 @@ struct RootTabView: View {
 
 struct TempoTabBar: View {
     @Binding var selection: Tab
+    /// A tap on the tab already selected. Inside a conversation, that is the way back to the
+    /// list of them.
+    var onReselect: ((Tab) -> Void)? = nil
     @Namespace private var indicator
 
     var body: some View {
@@ -219,7 +289,10 @@ struct TempoTabBar: View {
             ForEach(Tab.allCases) { tab in
                 let active = tab == selection
                 Button {
-                    guard tab != selection else { return }
+                    guard tab != selection else {
+                        onReselect?(tab)
+                        return
+                    }
                     Haptics.select()
                     selection = tab
                 } label: {
@@ -287,6 +360,40 @@ private struct KeyboardTracking: ViewModifier {
 private extension View {
     func trackingKeyboard(_ isUp: Binding<Bool>) -> some View {
         modifier(KeyboardTracking(isUp: isUp))
+    }
+}
+
+/// Puts swipe-back on every pushed screen.
+///
+/// The app draws its own headers, so the navigation bar is hidden, and iOS takes the edge swipe
+/// away along with the bar. On the simulator, 2026-11-04, a swipe from the left edge of a
+/// conversation did nothing, while the same swipe popped a page in Settings. Added to a stack's
+/// root once, and it stays up for the stack's life, which is what keeps it alive as the
+/// gesture's (weak) delegate.
+private struct SwipeBack: UIViewControllerRepresentable {
+    func makeUIViewController(context: Context) -> Controller { Controller() }
+    func updateUIViewController(_ controller: Controller, context: Context) {}
+
+    final class Controller: UIViewController, UIGestureRecognizerDelegate {
+        override func viewDidAppear(_ animated: Bool) {
+            super.viewDidAppear(animated)
+            navigationController?.interactivePopGestureRecognizer?.delegate = self
+        }
+
+        /// Never on the root: a pop with nothing to pop to wedges the stack.
+        func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+            (navigationController?.viewControllers.count ?? 0) > 1
+        }
+
+        /// Everything else waits for the edge swipe to fail, which it does at once for a touch
+        /// that didn't start on the edge. Without this a conversation still would not swipe
+        /// back when other pushed screens did: its transcript has its own drag gestures.
+        func gestureRecognizer(
+            _ gestureRecognizer: UIGestureRecognizer,
+            shouldBeRequiredToFailBy otherGestureRecognizer: UIGestureRecognizer
+        ) -> Bool {
+            true
+        }
     }
 }
 

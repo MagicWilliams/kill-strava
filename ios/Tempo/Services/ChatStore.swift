@@ -134,6 +134,9 @@ final class ChatStore: ObservableObject {
     @Published private(set) var messages: [ChatMessage] = []
     @Published private(set) var isThinking = false
     @Published var errorText: String?
+    /// The coach or plan allowance is used up for now. Apart from `errorText` because it
+    /// isn't an error, and the screen shouldn't draw it in the color of one (`UsageLimit`).
+    @Published private(set) var usageNotice: String?
 
     /// The conversation this store is reading and writing.
     ///
@@ -162,6 +165,12 @@ final class ChatStore: ObservableObject {
     weak var runStore: RunStore?
 
     private var loaded = false
+    /// `load` has read the transcript, so the opener knows whether there is one to resume.
+    private var historyReady = false
+    /// The conversation has been opened with the coach. Apart from `loaded` because reading
+    /// the history is fine without consent and the opener isn't: an athlete who agrees while
+    /// looking at this thread gets the opener then, with nothing to reload.
+    private var opened = false
     private static let autoApplyTypes = CoachAcknowledgement.onboardingAutoApplyTypes
 
     // Wire types
@@ -245,6 +254,22 @@ final class ChatStore: ObservableObject {
                     )
                 }
         }
+        historyReady = true
+        await openIfPermitted(context: context)
+    }
+
+    /// The athlete just agreed, on a thread that was showing why the coach was off.
+    ///
+    /// If the history is still loading there is nothing to do here: `load` checks consent
+    /// when it finishes, and will see the answer.
+    func consentGranted(context: CoachContext) async {
+        guard historyReady else { return }
+        await openIfPermitted(context: context)
+    }
+
+    private func openIfPermitted(context: CoachContext) async {
+        guard !opened, CoachConsentStore.shared.maySend else { return }
+        opened = true
         // A freshly sent intake is the turn to answer, onboarding or not — it replaces the
         // generic opener rather than queueing behind it.
         if let runStore, runStore.intakeHandoff?.sentToCoach == false {
@@ -255,7 +280,7 @@ final class ChatStore: ObservableObject {
         if onboardingMode {
             opener = "Begin (or resume) my onboarding interview. Confirm what you already know from onboarding.known instead of re-asking, and pick up wherever we left off."
         } else if messages.isEmpty {
-            opener = "Open the conversation: introduce yourself in one short line, then give me an honest, specific read on my training right now based on my data. Close with one useful question."
+            opener = "Open the conversation: introduce yourself in one short line, then give me a specific assessment of my training right now based on my data. Close with one useful question."
         } else {
             return
         }
@@ -265,25 +290,30 @@ final class ChatStore: ObservableObject {
         let history = messages.suffix(12).map {
             WireMessage(role: $0.role == .user ? "user" : "assistant", content: $0.text)
         } + [WireMessage(role: "user", content: opener)]
-        if let reply = await requestReply(history: Array(history), context: context) {
-            handleReply(reply)
+        switch await requestReply(history: Array(history), context: context) {
+        case .reply(let reply): handleReply(reply)
+        case .limited(let refusal): usageNotice = refusal.message
+        case .failed: break
         }
     }
 
     func send(_ text: String, context: CoachContext) async {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, !isThinking else { return }
+        // Before the append. Past it the message would be in the transcript with no reply
+        // coming and "Coach unreachable" under it, about a server that was never asked.
+        guard !trimmed.isEmpty, !isThinking, CoachConsentStore.shared.maySend else { return }
         errorText = nil
+        usageNotice = nil
         append(.user, trimmed)
         isThinking = true
         defer { isThinking = false }
         let history = messages.suffix(24).map {
             WireMessage(role: $0.role == .user ? "user" : "assistant", content: $0.text)
         }
-        if let reply = await requestReply(history: Array(history), context: context) {
-            handleReply(reply)
-        } else {
-            errorText = "Coach unreachable — check your connection and try again."
+        switch await requestReply(history: Array(history), context: context) {
+        case .reply(let reply): handleReply(reply)
+        case .limited(let refusal): usageNotice = refusal.message
+        case .failed: errorText = "Coach unreachable. Check your connection and try again."
         }
     }
 
@@ -292,19 +322,23 @@ final class ChatStore: ObservableObject {
     /// card. Marked sent before the round trip so a second Coach-tab appearance can't send it
     /// twice; a failed round trip leaves the visible turn in place for the athlete to nudge.
     func sendIntake(runStore: RunStore) async {
-        guard let handoff = runStore.intakeHandoff, !handoff.sentToCoach, !isThinking else { return }
+        // Held rather than burned: `markIntakeSent` below can't be undone, and these answers
+        // are the first thing to send the moment the athlete agrees.
+        guard let handoff = runStore.intakeHandoff, !handoff.sentToCoach, !isThinking,
+              CoachConsentStore.shared.maySend else { return }
         runStore.markIntakeSent()
         errorText = nil
+        usageNotice = nil
         append(.user, handoff.answers.transcriptLine(calendar: RunStore.cal, units: runStore.units))
         isThinking = true
         defer { isThinking = false }
         let history = messages.suffix(24).map {
             WireMessage(role: $0.role == .user ? "user" : "assistant", content: $0.text)
         }
-        if let reply = await requestReply(history: Array(history), context: runStore.coachContext(onboarding: onboardingMode)) {
-            handleReply(reply)
-        } else {
-            errorText = "Coach unreachable — your answers are saved above. Send a message to pick it back up."
+        switch await requestReply(history: Array(history), context: runStore.coachContext(onboarding: onboardingMode)) {
+        case .reply(let reply): handleReply(reply)
+        case .limited(let refusal): usageNotice = refusal.message
+        case .failed: errorText = "Coach unreachable. Your answers are saved above. Send a message to pick it back up."
         }
     }
 
@@ -315,7 +349,7 @@ final class ChatStore: ObservableObject {
 
     private static func busyLabel(for type: String) -> String {
         switch type {
-        case "create_plan":          return "Building your plan — assessing your history (~15s)…"
+        case "create_plan":          return "Building your plan from your history (~15s)…"
         case "update_plan_settings": return "Rebuilding your plan with the new structure…"
         case "update_session":       return "Adjusting your session…"
         case "amend_run", "add_run": return "Updating your log…"
@@ -373,6 +407,7 @@ final class ChatStore: ObservableObject {
               let action = messages[idx].action,
               messages[idx].actionState.isOpenOffer else { return false }
         errorText = nil
+        usageNotice = nil
         messages[idx].actionState = .applying
         busyLabel = Self.busyLabel(for: action.type)
         defer { busyLabel = nil }
@@ -407,10 +442,21 @@ final class ChatStore: ObservableObject {
         } catch {
             messages[idx].actionState = .failed
             persist(.failed, for: messageID)
+            if error is CoachGateway.ConsentRequired {
+                // The athlete said no. That is their answer, not a failure worth an error row.
+                errorText = CoachConsent.Copy.planNeedsConsent
+                return false
+            }
+            // The card comes back as Retry, which is still true. What it needs is the wait,
+            // not "didn't go through", and `coach.usage_limited` has already logged it.
+            if case ActionError.usageLimited(let refusal) = error {
+                usageNotice = refusal.message
+                return false
+            }
             Telemetry.error("coach.action_failed", error, context: Self.failureContext(type: action.type, error: error))
             errorText = (error as? ActionError)?.message
                 ?? (error as? RunCorrection.Rejection)?.message
-                ?? "That change didn't go through — Confirm to retry."
+                ?? "That change didn't go through. Confirm to retry."
             // No acknowledgement on a failure: the retry card is the response.
             return false
         }
@@ -419,13 +465,13 @@ final class ChatStore: ObservableObject {
         persist(.applied, for: messageID, action: stamped)
         // Causal order: the tap, then what it did. Both go in before the acknowledgement round
         // trip, so the coach is answering a transcript that already reads correctly.
-        append(.user, "Confirmed — \(action.displaySummary)")
+        append(.user, "Confirmed: \(action.displaySummary)")
         if let narration { append(.coach, narration) }
         let reloaded = await runStore.reloadFromSupabase()
         if !reloaded {
             // The write landed; only the re-read didn't. Saying nothing here is what makes
             // a saved edit look discarded — the card goes green and the numbers don't move.
-            errorText = "Saved — but your runs couldn't be re-read just now. Pull to refresh on Today."
+            errorText = "Saved, but your runs couldn't be re-read just now. Pull to refresh on Today."
         }
         // The re-read has to come first. Ask before it and the coach answers out of the
         // pre-correction context — "that puts you at 25 for the week" about the very run it
@@ -453,7 +499,7 @@ final class ChatStore: ObservableObject {
               messages[idx].actionState.isOpenOffer else { return }
         messages[idx].actionState = .dismissed
         persist(.dismissed, for: messageID)
-        append(.user, "Dismissed — \(action.displaySummary)")
+        append(.user, "Dismissed: \(action.displaySummary)")
         // Nothing was written, so there is nothing to re-read — the current context is current.
         await queued { [weak self] in
             await self?.acknowledgeIfWarranted(.dismissed, action: action, runStore: runStore)
@@ -470,7 +516,8 @@ final class ChatStore: ObservableObject {
     ///
     /// A failed round trip stays quiet. The change landed and the green card says so; an
     /// "unreachable" banner underneath it reads like the save failed, which is worse than the
-    /// silence this whole issue is about. `requestReply` logs the failure either way.
+    /// silence this whole issue is about. `requestReply` logs the failure either way. A limit
+    /// stays quiet for the same reason: the next message the athlete sends will say so.
     private func acknowledgeIfWarranted(
         _ transition: CoachAcknowledgement.Transition,
         action: ProposedAction,
@@ -489,7 +536,7 @@ final class ChatStore: ObservableObject {
         let history = CoachAcknowledgement.wireHistory(messages.suffix(24).map {
             CoachAcknowledgement.Turn(role: $0.role == .user ? .user : .assistant, content: $0.text)
         }).map { WireMessage(role: $0.role.rawValue, content: $0.content) }
-        if let reply = await requestReply(
+        if case .reply(let reply) = await requestReply(
             history: history,
             context: runStore.coachContext(onboarding: onboardingMode)
         ) {
@@ -782,14 +829,16 @@ final class ChatStore: ObservableObject {
         }
         let rep: Rep
         do {
-            rep = try await Supa.client.functions.invoke(
-                "plan",
-                options: FunctionInvokeOptions(body: request)
-            )
+            rep = try await CoachGateway.invoke(.plan, body: request)
         } catch FunctionsError.httpError(400, let body)
             where PlanRequest.refusal(inErrorBody: body) == PlanRequest.distanceRequired {
             // A new race with no distance (#184). Nothing was written; the card needs re-proposing.
             throw ActionError.planRefused(PlanRequest.distanceRequired)
+        } catch {
+            if let refusal = UsageLimit.refusal(from: error, surface: "plan") {
+                throw ActionError.usageLimited(refusal)
+            }
+            throw error
         }
         await runStore.loadPlan()
         return PlanNarration.planIsLive(PlanNarration.PlanResult(
@@ -859,12 +908,16 @@ final class ChatStore: ObservableObject {
         case planRefused(String)
         /// An end_goal card with no goal or plan left to end (#238).
         case nothingToEnd
+        /// `plan` is out of allowance for now. Nothing is wrong with the card.
+        case usageLimited(UsageLimit.Refusal)
         var message: String {
             switch self {
             case .badParams, .planRefused:
                 return "That card is missing something the plan needs. Ask the coach to propose it again."
             case .nothingToEnd:
                 return GoalRetirement.nothingToEnd
+            case .usageLimited(let refusal):
+                return refusal.message
             }
         }
     }
@@ -917,18 +970,24 @@ final class ChatStore: ObservableObject {
                             default: break
                             }
                         } catch {
-                            self.errorText = "Couldn't save that — tell the coach again."
+                            self.errorText = "Couldn't save that. Tell the coach again."
                         }
                     }
                     if settingsTouched, let goal = store.goal, PlanRequest.canRegenerate(goal) {
                         // No confirmation turn to sit under here — the interview applied these
                         // silently — so the narration goes in on its own.
-                        if let line = try? await self.invokePlanEngine(
-                            self.regenerating(goalTimeS: goal.goalTimeSeconds, raceName: goal.raceName, raceDate: goal.raceDate, runStore: store),
-                            runStore: store
-                        ) {
-                            self.append(.coach, line)
-                        }
+                        do {
+                            if let line = try await self.invokePlanEngine(
+                                self.regenerating(goalTimeS: goal.goalTimeSeconds, raceName: goal.raceName, raceDate: goal.raceDate, runStore: store),
+                                runStore: store
+                            ) {
+                                self.append(.coach, line)
+                            }
+                        } catch ActionError.usageLimited(let refusal) {
+                            // Saved, but the plan didn't follow. The rest of this path is
+                            // silent, and here that would read as a rebuild that happened.
+                            self.usageNotice = refusal.message
+                        } catch {}
                     }
                 }
             }
@@ -945,7 +1004,7 @@ final class ChatStore: ObservableObject {
             // The v11 guard is supposed to make this unreachable. If it fires, the guard
             // has a hole — and only telemetry would ever tell us.
             Telemetry.warn("coach.empty_reply", "reached the supposedly-unreachable path")
-            errorText = "Coach sent an empty reply — try again."
+            errorText = "Coach sent an empty reply. Try again."
         }
     }
 
@@ -975,16 +1034,31 @@ final class ChatStore: ObservableObject {
         )
     }
 
-    private func requestReply(history: [WireMessage], context: CoachContext) async -> CoachReply? {
+    /// The three ways a turn can end. `failed` has been logged; each caller says what it means
+    /// for that caller, and `limited` carries words that are true for all of them.
+    private enum ReplyOutcome {
+        case reply(CoachReply)
+        case limited(UsageLimit.Refusal)
+        case failed
+    }
+
+    private func requestReply(history: [WireMessage], context: CoachContext) async -> ReplyOutcome {
         var context = context
         context.memory = memoryContext
         do {
-            let reply: CoachReply = try await Supa.client.functions.invoke(
-                "coach",
-                options: FunctionInvokeOptions(body: CoachRequest(messages: history, context: context))
+            let reply: CoachReply = try await CoachGateway.invoke(
+                .coach,
+                body: CoachRequest(messages: history, context: context)
             )
-            return reply
+            return .reply(reply)
+        } catch is CoachGateway.ConsentRequired {
+            // Every caller checks before it gets here, so this is consent withdrawn mid-turn.
+            // Nothing was sent, and `failed` is what stays quiet about it.
+            return .failed
         } catch {
+            if let refusal = UsageLimit.refusal(from: error, surface: "chat") {
+                return .limited(refusal)
+            }
             // Backing out of the chat mid-reply, or a second send superseding this one,
             // cancels the URLSession task under us. #201 routed four such catch sites
             // through `errorUnlessCancelled`; this one was missed, and on 2026-10-29 two
@@ -992,7 +1066,7 @@ final class ChatStore: ObservableObject {
             // rows that read like a new coach regression (#248). A real invoke failure —
             // non-2xx, offline, decode drift — still reports exactly as before.
             Telemetry.errorUnlessCancelled("coach.invoke_failed", error)
-            return nil
+            return .failed
         }
     }
 

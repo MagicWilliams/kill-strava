@@ -73,7 +73,7 @@ enum PostRun {
         case .tooShort:
             return "It's in Apple Health, but it's too short to count as a run, so it stays out of your training log."
         case .queued:
-            return "It's in Apple Health. Tempo couldn't reach the server, so the run and your notes will land the next time it syncs."
+            return "It's in Apple Health. Tempo couldn't reach the server, so the run and your notes will save the next time it syncs."
         case .inTempo, nil:
             return nil
         }
@@ -101,7 +101,7 @@ enum PostRun {
         let distanceUnit: String
         /// Moving time, "48:31" or "1:02:07".
         let time: String
-        /// Average moving pace, "8:04", or "—" with too little distance to divide by.
+        /// Average moving pace, "8:04", or Units.missing with too little distance to divide by.
         let pace: String
         let paceUnit: String
         /// Wall clock, shown only when pauses make it differ from moving time.

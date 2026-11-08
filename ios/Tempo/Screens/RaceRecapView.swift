@@ -120,7 +120,7 @@ struct RaceRecapView: View {
                 if let delta = finishDeltaS { deltaTag(delta, suffix: delta < 0 ? " under goal" : " over goal") }
                 Spacer()
             }
-            Text("Watch clock, start to finish — set it beside your official chip time.")
+            Text("Watch clock, start to finish. Compare it with your official chip time.")
                 .font(Tokens.Font.ui(12)).foregroundStyle(Tokens.Palette.textTertiary)
         }
     }
@@ -194,7 +194,7 @@ struct RaceRecapView: View {
                         Tag(text: "fade", fg: Tokens.Palette.warning, bg: Tokens.Well.warning.insetFill)
                     }
                     Spacer()
-                    Text(mat.deltaS.map(RaceRecap.formatDelta) ?? "–")
+                    Text(mat.deltaS.map(RaceRecap.formatDelta) ?? Units.missing)
                         .mono(12, deltaColor(mat.deltaS)).frame(width: 64, alignment: .trailing)
                 }
                 .frame(height: 24)
@@ -214,10 +214,10 @@ struct RaceRecapView: View {
         let measured = units.formatDistance(meters: recap.measuredMeters)
         let race = units.formatDistance(meters: recap.raceMeters, decimals: 1)
         if recap.wasScaled {
-            return "Your watch read \(measured). GPS reads long between tall buildings, so every distance was scaled by \(String(format: "%.3f", recap.scale)) to put the finish on \(race) — that's what puts the mats where the real ones are."
+            return "Your watch read \(measured). GPS reads long between tall buildings, so every distance was scaled by \(String(format: "%.3f", recap.scale)) to put the finish on \(race). That lines the mats up with the real ones."
         }
         if recap.measuredMeters > recap.raceMeters {
-            return "Your watch read \(measured) — too far over to be GPS drift, so the mats use the raw distance."
+            return "Your watch read \(measured). That's too far over to be GPS drift, so the mats use the raw distance."
         }
         return "Your watch read \(measured), short of the course, so the finish is placed at the end of the recording."
     }
@@ -299,7 +299,7 @@ struct RaceRecapView: View {
 
     private func fadeCaption(_ recap: RaceRecap.Recap) -> String {
         guard let fade = recap.fadePoint, let d = fade.deltaS, let finish = recap.finishDeltaS else {
-            return "No fade — you were never further ahead of goal than at the finish."
+            return "No fade. You were never further ahead of goal than at the finish."
         }
         return "Most banked at \(fade.label) (\(RaceRecap.formatDelta(d))). From there to the line you gave back \(RaceRecap.formatClock(finish - d))."
     }
@@ -317,7 +317,7 @@ struct RaceRecapView: View {
             if let drift = recap.hrDrift {
                 t.append(("HR DRIFT", String(format: "%+.0f bpm · %+.1f%%", drift.bpm, drift.percent)))
             } else {
-                t.append(("HR DRIFT", "—"))
+                t.append(("HR DRIFT", Units.missing))
             }
             return t
         }()
@@ -345,7 +345,7 @@ struct RaceRecapView: View {
             SectionLabel("The block that got you here")
             LazyVGrid(columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)], spacing: 10) {
                 blockTile(units.formatDistance(miles: block.miles, decimals: 0), "\(RaceRecap.blockWeeks) weeks · \(block.runCount) runs")
-                blockTile(block.longest.map { units.formatDistance(meters: Double($0.distanceM), decimals: 1) } ?? "—",
+                blockTile(block.longest.map { units.formatDistance(meters: Double($0.distanceM), decimals: 1) } ?? Units.missing,
                           "Longest" + (block.longest.map { " · " + $0.start.formatted(.dateTime.month(.abbreviated).day()) } ?? ""))
                 blockTile(block.projectedFinishS.map(PaceModel.formatFinish) ?? GoalLine.unknownFinish, "Projected that morning")
                 blockTile(RaceRecap.formatClock(finishS), "Actual")

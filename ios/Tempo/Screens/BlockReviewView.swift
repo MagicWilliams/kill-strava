@@ -24,7 +24,7 @@ struct BlockReviewPrompt: View {
                             .frame(width: 44, height: 44)
                             .background(Tokens.Palette.volt, in: Circle())
                         VStack(alignment: .leading, spacing: 3) {
-                            Text("\(goal.raceName ?? RaceCountdown.unnamedRace) is done — review your block")
+                            Text("\(goal.raceName ?? RaceCountdown.unnamedRace) is done. Review your block")
                                 .font(Tokens.Font.ui(17, .bold)).foregroundStyle(Tokens.Palette.textPrimary)
                                 .multilineTextAlignment(.leading)
                             Text("Look back at the training, record your official time, and close it out.")
@@ -112,7 +112,11 @@ struct BlockReviewView: View {
     @State private var retrospective: String?
     @State private var writingRetrospective = false
     @State private var retrospectiveFailed = false
+    /// Set alongside `retrospectiveFailed` when the reason is a used-up allowance, not a
+    /// coach that couldn't be reached.
+    @State private var retrospectiveLimit: String?
     @State private var closing = false
+    @ObservedObject private var consent = CoachConsentStore.shared
 
     init(goal: GoalInfo) {
         _goal = State(initialValue: goal)
@@ -174,6 +178,10 @@ struct BlockReviewView: View {
         .background(Tokens.Palette.canvas)
         .toolbar(.hidden, for: .navigationBar)
         .task { await load() }
+        .onChange(of: consent.maySend) { _, maySend in
+            guard maySend, isClosed, retrospective == nil else { return }
+            Task { await writeRetrospective(context: store.coachContext()) }
+        }
         .sheet(isPresented: $closing) {
             CloseBlockSheet(goal: goal, planID: planSide?.plan.id, raceRun: raceRun) { closed in
                 closing = false
@@ -207,13 +215,18 @@ struct BlockReviewView: View {
         guard let review else { return }
         writingRetrospective = true
         retrospectiveFailed = false
-        let text = await BlockReviewService.retrospective(goal: goal, review: review, context: context)
+        retrospectiveLimit = nil
+        let outcome = await BlockReviewService.retrospective(goal: goal, review: review, context: context)
         writingRetrospective = false
-        if let text {
+        switch outcome {
+        case .written(let text):
             retrospective = text
             goal.review = BlockRetrospective(text: text, generated_at: nil)
             await store.refreshPastBlocks()
-        } else {
+        case .limited(let refusal):
+            retrospectiveLimit = refusal.message
+            retrospectiveFailed = true
+        case .failed:
             retrospectiveFailed = true
         }
     }
@@ -245,7 +258,7 @@ struct BlockReviewView: View {
             }
             switch BlockCloseout.Outcome(rawValue: goal.outcome ?? "") {
             case .raced?:
-                Text(goal.result_time_s.map(PaceModel.formatFinish) ?? "—").display(52)
+                Text(goal.result_time_s.map(PaceModel.formatFinish) ?? Units.missing).display(52)
                 goalLine
             case .didNotStart?:
                 Text("Didn't race").display(36)
@@ -338,7 +351,7 @@ struct BlockReviewView: View {
             .frame(height: 170)
             Text(planSide == nil && !loading
                  ? "Couldn't load the plan, so this is the \(RaceRecap.blockWeeks) weeks before race day without targets."
-                 : "Race week in blue — its \(units.name(plural: true)) stop the day before the race.")
+                 : "Race week in blue. Its \(units.name(plural: true)) stop the day before the race.")
                 .font(Tokens.Font.ui(12)).foregroundStyle(Tokens.Palette.textTertiary)
         }
     }
@@ -355,9 +368,9 @@ struct BlockReviewView: View {
     private func tiles(_ r: BlockReview.Review) -> some View {
         var t: [(String, String)] = [
             (units.formatDistance(miles: r.totalMiles, decimals: 0), "Total · \(r.runCount) runs"),
-            (r.peakWeek.map { units.formatDistance(miles: $0.actualMiles) } ?? "—",
+            (r.peakWeek.map { units.formatDistance(miles: $0.actualMiles) } ?? Units.missing,
              "Peak week" + (r.peakWeek.map { " · W\($0.index + 1)" } ?? "")),
-            (r.longest.map { units.formatDistance(meters: Double($0.distanceM), decimals: 1) } ?? "—",
+            (r.longest.map { units.formatDistance(meters: Double($0.distanceM), decimals: 1) } ?? Units.missing,
              "Longest" + (r.longest.map { " · " + $0.start.formatted(.dateTime.month(.abbreviated).day()) } ?? "")),
         ]
         if r.showsLongRunCount {
@@ -369,7 +382,7 @@ struct BlockReviewView: View {
         t.append((percent(r.all.fraction), "Sessions done · \(r.all.done)/\(r.all.planned)"))
         t.append((percent(r.quality.fraction), "Quality · \(r.quality.done)/\(r.quality.planned)"))
         t.append((percent(r.long.fraction), "Long runs · \(r.long.done)/\(r.long.planned)"))
-        t.append((r.taper.map { String(format: "%.0f%%", $0.drop * 100) } ?? "—",
+        t.append((r.taper.map { String(format: "%.0f%%", $0.drop * 100) } ?? Units.missing,
                   "Taper" + (r.taper.map { " · \(units.number(miles: $0.peakMiles, decimals: 0)) → \(units.formatDistance(miles: $0.raceWeekMiles, decimals: 0))" } ?? "")))
         return LazyVGrid(columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)], spacing: 10) {
             ForEach(Array(t.enumerated()), id: \.offset) { _, tile in
@@ -379,7 +392,7 @@ struct BlockReviewView: View {
     }
 
     private func percent(_ f: Double?) -> String {
-        f.map { String(format: "%.0f%%", $0 * 100) } ?? "—"
+        f.map { String(format: "%.0f%%", $0 * 100) } ?? Units.missing
     }
 
     // MARK: - Projection vs result
@@ -391,7 +404,7 @@ struct BlockReviewView: View {
                 HStack(spacing: 10) {
                     projectionTile(r.projectedAtStartS.map(PaceModel.formatFinish) ?? GoalLine.unknownFinish, "Block start")
                     projectionTile(r.projectedRaceMorningS.map(PaceModel.formatFinish) ?? GoalLine.unknownFinish, "Race morning")
-                    projectionTile(goal.result_time_s.map(PaceModel.formatFinish) ?? "—", "Result")
+                    projectionTile(goal.result_time_s.map(PaceModel.formatFinish) ?? Units.missing, "Result")
                 }
                 if let line = projectionLine(r) {
                     Text(line).font(Tokens.Font.ui(12)).foregroundStyle(Tokens.Palette.textSecondary)
@@ -454,7 +467,7 @@ struct BlockReviewView: View {
                     .lineSpacing(3)
                     .transition(.opacity)
             } else if !isClosed {
-                Text("Written when you close the block — the coach reads it with your result in hand.")
+                Text("The coach writes this when you close the block, using your result.")
                     .font(Tokens.Font.ui(13)).foregroundStyle(Tokens.Palette.textTertiary)
             } else if writingRetrospective {
                 HStack(spacing: 8) {
@@ -462,8 +475,10 @@ struct BlockReviewView: View {
                     Text("The coach is reading the block…")
                         .font(Tokens.Font.ui(13)).foregroundStyle(Tokens.Palette.textTertiary)
                 }
+            } else if !consent.maySend {
+                CoachConsentNotice()
             } else if retrospectiveFailed {
-                Text("Couldn't reach the coach.")
+                Text(retrospectiveLimit ?? "Couldn't reach the coach.")
                     .font(Tokens.Font.ui(13)).foregroundStyle(Tokens.Palette.textTertiary)
                 Button {
                     Task { await writeRetrospective(context: store.coachContext()) }
@@ -571,14 +586,14 @@ struct CloseBlockSheet: View {
                 Text("\(PaceModel.formatFinish(s)) · \(units.formatPace(seconds: Double(s), meters: raceMeters))")
                     .mono(12, Tokens.Palette.textSecondary)
             } else if !timeText.isEmpty {
-                Text("Type it as h:mm:ss — e.g. 3:28:15.")
+                Text("Type it as h:mm:ss, e.g. 3:28:15.")
                     .font(Tokens.Font.ui(12)).foregroundStyle(Tokens.Palette.warning)
             }
             if let raceRun {
-                Text("Pre-filled from your race-day run (\(raceRun.metricsLine(units))) — that's the watch clock. Swap in the chip time if it differs.")
+                Text("Pre-filled from your race-day run (\(raceRun.metricsLine(units))). That's the watch clock. Swap in the chip time if it differs.")
                     .font(Tokens.Font.ui(12)).foregroundStyle(Tokens.Palette.textTertiary)
             } else {
-                Text("No race run in your history — enter the time from the results page.")
+                Text("No race run in your history. Enter the time from the results page.")
                     .font(Tokens.Font.ui(12)).foregroundStyle(Tokens.Palette.textTertiary)
             }
         }
