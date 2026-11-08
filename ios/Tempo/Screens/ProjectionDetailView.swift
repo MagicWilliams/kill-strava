@@ -119,7 +119,7 @@ struct ProjectionDetailView: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 3) {
             Text("Projected finish").font(Tokens.Font.display(28)).foregroundStyle(Tokens.Palette.textPrimary)
-            Text("One recent effort, scaled to \(raceName) — and how it has moved")
+            Text("One recent effort, scaled to \(raceName), and how it has moved")
                 .font(Tokens.Font.ui(13)).foregroundStyle(Tokens.Palette.textSecondary)
         }
     }
@@ -130,12 +130,12 @@ struct ProjectionDetailView: View {
         Card(glow: true) {
             ProjectionStatusRow(projection: displayedFinish, goal: goalTime)
             HStack(alignment: .firstTextBaseline, spacing: 12) {
-                Text(displayedFinish.map(PaceModel.formatFinish) ?? "—:—:—")
+                Text(displayedFinish.map(PaceModel.formatFinish) ?? GoalLine.unknownFinish)
                     .font(Tokens.Font.display(40))
                     .foregroundStyle(displayedFinish == nil ? Tokens.Palette.textTertiary : Tokens.Palette.textPrimary)
                 VStack(alignment: .leading, spacing: 1) {
                     SectionLabel("Goal")
-                    Text(goalTime.map(PaceModel.formatFinish) ?? "—:—:—")
+                    Text(goalTime.map(PaceModel.formatFinish) ?? GoalLine.unknownFinish)
                         .font(Tokens.Font.mono(15)).foregroundStyle(Tokens.Palette.textSecondary)
                 }
             }
@@ -149,7 +149,7 @@ struct ProjectionDetailView: View {
 
     private var heroCaption: String {
         guard let projection = displayedFinish else {
-            return "No qualifying effort in the last six weeks — the projection needs a run of at least \(minQualifying), at running pace rather than a walk, to extrapolate from."
+            return "No qualifying effort in the last six weeks. The projection needs a run of at least \(minQualifying), at running pace rather than a walk, to extrapolate from."
         }
         guard let goal = goalTime else {
             return "Set a goal time and the gap to it shows up here."
@@ -158,7 +158,7 @@ struct ProjectionDetailView: View {
         if delta >= 0 {
             return "Current fitness projects \(PaceModel.formatFinish(delta)) under goal."
         }
-        return "Current fitness projects \(PaceModel.formatFinish(-delta)) over goal — the gap is the training block's job."
+        return "Current fitness projects \(PaceModel.formatFinish(-delta)) over goal. This block is meant to close that."
     }
 
     private var recomputeButton: some View {
@@ -198,9 +198,9 @@ struct ProjectionDetailView: View {
         let best = finishes.min()
         let worst = finishes.max()
         return HStack(spacing: 10) {
-            StatTile(value: best.map(PaceModel.formatFinish) ?? "—", label: "Best")
+            StatTile(value: best.map(PaceModel.formatFinish) ?? Units.missing, label: "Best")
             StatTile(
-                value: (best != nil && worst != nil) ? "\((worst! - best!) / 60) min" : "—",
+                value: (best != nil && worst != nil) ? "\((worst! - best!) / 60) min" : Units.missing,
                 label: "Swing"
             )
             StatTile(value: gapValue, label: "Vs goal")
@@ -208,7 +208,7 @@ struct ProjectionDetailView: View {
     }
 
     private var gapValue: String {
-        guard let projection = displayedFinish, let goal = goalTime else { return "—" }
+        guard let projection = displayedFinish, let goal = goalTime else { return Units.missing }
         let delta = projection - goal
         return (delta > 0 ? "+" : "−") + PaceModel.formatFinish(abs(delta))
     }
@@ -226,7 +226,7 @@ struct ProjectionDetailView: View {
 
             if points.count < 2 {
                 Text(points.isEmpty
-                     ? "Nothing to plot in this range — no six-week window held a qualifying run."
+                     ? "Nothing to plot in this range. No six-week window held a qualifying run."
                      : "One reading so far. The line appears once there are two.")
                     .font(Tokens.Font.ui(13)).foregroundStyle(Tokens.Palette.textTertiary)
                     .frame(height: 60)
@@ -356,7 +356,7 @@ struct ProjectionDetailView: View {
                 }
                 .buttonStyle(Pressable())
 
-                Text("The whole projection is this one effort, scaled to \(raceName). When it ages past six weeks, the next-fastest run takes over and the number steps — that step is the window moving, not your fitness.")
+                Text("The whole projection is this one effort, scaled to \(raceName). When it ages past six weeks, the next-fastest run takes over and the number jumps. Your fitness didn't change; the six-week window moved.")
                     .font(Tokens.Font.ui(12)).foregroundStyle(Tokens.Palette.textTertiary)
                     .lineSpacing(3)
             }
@@ -368,7 +368,7 @@ struct ProjectionDetailView: View {
     private var howItWorks: some View {
         Card {
             SectionLabel("How this works")
-            Text("Every week on the chart is the same rule re-run against the runs on file that day: the fastest run of \(minQualifying) or more in the previous six weeks, extrapolated to \(raceName) by Riegel (t₂ = t₁ × (d₂/d₁)^1.06). Nothing was stored month by month — it is all recomputed from your archive, so it stays correct if the formula ever changes.\n\nThat also makes it deliberately jumpy. One fast parkrun drops it by minutes; six weeks later the same run leaves the window and it climbs back, with no change in fitness either way. Read the trend, not the step. Where the line breaks, no run in that six-week window went far enough to extrapolate from — nothing is drawn rather than a number nobody earned.")
+            Text("Every week on the chart is the same rule re-run against the runs on file that day: the fastest run of \(minQualifying) or more in the previous six weeks, extrapolated to \(raceName) by Riegel (t₂ = t₁ × (d₂/d₁)^1.06). Nothing was stored month by month. It is all recomputed from your archive, so it stays correct if the formula ever changes.\n\nThat also makes it jumpy on purpose. One fast parkrun drops it by minutes; six weeks later the same run leaves the window and it climbs back, with no change in fitness either way. Watch the trend rather than each jump. Where the line breaks, no run in that six-week window went far enough to extrapolate from, so nothing is drawn.")
                 .font(Tokens.Font.ui(12)).foregroundStyle(Tokens.Palette.textSecondary)
                 .lineSpacing(3)
         }

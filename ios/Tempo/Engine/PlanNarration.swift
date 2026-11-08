@@ -54,5 +54,5 @@ enum PlanNarration {
     /// Structure changed, but there is no plan to rebuild with it yet. Said out loud because
     /// the alternative is a Confirm that saves something and then appears to do nothing.
     static let settingsSavedWithoutPlan =
-        "Settings saved. No active plan to rebuild yet — they'll shape the plan when we create it."
+        "Settings saved. No active plan to rebuild yet. They'll shape the plan when we create it."
 }

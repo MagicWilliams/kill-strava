@@ -137,12 +137,12 @@ final class OnboardingFactsTests: XCTestCase {
             daysPerWeek: 5, longRunDay: 6, riskTolerance: "standard",
             given: [], planOnFile: true,
             maxHR: nil, birthdate: nil,
-            activePlan: "Chicago on 2026-10-11, goal 3:15:00 — keep unless the goal changes"
+            activePlan: "Chicago on 2026-10-11, goal 3:15:00. Keep unless the goal changes"
         )
         XCTAssertEqual(known["days_per_week"], "5")
         XCTAssertEqual(known["long_run_day"], "Saturday")
         XCTAssertEqual(known["risk_tolerance"], "standard")
-        XCTAssertEqual(known["active_plan"], "Chicago on 2026-10-11, goal 3:15:00 — keep unless the goal changes")
+        XCTAssertEqual(known["active_plan"], "Chicago on 2026-10-11, goal 3:15:00. Keep unless the goal changes")
     }
 
     /// Max HR and birthdate are nullable columns: present means somebody said so.

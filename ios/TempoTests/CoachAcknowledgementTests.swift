@@ -126,7 +126,7 @@ final class CoachAcknowledgementTests: XCTestCase {
     private func coach(_ s: String) -> Turn { Turn(role: .assistant, content: s) }
 
     private let goalCard = "Want me to lock in the Turkey Trot 5K and build toward it?"
-    private let confirmed = "Confirmed — Save my goal: 5K at Turkey Trot (Nov 27)"
+    private let confirmed = "Confirmed: Save my goal: 5K at Turkey Trot (Nov 27)"
     private let planIsLive = "Plan is live: 6 weeks (base build). Volume runs 18 → 24 mi/wk. Projection today: 22:41."
 
     /// The incident. 2026-10-15: two `coach.invoke_failed` rows, both plan-confirm
@@ -160,7 +160,7 @@ final class CoachAcknowledgementTests: XCTestCase {
     /// fixed sentence. Same shape, same fold.
     func testSettingsSavedWithoutPlanFoldsTheSameWay() {
         let wire = CoachAcknowledgement.wireHistory([
-            user("Confirmed — Train 4 days a week"),
+            user("Confirmed: Train 4 days a week"),
             coach(PlanNarration.settingsSavedWithoutPlan),
         ])
         XCTAssertEqual(wire.count, 1)
@@ -171,9 +171,9 @@ final class CoachAcknowledgementTests: XCTestCase {
     /// Every confirm that does not narrate, and every dismiss, already ends on the athlete's
     /// line. Those histories were never broken and must reach the coach byte-for-byte.
     func testHistoryEndingInAUserTurnPassesThroughUntouched() {
-        let confirm = [coach("Tue's run looks short — correct it to 8.0 mi?"), user("Confirmed — Correct Tue's run: 6.0 → 8.0 mi")]
+        let confirm = [coach("Tue's run looks short. Correct it to 8.0 mi?"), user("Confirmed: Correct Tue's run: 6.0 → 8.0 mi")]
         XCTAssertEqual(CoachAcknowledgement.wireHistory(confirm), confirm)
-        let dismiss = [coach(goalCard), user("Dismissed — Save my goal: 5K at Turkey Trot (Nov 27)")]
+        let dismiss = [coach(goalCard), user("Dismissed: Save my goal: 5K at Turkey Trot (Nov 27)")]
         XCTAssertEqual(CoachAcknowledgement.wireHistory(dismiss), dismiss)
     }
 
@@ -182,7 +182,7 @@ final class CoachAcknowledgementTests: XCTestCase {
     func testOnlyTheTrailingCoachTurnsAreFolded() {
         let transcript = [
             user("drop me to 4 days a week"),
-            coach("Easy — want me to rebuild around Tue/Thu/Sat/Sun?"),
+            coach("Easy. Want me to rebuild around Tue/Thu/Sat/Sun?"),
             user(confirmed),
             coach(planIsLive),
         ]

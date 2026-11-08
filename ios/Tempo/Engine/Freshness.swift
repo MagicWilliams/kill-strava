@@ -38,7 +38,7 @@ enum Freshness {
 
         var caption: String {
             switch self {
-            case .rested:          return "Not much recent load — fitness and fatigue are both low."
+            case .rested:          return "Not much recent load. Fitness and fatigue are both low."
             case .fresh:           return "Fatigue has cleared. Whatever you've built is ready to use."
             case .carryingFatigue: return "Recent running outweighs your base right now. Easy days absorb it."
             case .building:        return "Fitness is climbing and fatigue is keeping pace."

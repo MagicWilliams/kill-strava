@@ -251,7 +251,7 @@ struct CoachWidgetView: View {
     @ViewBuilder private var content: some View {
         switch entry.display {
         case .empty:
-            NeedsApp(title: "Open Tempo", detail: "to load your plan and your coach's read")
+            NeedsApp(title: "Open Tempo", detail: "to load your plan and your coach's note")
         case .stale(let asOf):
             NeedsApp(title: "Open Tempo to refresh", detail: "Last synced \(asOf.formatted(.dateTime.weekday(.abbreviated).hour().minute()))")
         case .current(let week):
@@ -304,7 +304,7 @@ struct CoachWidgetView: View {
                     .lineLimit(3)
             } else {
                 Eyebrow("Coach")
-                Text("Your coach's read lands here after your next run.")
+                Text("Your coach's note shows up here after your next run.")
                     .font(Tokens.Font.ui(13))
                     .foregroundStyle(Tokens.Palette.textTertiary)
                     .lineLimit(2)
@@ -393,7 +393,7 @@ extension WidgetSnapshot {
             nextWeekTargetMiles: 42,
             upcoming: [Session(day: tomorrow, type: "threshold", title: "Threshold repeats",
                                targetMiles: 7, targetPaceSec: 425, detail: "3 reps at threshold, 2:00 jog")],
-            coach: CoachLine(text: "Even splits on a warm morning — that's the aerobic base showing. Keep tomorrow honest at threshold, not faster.", day: today)
+            coach: CoachLine(text: "Even splits on a warm morning. Keep tomorrow at threshold pace.", day: today)
         )
     }
 }

@@ -28,7 +28,7 @@ final class GoalLineTests: XCTestCase {
     /// honestly empty.
     func testNoGoalShowsDashesRatherThanTheReferenceAthletesTime() {
         XCTAssertEqual(noGoal, .noGoal)
-        XCTAssertEqual(noGoal.finishTime, "—:—:—")
+        XCTAssertEqual(noGoal.finishTime, "--:--:--")
         XCTAssertNotEqual(noGoal.finishTime, "3:15:00", "the placeholder was never this user's goal")
     }
 
@@ -84,16 +84,16 @@ final class GoalLineTests: XCTestCase {
     func testAGoalWithoutATargetTimeSaysSo() {
         let s = state(seconds: nil)
         XCTAssertEqual(s, .untimed(race: "Chicago", on: "2026-10-11"))
-        XCTAssertEqual(s.finishTime, "—:—:—")
+        XCTAssertEqual(s.finishTime, "--:--:--")
         XCTAssertNil(s.seconds)
-        XCTAssertEqual(s.coachLine, "Chicago on 2026-10-11 — no target time set yet.")
+        XCTAssertEqual(s.coachLine, "Chicago on 2026-10-11: no target time set yet.")
     }
 
     /// The scar `?? 0` left: a missing target reached the coach as "target 0:00:00", a
     /// number stating the athlete intends to finish instantly. Zero is not a goal time.
     func testAZeroTargetIsNotATargetTime() {
         let s = state(seconds: 0)
-        XCTAssertEqual(s.finishTime, "—:—:—")
+        XCTAssertEqual(s.finishTime, "--:--:--")
         XCTAssertNil(s.seconds)
         XCTAssertFalse(s.coachLine.contains("0:00:00"), "the ?? 0 fallback does not come back")
     }
@@ -104,7 +104,7 @@ final class GoalLineTests: XCTestCase {
         XCTAssertEqual(state(on: nil).coachLine, "Chicago, target 3:15:00")
         XCTAssertEqual(state(on: "").coachLine, "Chicago, target 3:15:00", "an empty date is no date")
         XCTAssertEqual(state(on: "", seconds: nil).coachLine,
-                       "Chicago — no race date or target time set yet.")
+                       "Chicago: no race date or target time set yet.")
     }
 
     /// `race_name` is nullable. A goal with no name borrows the same "Race" placeholder
@@ -118,7 +118,7 @@ final class GoalLineTests: XCTestCase {
     func testAnEmptyGoalRowNamesNoRaceAndNoTime() {
         let s = GoalLine.state(raceName: nil, raceDate: nil, goalTimeSeconds: nil, hasGoal: true)
         XCTAssertEqual(s, .untimed(race: "Race", on: nil))
-        XCTAssertEqual(s.finishTime, "—:—:—")
+        XCTAssertEqual(s.finishTime, "--:--:--")
         XCTAssertFalse(s.coachLine.contains("Chicago"))
     }
 
@@ -168,9 +168,9 @@ final class GoalLineTests: XCTestCase {
     }
 
     func testAGoalWithNoTargetTimeHasNoTargetPace() {
-        XCTAssertEqual(GoalLine.targetPace(goal: goal(seconds: nil, distance: "5k", meters: 5_000), units: .mi), "—")
-        XCTAssertEqual(GoalLine.targetPace(goal: goal(seconds: 0, distance: "5k", meters: 5_000), units: .mi), "—")
-        XCTAssertEqual(GoalLine.targetPace(goal: nil, units: .mi), "—")
+        XCTAssertEqual(GoalLine.targetPace(goal: goal(seconds: nil, distance: "5k", meters: 5_000), units: .mi), "--")
+        XCTAssertEqual(GoalLine.targetPace(goal: goal(seconds: 0, distance: "5k", meters: 5_000), units: .mi), "--")
+        XCTAssertEqual(GoalLine.targetPace(goal: nil, units: .mi), "--")
     }
 
     // MARK: - The You card for a goal with no target time (#231)

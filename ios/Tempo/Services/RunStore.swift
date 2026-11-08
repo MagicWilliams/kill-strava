@@ -1056,7 +1056,7 @@ extension RunStore {
                 )
             },
             onboarding: onboarding ? onboardingContext() : nil,
-            check_in_today: checkInForToday.map { $0.feelsOk ? "feeling okay" + ($0.note.map { " — \($0)" } ?? "") : "something's off" + ($0.note.map { " — \($0)" } ?? "") },
+            check_in_today: checkInForToday.map { $0.feelsOk ? "feeling okay" + ($0.note.map { ": \($0)" } ?? "") : "something's off" + ($0.note.map { ": \($0)" } ?? "") },
             recent_runs: recentRuns(days: 21).map {
                 CoachContext.RunCtx(
                     id: $0.id.uuidString,
@@ -1125,7 +1125,7 @@ extension RunStore {
         return CoachContext.BestEffortsCtx(
             note: progress.isComplete
                 ? nil
-                : "Archive scan \(progress.percent)% complete (\(progress.scanned) of \(progress.total) runs) — these may still improve.",
+                : "Archive scan \(progress.percent)% complete (\(progress.scanned) of \(progress.total) runs). These may still improve.",
             efforts: efforts
         )
     }
@@ -1143,7 +1143,7 @@ extension RunStore {
             birthdate: birthdate,
             activePlan: goal.flatMap { goal in
                 goal.goalTimeSeconds.map {
-                    "\(goal.raceName ?? "race") on \(goal.raceDate), goal \(PaceModel.formatFinish($0)) — keep unless the goal changes"
+                    "\(goal.raceName ?? "race") on \(goal.raceDate), goal \(PaceModel.formatFinish($0)). Keep unless the goal changes"
                 }
             }
         )

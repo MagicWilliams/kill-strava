@@ -403,7 +403,7 @@ struct RunDetailView: View {
                         VStack(alignment: .leading, spacing: 3) {
                             Text("Race recap")
                                 .font(Tokens.Font.ui(17, .bold)).foregroundStyle(Tokens.Palette.textPrimary)
-                            Text("\(raceGoal.raceName ?? RaceCountdown.unnamedRace) — every mat, both halves, where it turned")
+                            Text("\(raceGoal.raceName ?? RaceCountdown.unnamedRace): every mat, both halves, where it turned")
                                 .font(Tokens.Font.ui(13)).foregroundStyle(Tokens.Palette.textSecondary)
                                 .multilineTextAlignment(.leading)
                         }
@@ -428,7 +428,7 @@ struct RunDetailView: View {
             } else if !consent.maySend {
                 CoachConsentNotice()
             } else if !model.takeawayLoading {
-                Text(model.takeawayLimit ?? "Couldn't reach the coach — the read appears next time you open this run.")
+                Text(model.takeawayLimit ?? "Couldn't reach the coach. The note appears next time you open this run.")
                     .font(Tokens.Font.ui(13)).foregroundStyle(Tokens.Palette.textTertiary)
             }
             if consent.maySend {
@@ -459,7 +459,7 @@ struct RunDetailView: View {
                 SectionLabel("Best efforts in this run")
                 ForEach(model.efforts, id: \.distanceM) { effort in
                     HStack(spacing: 8) {
-                        Text(BestEfforts.distance(forKey: effort.distanceM)?.label ?? "—")
+                        Text(BestEfforts.distance(forKey: effort.distanceM)?.label ?? Units.missing)
                             .font(Tokens.Font.ui(13)).foregroundStyle(Tokens.Palette.textSecondary)
                         if holds.contains(effort.distanceM) {
                             Tag(text: "PR")
@@ -468,7 +468,7 @@ struct RunDetailView: View {
                         Text(BestEfforts.formatTime(effort.durationS)).mono(13, Tokens.Palette.textPrimary)
                         Text(BestEfforts.distance(forKey: effort.distanceM)
                             .flatMap { units.pace(seconds: Double(effort.durationS), meters: $0.meters) }
-                            .map { units.formatPace($0) } ?? "—")
+                            .map { units.formatPace($0) } ?? Units.missing)
                             .mono(11, Tokens.Palette.textTertiary)
                             .frame(width: 58, alignment: .trailing)
                     }
@@ -538,10 +538,10 @@ struct RunDetailView: View {
                     Text("Pace, mileage, and this run's label all use moving time.")
                         .font(Tokens.Font.ui(12)).foregroundStyle(Tokens.Palette.textTertiary)
                 case .continuous:
-                    Text("Ran continuously — moving and elapsed time are the same.")
+                    Text("Ran continuously. Moving and elapsed time are the same.")
                         .font(Tokens.Font.ui(13)).foregroundStyle(Tokens.Palette.textSecondary)
                 case .withinNoise:
-                    Text("No real stops — moving and elapsed time are within seconds of each other.")
+                    Text("No real stops. Moving and elapsed time are within seconds of each other.")
                         .font(Tokens.Font.ui(13)).foregroundStyle(Tokens.Palette.textSecondary)
                 case .unrecordedStop(let sampleMovingS):
                     Text("No pauses were recorded, but the distance samples show only \(format(seconds: sampleMovingS)) of moving. Pace here still uses the full \(format(seconds: clocks.movingS)).")
@@ -785,9 +785,9 @@ struct RunDetailView: View {
                             .frame(width: max(6, geo.size.width * CGFloat(Double(fastest) / Double(split.paceSec))), height: 6)
                             .frame(maxHeight: .infinity, alignment: .center)
                     }
-                    Text(split.avgHR.map { "\($0)" } ?? "–")
+                    Text(split.avgHR.map { "\($0)" } ?? Units.missing)
                         .mono(12, Tokens.Palette.textSecondary).frame(width: 36, alignment: .trailing)
-                    Text(split.elevDeltaM.map { String(format: "%+.0f", units.elevation(meters: $0)) } ?? "–")
+                    Text(split.elevDeltaM.map { String(format: "%+.0f", units.elevation(meters: $0)) } ?? Units.missing)
                         .mono(12, Tokens.Palette.textTertiary).frame(width: 44, alignment: .trailing)
                 }
                 .frame(height: 24)
@@ -826,7 +826,7 @@ struct CoachReadHeaderRow: View {
 
     var body: some View {
         HStack {
-            SectionLabel("Coach's read", color: Tokens.Palette.accentText)
+            SectionLabel("Coach's note", color: Tokens.Palette.accentText)
             Spacer()
             if loading {
                 ProgressView().controlSize(.small).tint(Tokens.Palette.textTertiary)

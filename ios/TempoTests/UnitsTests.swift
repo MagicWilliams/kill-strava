@@ -89,9 +89,9 @@ final class UnitsTests: XCTestCase {
         XCTAssertNil(Units.mi.pace(seconds: 30, meters: 0))
         XCTAssertNil(Units.km.pace(seconds: 30, meters: -5))
         XCTAssertNil(Units.km.pace(seconds: .nan, meters: 100))
-        XCTAssertEqual(Units.mi.formatPace(seconds: 30, meters: 0), "—")
-        XCTAssertEqual(Units.mi.formatPace(.infinity), "—")
-        XCTAssertEqual(Units.km.formatPace(-1), "—")
+        XCTAssertEqual(Units.mi.formatPace(seconds: 30, meters: 0), "--")
+        XCTAssertEqual(Units.mi.formatPace(.infinity), "--")
+        XCTAssertEqual(Units.km.formatPace(-1), "--")
     }
 
     /// The existing mile formatters now route through `Units`, and must read exactly as

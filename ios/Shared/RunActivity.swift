@@ -62,11 +62,11 @@ struct RunActivityDisplay: Equatable {
     let distance: String
     /// "mi" / "km".
     let distanceUnit: String
-    /// "7:41", or "—".
+    /// "7:41", or Units.missing.
     let pace: String
     /// "/mi" / "/km".
     let paceSuffix: String
-    /// "+0:12", "-0:08", "on pace", "—"; nil with no target pace, or running free.
+    /// "+0:12", "-0:08", "on pace", Units.missing; nil with no target pace, or running free.
     let vsTarget: String?
     let trend: Trend
     /// The line by the logo: "Running", "Paused", …
