@@ -1,5 +1,5 @@
 import { assertEquals } from "jsr:@std/assert@1";
-import { cleanAction, cleanCoachTurns, stripDashes } from "./plain_text.ts";
+import { cleanAction, cleanCoachTurns, cleanShape, stripDashes } from "./plain_text.ts";
 
 const EM = "—";
 const EN = "–";
@@ -153,4 +153,54 @@ Deno.test("cleanCoachTurns touches only the coach's turns", () => {
     { role: "user", content: `My words ${EM} keep them` },
     { role: "assistant", content: "Easy today, no pace." },
   ]);
+});
+
+// ── cleanShape (#265) ─────────────────────────────────────────────────────────
+// The plan model writes two things the athlete reads, and both are stored: the rationale on
+// plans.assessment and each phase's focus line, which the generator copies onto every week
+// the phase covers. Everything else on a shape is arithmetic the generator trusts.
+
+const SHAPE = {
+  archetype: "progressive_build",
+  rationale: `Your base is solid ${EM} 38 miles a week for a month.`,
+  phases: [
+    { name: "base", weeks: 4, focus: `Aerobic volume ${EM} nothing hard yet.`, quality_per_week: 1 },
+    { name: "taper", weeks: 2, focus: "Freshen up", quality_per_week: 1 },
+  ],
+  start_weekly_mi: 38,
+  peak_weekly_mi: 55,
+  long_run_start_mi: 10,
+  long_run_peak_mi: 20,
+};
+
+Deno.test("the rationale and every phase focus are cleaned", () => {
+  const out = cleanShape(SHAPE);
+  assertEquals(out.rationale, "Your base is solid, 38 miles a week for a month.");
+  assertEquals(out.phases[0].focus, "Aerobic volume, nothing hard yet.");
+  assertEquals(out.phases[1].focus, "Freshen up");
+});
+
+Deno.test("the plan's arithmetic is data and survives untouched", () => {
+  const out = cleanShape(SHAPE);
+  assertEquals(out.archetype, SHAPE.archetype);
+  assertEquals(out.start_weekly_mi, 38);
+  assertEquals(out.peak_weekly_mi, 55);
+  assertEquals(out.long_run_start_mi, 10);
+  assertEquals(out.long_run_peak_mi, 20);
+  // The phase name is written to plan_weeks.phase, whose CHECK admits base|build|peak|taper
+  // only, and the week counts decide whether the block reaches its race.
+  assertEquals(out.phases.map((p) => [p.name, p.weeks, p.quality_per_week]), [
+    ["base", 4, 1],
+    ["taper", 2, 1],
+  ]);
+  assertEquals(SHAPE.rationale.includes(EM), true, "the input is not mutated");
+});
+
+Deno.test("a shape the model sent half-built is passed through, not thrown on", () => {
+  // Whatever arrives in the tool call reaches this before anything validates it.
+  assertEquals(cleanShape({} as { rationale?: string }), {});
+  assertEquals(cleanShape({ rationale: 7 as unknown as string }).rationale, 7 as unknown as string);
+  assertEquals(cleanShape({ phases: null as unknown as { focus?: string }[] }).phases, null as unknown as { focus?: string }[]);
+  const noFocus = [{ weeks: 3 } as { focus?: string }];
+  assertEquals(cleanShape({ phases: noFocus }).phases, noFocus);
 });

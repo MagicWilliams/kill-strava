@@ -21,12 +21,14 @@
 
 import { createClient } from "npm:@supabase/supabase-js@2";
 import {
-  fmtClock, generate, type Generated, MI, mondayOf, paceBasis, planWrites,
+  generate, type Generated, MI, mondayOf, paceBasis, planWrites,
   racePlacement, raceTooCloseForPlan, readPreferences, sessionDate, type Shape, taperWeeksFor,
   trainingPaces,
 } from "./generator.ts";
-import { extractFeatures, projectedFinishS, QUALIFYING_MI, type RunRow } from "./features.ts";
+import { extractFeatures, projectedFinishS, type RunRow } from "./features.ts";
 import { DistanceRequired, goalInsertRow, isMissingColumnError, requiresTargetTime, resolveGoal } from "./goal.ts";
+import { SHAPE_TOOL, shapeSystemPrompt } from "./prompts.ts";
+import { cleanShape } from "../_shared/plain_text.ts";
 import { usageRefusal } from "../_shared/usage_gate.ts";
 import { MAX_REQUEST_BYTES, readBodyWithin, tooLargeResponse } from "../_shared/request_size.ts";
 
@@ -47,38 +49,6 @@ const SAMPLING = {
   thinking: { type: "adaptive" },
   output_config: { effort: "medium" },
 } as const;
-
-// ── Shape proposal (Claude, forced tool) ─────────────────────────────────────
-const SHAPE_TOOL = {
-  name: "propose_plan_shape",
-  description: "Propose the training-plan shape for this athlete. Phases emerge from what the DATA says is missing — never force a fixed template. If the athlete is already aerobically fit, skip or shrink base. Anchor start volume on their real current volume.",
-  input_schema: {
-    type: "object",
-    properties: {
-      archetype: { type: "string", enum: ["rebuild_base", "progressive_build", "race_specific", "sharpen"] },
-      rationale: { type: "string", description: "2-3 sentences, grounded in the features, written to the athlete." },
-      phases: {
-        type: "array",
-        description: "In order, covering every training week (taper included, race week excluded).",
-        items: {
-          type: "object",
-          properties: {
-            name: { type: "string", enum: ["base", "build", "peak", "taper"] },
-            weeks: { type: "integer", minimum: 1 },
-            focus: { type: "string", description: "One line, athlete-facing." },
-            quality_per_week: { type: "integer", minimum: 0, maximum: 3 },
-          },
-          required: ["name", "weeks", "focus", "quality_per_week"],
-        },
-      },
-      start_weekly_mi: { type: "number", description: "Week-1 volume. Anchor on vol_4wk_avg_mi (max ~+15% unless risk_tolerance is ambitious)." },
-      peak_weekly_mi: { type: "number" },
-      long_run_start_mi: { type: "number" },
-      long_run_peak_mi: { type: "number", description: "Cap ≈ 35% of peak weekly volume, and respect what history shows they can absorb." },
-    },
-    required: ["archetype", "rationale", "phases", "start_weekly_mi", "peak_weekly_mi", "long_run_start_mi", "long_run_peak_mi"],
-  },
-};
 
 /// The forced tool call, or the error Response the handler should return as-is.
 async function proposeShape(apiKey: string, system: string): Promise<Shape | Response> {
@@ -196,49 +166,13 @@ Deno.serve(async (req) => {
     const paces = trainingPaces(basis.seconds, raceMi);
     // Riegel current fitness at the race distance, or null — never derived from the goal (#205).
     const projected = projectedFinishS(features);
-    const targetLine = goal_time_s != null
-      ? `target ${fmtClock(goal_time_s)}`
-      : `no target time — the goal is to finish. Training paces are derived from ${basis.source === "fitness" ? "current fitness" : "a conservative default (no usable recent runs)"}, not a goal; do not invent a target in the rationale`;
-
-    const bigMark = distance.bigLongRunMi;
-    const raceLines = [
-      `- This is a ${goal.distance.label === "custom" ? `${raceMi.toFixed(1)}-mile` : goal.distance.label} race block. ${raceMi <= 6.3 ? "Short race: speed and VO₂ work matter more than long-run length." : "Endurance race: threshold work and long runs carry the block."}`,
-      taperWeeks === 0
-        ? `- No taper phase: race week itself is the taper for this distance. The last phase ends the week before race week.`
-        : `- End with a taper of EXACTLY ${taperWeeks} week${taperWeeks === 1 ? "" : "s"} (race week excluded).`,
-      `- peak_weekly_mi is typically ${distance.peakBandMi[0]}–${distance.peakBandMi[1]} for this distance; above ${distance.peakBandMi[1]} only if vol_4wk_avg_mi is already higher. long_run_peak_mi ≤ ${distance.longRunCapMi}.`,
-      firstWeekIndex > 0
-        ? `- The athlete is ALREADY in week ${firstWeekIndex + 1} of this block. Phases cover only the remaining ${planWeeks} weeks; start_weekly_mi = vol_4wk_avg_mi exactly (they are mid-block, not starting).`
-        : null,
-      bigMark != null && prefs.longRunsBig != null
-        ? `- The athlete wants exactly ${prefs.longRunsBig} long run${prefs.longRunsBig === 1 ? "" : "s"} of ${bigMark}+ mi; the generator places them in the peak phase, so size peak to hold them.`
-        : null,
-      prefs.courseType === "rolling" || prefs.courseType === "hilly"
-        ? `- Course is ${prefs.courseType}: the generator adds hill work to base/build.`
-        : null,
-      // The rationale is shown beside the projection; with none stored, a finish time in the
-      // prose would be the same made-up number #205 removed from the column.
-      projected == null
-        ? `- No run of ${QUALIFYING_MI}+ mi in the last 8 weeks, so there is no projected finish. Do not estimate, predict or quote a finish time for the athlete in the rationale.`
-        : null,
-    ].filter(Boolean).join("\n");
-
-    // Claude proposes the shape (forced tool call).
-    const system = `You design the SHAPE of a running plan for Tempo. The athlete's real data and constraints are below. Rules:
-- Phases emerge from what the data says is missing. An already-fit athlete does NOT get sent back to base. A rebuilding athlete gets mostly aerobic work.
-- phases[].weeks must sum to EXACTLY ${planWeeks}.
-- Anchor start_weekly_mi on vol_4wk_avg_mi (at most ~15% above it; ambitious risk_tolerance may stretch to ~25%).
-- Ramp start→peak must stay plausible for ${planWeeks} weeks (~10%/wk standard, ~15%/wk ambitious); the generator adds step-back weeks automatically.
-${raceLines}
-- long_run_peak_mi ≤ 35% of peak_weekly_mi and ≤ roughly double longest_run_8wk_mi.
-- risk_tolerance: ${risk}. Honest, not reckless: the rationale must say what the data supports.
-
-<athlete>
-goal: ${race_name ?? "race"} (${goal.distance.label}, ${raceMi.toFixed(1)} mi) on ${race_date}, ${targetLine}
-weeks_until_race: ${weeksToRace}
-days_per_week: ${daysPerWeek}
-features: ${JSON.stringify(features, null, 1)}
-</athlete>`;
+    const system = shapeSystemPrompt({
+      planWeeks, taperWeeks, firstWeekIndex, weeksToRace, daysPerWeek, risk,
+      distance, distanceLabel: goal.distance.label, raceMi,
+      raceName: race_name, raceDate: race_date,
+      goalTimeS: goal_time_s, paceBasisSource: basis.source,
+      prefs, projectedFinishS: projected, features,
+    });
 
     // `none` is "no plan, just coaching": there is no shape to ask for, so no Claude call.
     let generated: Generated | null = null;
@@ -250,9 +184,12 @@ features: ${JSON.stringify(features, null, 1)}
       if (refusal) return refusal;
       const proposed = await proposeShape(apiKey, system);
       if (proposed instanceof Response) return proposed;
+      // Before the generator copies the focus lines onto weeks and the rationale into
+      // plans.assessment: the prompt asks for plain text, stripDashes() is what holds it (#265).
+      const shaped = cleanShape(proposed);
       // Phase arithmetic, the taper, the volume band and the long-run cap are no longer
       // trusted to the model: generate() fits the shape to the distance table (normalizeShape).
-      generated = generate(proposed, {
+      generated = generate(shaped, {
         startMonday, firstWeekIndex, daysPerWeek, longRunDay, paces, wantsStrength,
         raceDate: race_date, raceName: race_name, distance, prefs,
         currentWeeklyMi: features.vol_4wk_avg_mi, anchorWeeklyMi, rationaleNote: basis.note,

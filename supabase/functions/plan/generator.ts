@@ -78,7 +78,7 @@ export function paceBasis(goalTimeS: number | null, raceMi: number, currentRaceS
     const seconds = Math.round(currentRaceS * FITNESS_MARGIN);
     return {
       seconds, source: "fitness",
-      note: `No target time yet. Training paces come from your current fitness — your best recent run projects about ${fmtClock(currentRaceS)} for this distance — eased a few percent to stay conservative.`,
+      note: `No target time yet. Training paces come from your current fitness. Your best recent run projects about ${fmtClock(currentRaceS)} for this distance, eased a few percent to stay conservative.`,
     };
   }
   const seconds = Math.round(equivalentTime(DEFAULT_BASIS_MARATHON_S, MARATHON_MI, raceMi));
@@ -469,7 +469,7 @@ function qualitySession(kind: QualityKind, phase: string, paces: Paces, profile:
     case "race_touch":
       return { type: profile.raceTouch.type, title: "Race-pace touch", detail: profile.raceTouch.detail.replace("{pace}", race), pace: paces.race };
     case "hills":
-      return { type: "interval", title: "Hill repeats", detail: "8×60–90s uphill at 5K effort, jog down — climbing strength for the course", pace: null };
+      return { type: "interval", title: "Hill repeats", detail: "8×60–90s uphill at 5K effort, jog down. Climbing strength for the course.", pace: null };
   }
 }
 
@@ -578,9 +578,9 @@ export function generate(shape: Shape, opts: {
     if (profile.raceSpecificLongRuns && allowsRacePace && wk.phase === "peak" && wk.index % 2 === 1) {
       const finish = Math.max(2, Math.round(longMi * 0.3));
       longTitle = "Race-pace long run";
-      longDetail = `${longMi.toFixed(1)} mi, the last ${finish} @ ${fmtPace(opts.paces.race)} — rehearse race day`;
+      longDetail = `${longMi.toFixed(1)} mi, the last ${finish} @ ${fmtPace(opts.paces.race)}, rehearsing race day`;
     }
-    if (prefs.courseType === "trail" && wk.phase !== "taper") longDetail += ". On trail if you can — the race is.";
+    if (prefs.courseType === "trail" && wk.phase !== "taper") longDetail += ". On trail if you can. The race is.";
     sessions.push({
       week_index: wk.index, day_offset: longOffset, type: "long", title: longTitle,
       target_distance_m: Math.round(longMi * MI), target_pace_sec: opts.paces.easy,
@@ -616,7 +616,7 @@ export function generate(shape: Shape, opts: {
         sessions.push({
           week_index: wk.index, day_offset: free, type: "cross", title: "Strength",
           target_distance_m: null, target_pace_sec: null,
-          structure: { detail: "30–40 min: squats, lunges, calf raises, hips, core — heavy enough to matter, light enough to run tomorrow." },
+          structure: { detail: "30–40 min: squats, lunges, calf raises, hips, core. Heavy enough to matter, light enough to run tomorrow." },
         });
       }
     }
@@ -637,7 +637,7 @@ export function generate(shape: Shape, opts: {
   weeks.push({
     index: race.weekIndex,
     phase: "taper",   // plan_weeks.phase CHECK admits base|build|peak|taper only
-    focus: "Race week — the training is done. Everything this week serves race day.",
+    focus: "Race week. The training is done. Everything this week serves race day.",
     target: +raceMi.toFixed(1),
     quality: 0,
   });
@@ -645,7 +645,7 @@ export function generate(shape: Shape, opts: {
     week_index: race.weekIndex, day_offset: race.dayOffset, type: "race",
     title: opts.raceName ?? "Race day",
     target_distance_m: profile.meters, target_pace_sec: opts.paces.race,
-    structure: { detail: `${raceMi.toFixed(1)} mi @ ${fmtPace(opts.paces.race)} — goal pace.` },
+    structure: { detail: `${raceMi.toFixed(1)} mi @ ${fmtPace(opts.paces.race)}, goal pace.` },
   });
 
   return {
