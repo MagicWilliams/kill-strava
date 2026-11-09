@@ -25,13 +25,17 @@ export const MAX_REQUEST_BYTES = {
 /**
  * The request's body as text, or null if it is over `limit`.
  *
- * Counts what actually arrives and stops reading there. Content-Length only gets to refuse
- * early: the caller writes that header, and a chunked request doesn't have one.
+ * Counts what actually arrives and stops keeping it there. Content-Length only gets to refuse
+ * early: the caller writes that header, and a chunked request doesn't have one. Either way a
+ * refused body is read to the end and thrown away (see `drain`), which costs time but no tokens.
  */
 export async function readBodyWithin(req: Request, limit: number): Promise<string | null> {
   const declared = Number(req.headers.get("content-length"));
-  if (declared > limit) return null;
   if (!req.body) return "";
+  if (declared > limit) {
+    await drain(req.body.getReader());
+    return null;
+  }
 
   const reader = req.body.getReader();
   const chunks: Uint8Array[] = [];
@@ -41,7 +45,7 @@ export async function readBodyWithin(req: Request, limit: number): Promise<strin
     if (done) break;
     received += value.length;
     if (received > limit) {
-      await reader.cancel();
+      await drain(reader);
       return null;
     }
     chunks.push(value);
@@ -54,6 +58,16 @@ export async function readBodyWithin(req: Request, limit: number): Promise<strin
     offset += chunk.length;
   }
   return new TextDecoder().decode(bytes);
+}
+
+/**
+ * Reads the rest of a refused body and throws it away. On Supabase's edge runtime a response
+ * sent while the request is still unread never reaches the caller: the refusal is logged and the
+ * client waits until it times out. Found on staging, 2026-11-08, with a 600 KB body sent both
+ * with a Content-Length and chunked.
+ */
+async function drain(reader: ReadableStreamDefaultReader<Uint8Array>): Promise<void> {
+  while (!(await reader.read()).done) { /* discard */ }
 }
 
 /**
