@@ -137,8 +137,9 @@ final class ChatStore: ObservableObject {
     @Published private(set) var messages: [ChatMessage] = []
     @Published private(set) var isThinking = false
     @Published var errorText: String?
-    /// The coach or plan allowance is used up for now. Apart from `errorText` because it
-    /// isn't an error, and the screen shouldn't draw it in the color of one (`UsageLimit`).
+    /// The coach or plan allowance is used up for now, or a request was over the size cap.
+    /// Apart from `errorText` because it isn't a connection failure, and the screen shouldn't
+    /// draw it in the color of one (`UsageLimit`).
     @Published private(set) var usageNotice: String?
 
     /// The conversation this store is reading and writing.

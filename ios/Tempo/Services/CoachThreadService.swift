@@ -263,7 +263,12 @@ enum CoachThreadService {
         } catch is CoachGateway.ConsentRequired {
             return .notWritten
         } catch {
-            if UsageLimit.refusal(from: error, surface: "summarize") != nil { return .limited }
+            if let refusal = UsageLimit.refusal(from: error, surface: "summarize") {
+                // Oldest first, so stopping the backlog for a thread that is too large would
+                // hold back every newer recap, on every pass, forever. It stays untitled, and
+                // the ones behind it still get written.
+                return refusal.appliesToLaterRequests ? .limited : .notWritten
+            }
             Telemetry.error("coach.thread_summarize_failed", error)
             return .notWritten
         }

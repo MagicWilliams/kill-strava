@@ -64,6 +64,20 @@ Not in this change, because the task was `CLAUDE.md` and the agents: `docs/AUTON
 ### Next up
 - #265 and #266, then #267. #268 runs last and needs David's sign-off on a dry run.
 
+## 2026-11-04 (later): A size cap on each coach and plan call
+
+### Decisions
+- **Size the cap from what the app can build, not from today's traffic.** One athlete's logs would set it too low for the next one. The `coach` cap sits above a full 200-message recap with the context at the app's own ceilings, and a test pins that.
+- **Measure the prompt as well as the body.** The coach pretty-prints `context`, `run` and `block`, and the indentation grows with depth, so a 10 KB body of nested arrays renders to 25 MB. A body check alone would have been easy to walk around.
+- **A size refusal isn't a usage limit.** It spends nothing and counts against nothing, and it comes back as its own 413 with its own telemetry event, because a real athlete reaching it means the cap is wrong.
+- **A too-large thread doesn't stop the recap backlog,** the way a used-up allowance does. Recaps run oldest first, so stopping would hold back every newer one forever.
+
+### Shipped
+- `MAX_REQUEST_BYTES` and the checks in `coach` and `plan`, tests through the real handlers, and the refusal state in the app. Written, not deployed.
+
+### Next up
+- David deploys both functions (steps in the PR).
+
 ## 2026-11-04 (later): One proposal at a time, and the athlete's word reaches the card
 
 Found in two fresh-account setups from that day: one run correction proposed four times, three memory cards in one reply, and "5 days, Friday long runs" lost when Confirm wrote the form's 6 days and Sunday.
