@@ -186,6 +186,7 @@ Later wishlist (explicitly deferred): watch laps, weather, PR detection, share c
 
 ## Session log
 
+- **2026-11-08 — Open PRs merged; coach v25 and plan v11 deployed.** Nine PRs merged (#217 still held). The size-cap 413 hung on the real edge runtime until refused bodies were drained; fixed on #275 before the production deploy. Details in `docs/decision-log.md`.
 - **2026-11-04 — Coach proposals: one at a time, and the conversation reaches the card.** Two fresh-account setups showed repeat cards after every Confirm, several cards in one reply, and chat changes lost to the intake form. Decisions are in `docs/decision-log.md`. Getting out of a conversation and out of setup went in a separate PR.
 - **2026-10-12 — Post-Chicago: blocks end, Just running, intake for any distance; recorder planned.**
   - Chicago (11 Oct) was run with no watch and Strava paused mid-race, so there's **no race run**. Closing a block takes a typed chip time as the main path (#100, PR #136).
