@@ -4,6 +4,7 @@
 import { assert, assertEquals } from "jsr:@std/assert@1";
 import { goalLifecycle, END_GOAL_FEATURE } from "./goal_lifecycle.ts";
 import { HELD_BACK_PLAN } from "./goal_guard.ts";
+import { ACKNOWLEDGE_RULES } from "./proposals.ts";
 import {
   BLOCK_REVIEW_INSTRUCTIONS,
   CONFIRM_BELOW_REPLY,
@@ -32,6 +33,7 @@ function everyPrompt(): Record<string, string> {
     lost_thread: LOST_THREAD_REPLY,
     confirm_below: CONFIRM_BELOW_REPLY,
     held_back: HELD_BACK_PLAN,
+    acknowledge: ACKNOWLEDGE_RULES,
   };
   // Every client gets a different combination of these, so each one is checked.
   for (const features of [[], [RUN_FACTS_FEATURE, END_GOAL_FEATURE]]) {

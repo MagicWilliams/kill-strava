@@ -83,11 +83,26 @@ export function formatFinish(seconds: number): string {
 ///
 /// "3:15" could be 3 h 15 min or 3 min 15 s, and both readings go in: either is a time the
 /// athlete wrote, and the one that is not a plausible finish never matches a goal_time_s.
-/// Spellings without a colon ("sub-3", "under 20 minutes") are not read. The coach then
-/// cannot propose that time as the athlete's until they put it as a time, which is the safe
-/// way round for a number they will train on.
+/// Plain speech counts too: "under 20 minutes", "sub-20", "sub 3", "3 hours", "3 hours 30". Until
+/// 2026-11-04 only colons were read, on the reasoning that the coach could not then put a time
+/// in the athlete's mouth. What it did instead was turn back the time they had just asked for,
+/// and hand them a suggested one without saying so. A bare "sub-3" takes both readings again,
+/// and the implausible one never matches a goal_time_s.
 export function timesIn(text: string): Set<number> {
   const found = new Set<number>();
+  // "3 hours 30" and "3 hours" first, so the minutes of the first are not read on their own.
+  const prose = text.replace(
+    /\b(\d{1,2})\s*(?:hours?|hrs?)\b(?:\s*(?:and\s*)?(\d{1,2})\b(?:\s*(?:minutes?|mins?)\b)?)?/gi,
+    (_, h: string, m?: string) => {
+      found.add(Number(h) * 3600 + (m === undefined ? 0 : Number(m)) * 60);
+      return " ";
+    },
+  );
+  for (const m of prose.matchAll(/\b(\d{1,3})\s*(?:minutes?|mins?)\b/gi)) found.add(Number(m[1]) * 60);
+  for (const m of prose.matchAll(/\b(?:sub|under|break|breaking)[\s-]*(\d{1,3})\b(?![:\d])/gi)) {
+    found.add(Number(m[1]) * 60);
+    if (Number(m[1]) <= 9) found.add(Number(m[1]) * 3600);
+  }
   for (const m of text.matchAll(/(?<![\d:])(\d{1,2}):(\d{2})(?::(\d{2}))?(?![\d:])/g)) {
     const a = Number(m[1]), b = Number(m[2]);
     if (b > 59) continue;
@@ -135,7 +150,8 @@ export function isSuggestedRace(input: Record<string, unknown>, sg: SuggestedGoa
 ///
 /// The goal type is the intake's when there is one, not the card's: the app saves the intake's
 /// goal_type whatever the card says (`PlanRequest.fromIntake`), so a "pr" intake cannot be
-/// talked out of the guard by a card that calls itself a "time" goal.
+/// talked out of the guard by a card that calls itself a "time" goal. intake_changes is the
+/// exception, because the app saves that too: it is the athlete changing their answer.
 export function goalTimeRejection(
   input: Record<string, unknown>,
   context: unknown,
@@ -146,8 +162,13 @@ export function goalTimeRejection(
   const goalTime = num(input.goal_time_s);
   if (goalTime === null) return null;
 
+  const changedType = obj(input.intake_changes)?.goal_type;
   const intakeType = obj(obj(context)?.intake)?.goal_type;
-  const goalType = typeof intakeType === "string" ? intakeType : input.goal_type;
+  const goalType = typeof changedType === "string"
+    ? changedType
+    : typeof intakeType === "string"
+    ? intakeType
+    : input.goal_type;
   if (typeof goalType !== "string" || !GUARDED_GOAL_TYPES.has(goalType)) return null;
 
   const t = Math.round(goalTime);

@@ -58,12 +58,14 @@ Deno.test("a chunked body is reassembled in order, across a split character", as
   assertEquals(await readBodyWithin(req, 100), "pace 🏃 7:05");
 });
 
-Deno.test("a chunked body with no Content-Length is cut off once it passes the limit", async () => {
+Deno.test("a chunked body with no Content-Length is refused once it passes the limit, and the rest is drained", async () => {
+  // Drained, not cancelled: on Supabase's edge runtime a 413 sent over an unread upload never
+  // reached the caller (staging, 2026-11-08). The function logged the refusal and the client hung.
   const chunk = new Uint8Array(60);
   const { req, cancelled, pulled } = streamed([chunk, chunk, chunk, chunk, chunk]);
   assertEquals(await readBodyWithin(req, 100), null);
-  assert(cancelled(), "the rest of the upload should be abandoned");
-  assert(pulled() < 5, "reading should stop at the limit, not at the end");
+  assertEquals(cancelled(), false);
+  assertEquals(pulled(), 5);
 });
 
 Deno.test("a Content-Length that understates the body doesn't get it past the limit", async () => {
@@ -77,11 +79,11 @@ Deno.test("a Content-Length that understates the body doesn't get it past the li
   assertEquals(await readBodyWithin(req, 100), null);
 });
 
-Deno.test("a Content-Length over the limit is refused without reading the body", async () => {
+Deno.test("a Content-Length over the limit is refused on the header, and the body is still drained", async () => {
   const { req, pulled } = streamed([new Uint8Array(10)]);
   const declared = new Request(req, { headers: { "content-length": "101" } });
   assertEquals(await readBodyWithin(declared, 100), null);
-  assertEquals(pulled(), 0);
+  assertEquals(pulled(), 1);
 });
 
 Deno.test("a Content-Length that isn't a number falls through to counting", async () => {

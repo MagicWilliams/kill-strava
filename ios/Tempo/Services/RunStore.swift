@@ -817,6 +817,17 @@ final class RunStore: ObservableObject {
 
     func markIntakeSent() { intakeHandoff?.sentToCoach = true }
 
+    /// The athlete changed an answer in conversation. No-op with no intake in flight.
+    func reviseIntake(_ changes: IntakeChanges) {
+        intakeHandoff?.stamp = intakeHandoff?.stamp?.revised(by: changes)
+    }
+
+    /// A card just folded its changes into these answers, and later cards start from them.
+    func reviseIntake(to stamp: IntakeStamp) {
+        guard intakeHandoff?.stamp != nil else { return }
+        intakeHandoff?.stamp = stamp
+    }
+
     /// The card it produced was confirmed and the plan engine ran; nothing left to carry.
     func finishIntake() { intakeHandoff = nil }
 
@@ -1024,6 +1035,10 @@ struct CoachContext: Encodable {
     /// and the previous thread's recap belong to the chat. `ChatStore` stamps it on at the
     /// moment of the request — see `ChatStore.requestReply`.
     var memory: MemoryCtx?
+    /// The card on screen, unanswered, and what has already been applied in this conversation.
+    /// `ChatStore` stamps these on too, for the same reason. See `OpenProposal`.
+    var open_proposal: ProposedAction? = nil
+    var applied_in_thread: [String]? = nil
 
     struct MemoryCtx: Encodable {
         /// Durable facts, newest first. The coach's own words, written by its `remember`

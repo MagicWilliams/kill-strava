@@ -108,7 +108,7 @@ final class CoachAcknowledgementTests: XCTestCase {
     func testAutoApplySetIsExactlyTheInterviewFacts() {
         XCTAssertEqual(
             CoachAcknowledgement.onboardingAutoApplyTypes,
-            ["update_athlete", "update_plan_settings", "set_risk_tolerance", "complete_onboarding"]
+            ["update_athlete", "update_plan_settings", "set_risk_tolerance", "complete_onboarding", "remember"]
         )
     }
 

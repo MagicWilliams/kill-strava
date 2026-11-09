@@ -402,6 +402,12 @@ struct CoachView: View {
                     .font(Tokens.Font.ui(13, .semibold))
                     .foregroundStyle(state == .dismissed ? Tokens.Palette.textTertiary : Tokens.Palette.textSecondary)
             }
+            // What the summary can't be trusted to say: the target and the week it builds, from
+            // the same request Confirm sends. A change said in chat that didn't reach the card
+            // shows up here, before the tap.
+            Text([request.targetLine, action.intake?.settingsLine].compactMap { $0 }.joined(separator: " · "))
+                .font(Tokens.Font.ui(13))
+                .foregroundStyle(state == .dismissed ? Tokens.Palette.textTertiary : Tokens.Palette.textSecondary)
             if request.distanceLabel == nil, state == .pending || state == .failed {
                 Text("No race distance on this card. Ask the coach to name it before you confirm.")
                     .font(Tokens.Font.ui(12)).foregroundStyle(Tokens.Palette.danger)
@@ -411,8 +417,14 @@ struct CoachView: View {
 
     /// Confirm card for a coach-proposed change. Walks pending → applying → applied/failed,
     /// and stays on screen after resolving as evidence the change actually landed.
-    private func actionCard(for messageID: UUID, action: ProposedAction, state: ChatMessage.ActionState) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
+    ///
+    /// A card the conversation has moved past stays too, greyed like a dismissed one, so the
+    /// transcript still reads as what happened. It has no buttons: see `OpenProposal`.
+    private func actionCard(for messageID: UUID, action: ProposedAction, state cardState: ChatMessage.ActionState) -> some View {
+        var closed: OpenProposal.Reason?
+        if case .closed(let reason) = chat.proposalStatus(messageID) { closed = reason }
+        let state = closed == nil ? cardState : .dismissed
+        return VStack(alignment: .leading, spacing: 10) {
             SectionLabel(actionTitle(action.type), color: borderColor(for: state))
             Text(action.displaySummary)
                 .font(Tokens.Font.ui(14, .medium))
@@ -438,6 +450,10 @@ struct CoachView: View {
                 runPreview(preview)
             }
 
+            if let closed {
+                Text(closed.line)
+                    .font(Tokens.Font.ui(13)).foregroundStyle(Tokens.Palette.textTertiary)
+            } else {
             switch state {
             case .pending, .failed:
                 if chat.confirmQueue.isAwaitingTurn(messageID) {
@@ -496,6 +512,7 @@ struct CoachView: View {
                     Image(systemName: "xmark.circle").foregroundStyle(Tokens.Palette.textTertiary)
                     Text("Dismissed").font(Tokens.Font.ui(13)).foregroundStyle(Tokens.Palette.textTertiary)
                 }
+            }
             }
         }
         .padding(14)

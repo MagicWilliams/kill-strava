@@ -18,6 +18,7 @@ import { runEditing, shapeRunInput, speaksRunFacts } from "./run_corrections.ts"
 import { goalLifecycle } from "./goal_lifecycle.ts";
 import { parseThreadSummary } from "./summary.ts";
 import { goalRejections, HELD_BACK_PLAN } from "./goal_guard.ts";
+import { ACKNOWLEDGE_RULES, isSilent, oneCardOnly, surplusCards, toolsForTurn } from "./proposals.ts";
 import { usageRefusal } from "../_shared/usage_gate.ts";
 import { usageKindForMode } from "../_shared/usage_limit.ts";
 import { MAX_REQUEST_BYTES, promptBytes, readBodyWithin, tooLargeResponse } from "../_shared/request_size.ts";
@@ -70,7 +71,7 @@ Deno.serve(async (req) => {
   try {
     const body = await readBodyWithin(req, MAX_REQUEST_BYTES.coach);
     if (body === null) return tooLargeResponse("coach");
-    const { messages, context, mode, run, block, features } = JSON.parse(body);
+    const { messages, context, mode, run, block, features, acknowledging } = JSON.parse(body);
 
     // #206: a build that computes run corrections itself says so in `features`; anything
     // else (every build installed before it) keeps the totals schema it was written against.
@@ -78,7 +79,14 @@ Deno.serve(async (req) => {
     const runTools = runEditing(features);
     // #238: end_goal only for a build that can apply it, the same handshake as run_facts.
     const goalTools = goalLifecycle(features);
-    const TOOLS = [...runTools.tools, ...OTHER_TOOLS, ...goalTools.tools];
+    // Only ever true from a build that sends it. Every other caller gets the whole set.
+    const TOOLS = toolsForTurn(
+      [...runTools.tools, ...OTHER_TOOLS, ...goalTools.tools],
+      context,
+      acknowledging === true,
+    );
+    // An empty list is refused by the API, and "no tools" is what an acknowledgement means.
+    const toolsParam = TOOLS.length > 0 ? { tools: TOOLS } : {};
 
     // Takeaway mode: one-shot per-run read, cached by the app in runs.coach_takeaway.
     // Block review mode: one-shot block retrospective, cached by the app in goals.review.
@@ -95,6 +103,7 @@ Deno.serve(async (req) => {
     }
 
     let system = `${persona(runTools.rules, goalTools.rules)}\n\n<athlete_context>\n${JSON.stringify(context ?? {}, null, 1)}\n</athlete_context>`;
+    if (acknowledging === true) system += `\n\n${ACKNOWLEDGE_RULES}`;
     let wireMessages: WireMessage[] = messages ?? [];
     if (takeaway) {
       system += `\n\n<run_detail>\n${JSON.stringify(run ?? {}, null, 1)}\n</run_detail>`;
@@ -139,7 +148,7 @@ Deno.serve(async (req) => {
         model: MODEL,
         ...SAMPLING,
         system,
-        ...(oneShot ? {} : { tools: TOOLS }),
+        ...(oneShot ? {} : toolsParam),
         messages: anthropicMessages,
       }),
     });
@@ -161,19 +170,20 @@ Deno.serve(async (req) => {
     // goes back to the model as a tool error, and its reply is rewritten in the round below.
     const athleteTurns = anthropicMessages.filter((m) => m.role === "user").map((m) => m.content);
     const rejected = goalRejections(toolBlocks, context, athleteTurns);
+    // One proposal at a time, counted among the cards the guard let through. These go back the
+    // same way: the text was written about all of them, so it gets rewritten too.
+    const offered = toolBlocks.filter((b) => !rejected.has(b.id ?? ""));
+    for (const [id, why] of surplusCards(offered, context)) rejected.set(id, why);
 
     // The model often emits ONLY a tool call, no prose — which would stall the
     // conversation (especially the onboarding interview). One continuation round:
     // feed back tool results and let the coach keep talking.
     if ((toolBlocks.length > 0 && !reply) || rejected.size > 0) {
-      const isAutoApplied = (name?: string) =>
-        (context?.onboarding?.active === true) &&
-        ["update_athlete", "update_plan_settings", "set_risk_tolerance", "complete_onboarding"].includes(name ?? "");
       const toolResults = toolBlocks.map((b) => ({
         type: "tool_result",
         tool_use_id: b.id,
         ...(rejected.has(b.id ?? "") ? { is_error: true } : {}),
-        content: rejected.get(b.id ?? "") ?? (isAutoApplied(b.name)
+        content: rejected.get(b.id ?? "") ?? (isSilent(b.name, context)
           ? TOOL_RESULT_RECORDED
           : TOOL_RESULT_PROPOSED),
       }));
@@ -184,7 +194,7 @@ Deno.serve(async (req) => {
           model: MODEL,
           ...SAMPLING,
           system,
-          tools: TOOLS,
+          ...toolsParam,
           messages: [
             ...anthropicMessages,
             { role: "assistant", content: data.content },
@@ -214,7 +224,7 @@ Deno.serve(async (req) => {
           model: MODEL,
           ...SAMPLING,
           system,
-          ...(oneShot ? {} : { tools: TOOLS }),
+          ...(oneShot ? {} : toolsParam),
           messages: anthropicMessages,
         }),
       });
@@ -240,6 +250,9 @@ Deno.serve(async (req) => {
       toolBlocks = toolBlocks.filter((b) => !stillRejected.has(b.id ?? ""));
       reply = reply ? `${reply}\n\n${HELD_BACK_PLAN}` : HELD_BACK_PLAN;
     }
+
+    // Whatever the rounds above produced, the app gets at most one card.
+    toolBlocks = oneCardOnly(toolBlocks, context);
 
     // The model occasionally omits `summary` despite the schema — guarantee it here,
     // since the app renders it on the confirm card.
