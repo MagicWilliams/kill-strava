@@ -65,6 +65,28 @@ final class CancellationTests: XCTestCase {
         XCTAssertFalse(Cancellation.isCancellation(other))
     }
 
+    // MARK: #248 — the coach call site #201 missed
+
+    func testTheCoachInvokeCancellationIsACancellation() {
+        // 2026-10-29, 16:25:20 and 20:42:15 UTC (0.1.0+87 and +94): two `coach.invoke_failed`
+        // error rows, both this error verbatim — the chat screen going away mid-send, not a
+        // coach that failed. `ChatStore.requestReply` was the fifth catch site and still
+        // called `Telemetry.error` directly; it now goes through `errorUnlessCancelled`.
+        let cancelled = NSError(
+            domain: NSURLErrorDomain,
+            code: NSURLErrorCancelled,
+            userInfo: [NSLocalizedDescriptionKey: "cancelled"]
+        )
+        XCTAssertTrue(Cancellation.isCancellation(cancelled))
+    }
+
+    func testARealCoachInvokeFailureStillReports() {
+        // The other `coach.invoke_failed` shape (#193/#195, both real): a 502 from the edge
+        // function wrapping a bad wire history. Dropping these would have hidden a live bug.
+        let http = NSError(domain: "FunctionsError", code: 502)
+        XCTAssertFalse(Cancellation.isCancellation(http))
+    }
+
     func testADecodingFailureIsARealFailure() {
         // The kind of error a schema drift produces — exactly what `sync.runs_unreadable`
         // exists to catch, and must keep catching.
