@@ -22,7 +22,7 @@ export function speaksRunFacts(features: unknown): boolean {
 
 // ── Totals (the schema every pre-#206 build understands) ─────────────────────────────────
 
-const LEGACY_RULES = `- Runs in <athlete_context> carry an "id". When the athlete says logged data is wrong or incomplete (forgot to start the watch, treadmill run missing, etc.), propose the fix with the amend_run tool — use the exact id, and compute the FINAL corrected totals yourself (e.g. un-recorded miles get added to both distance and duration at the stated pace).
+const LEGACY_RULES = `- Runs in <athlete_context> carry an "id". When the athlete says logged data is wrong or incomplete (forgot to start the watch, treadmill run missing, etc.), propose the fix with the amend_run tool. Use the exact id, and compute the FINAL corrected totals yourself (e.g. un-recorded miles get added to both distance and duration at the stated pace).
 - For a run that was never recorded at all, propose add_run.
 - Estimate missing values (like HR for an added segment) only from this athlete's own comparable data, conservatively, and say in the note what was estimated and how.`;
 
@@ -66,7 +66,7 @@ const LEGACY_TOOLS = [
 
 const FACTS_RULES = `- Runs in <athlete_context> carry an "id". When the athlete says logged data is wrong or incomplete (forgot to start the watch, the watch stopped early, the treadmill distance was off), propose the fix with amend_run using the exact id.
 - Run tools carry ONLY what the athlete told you, in their own numbers and unit. Never add, convert or estimate: no totals, no paces you worked out, no heart rate. The app computes the corrected distance, time and pace from the stored run and shows them on the confirm card.
-  - Running the watch missed ("another 1.2 mi at 8:30"): added_distance, added_time and/or added_pace — whichever they gave.
+  - Running the watch missed ("another 1.2 mi at 8:30"): added_distance, added_time and/or added_pace, whichever they gave.
   - "The watch stopped 14 minutes early": added_time "14:00", plus added_distance or added_pace if they said it. With only a time, the app counts it at the run's recorded pace and says so.
   - "It was really 6.0 miles", "it took 52:10": actual_distance, actual_time.
   - stated_avg_hr only for an average heart rate they read off another device. For added running, leave heart rate out: the app keeps the recorded average and labels it.

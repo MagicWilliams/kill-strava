@@ -50,6 +50,20 @@ Not in this change, because the task was `CLAUDE.md` and the agents: `docs/AUTON
 - Fill the `[UPDATE WHEN THE CONSENT SCREEN SHIPS]` placeholder in `docs/app-store-listing.md` once that file lands on `main`.
 - `site/privacy.html` (#250) summarises the same flow more briefly than this screen; bring it up to the same list.
 
+## 2026-11-04: A plain voice for the app and the coach
+
+### Decisions
+- **No em dashes anywhere David reads, and no stock AI phrasing.** Work is split across #264 (coach), #265 (plan function), #266 (app copy), #267 (comments, docs, CI guard) and #268 (stored text).
+- **The prompt is the root cause.** The model copied how its prompt was written, including "niggles", "honest" and "X, not Y" lines. So the prompt changes first and tests hold it to the same rules.
+- **Dashes are enforced in code; banned words stay a prompt rule.** A dash can be mechanically replaced. Swapping a word inside a finished sentence produces garbage.
+- **Left as written:** text the athlete typed, applied migrations and dated `progress.md` entries.
+
+### Shipped
+- #264: coach prompt rewrite, the dash scrubber on all coach output, and prompt tests.
+
+### Next up
+- #265 and #266, then #267. #268 runs last and needs David's sign-off on a dry run.
+
 ## 2026-11-04 (later): A size cap on each coach and plan call
 
 ### Decisions
