@@ -103,6 +103,27 @@ export function cleanAction<T extends Record<string, unknown>>(action: T): T {
   return out as T;
 }
 
+/// The prose a model proposed for a plan, cleaned (#265). Only the two fields an athlete reads
+/// are touched: the rationale shown beside the projection, and each phase's focus line, which
+/// the generator copies onto every week that phase covers. Everything else on a shape is data
+/// the generator does arithmetic on (week counts, volumes, the phase name the CHECK admits),
+/// and a comma spliced into one of those would be a corrupted plan, not a style fix.
+///
+/// Shaped structurally rather than by importing plan's `Shape`: this runs on whatever the model
+/// put in the tool call, so a field it left out is something to pass through, not to throw on.
+export function cleanShape<T extends { rationale?: string; phases?: { focus?: string }[] }>(
+  shape: T,
+): T {
+  const out: Record<string, unknown> = { ...shape };
+  if (typeof shape.rationale === "string") out.rationale = stripDashes(shape.rationale);
+  if (Array.isArray(shape.phases)) {
+    out.phases = shape.phases.map((phase) =>
+      phase && typeof phase.focus === "string" ? { ...phase, focus: stripDashes(phase.focus) } : phase
+    );
+  }
+  return out as T;
+}
+
 /// The transcript with the coach's own past turns cleaned, so the model is not shown its old
 /// style to copy. The athlete's turns are their words and pass through as written.
 export function cleanCoachTurns<T extends { role: string; content: string }>(turns: readonly T[]): T[] {

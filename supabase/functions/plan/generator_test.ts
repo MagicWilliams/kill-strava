@@ -33,8 +33,10 @@ import {
   resolveDistance,
   sessionDate,
   type Shape,
+  fmtPace,
   trainingPaces,
 } from "./generator.ts";
+import { stripDashes } from "../_shared/plain_text.ts";
 
 const PACES = { easy: 570, marathon: 495, threshold: 420, interval: 400, repetition: 380, race: 495 };
 
@@ -614,4 +616,74 @@ Deno.test("fmtClock reads like a finish time", () => {
   assertEquals(fmtClock(11_700), "3:15:00");
   assertEquals(fmtClock(1_565), "26:05");
   assertEquals(fmtClock(3_600), "1:00:00");
+});
+
+// ── Plain text (#265) ─────────────────────────────────────────────────────────
+// The plan function wrote em dashes into rows an athlete reads, through its own fixed text:
+// race week's focus line read "Race week — the training is done", and every race-day session
+// ended "— goal pace." #264 scrubbed the coach and never touched this path, so the dashes
+// came back the moment a plan was built.
+//
+// The assertion is that stripDashes() leaves the text alone. That is the same scrubber the
+// coach's replies go through, so it already knows that a range ("15–20 min") and a hyphenated
+// word are not clause dashes; text written without one comes back from it unchanged.
+
+/// Every string in a generated plan that an athlete reads, labelled by where it came from.
+function prose(g: {
+  shape: { rationale: string };
+  weeks: { index: number; focus: string }[];
+  sessions: { title: string; structure: unknown }[];
+  warnings: string[];
+  notes: string[];
+}): [string, string][] {
+  const out: [string, string][] = [["rationale", g.shape.rationale]];
+  for (const w of g.weeks) out.push([`week ${w.index} focus`, w.focus]);
+  for (const s of g.sessions) {
+    out.push([`title "${s.title}"`, s.title]);
+    const detail = (s.structure as { detail?: unknown } | null)?.detail;
+    if (typeof detail === "string") out.push([`detail of "${s.title}"`, detail]);
+  }
+  for (const w of g.warnings) out.push(["warning", w]);
+  for (const n of g.notes) out.push(["note", n]);
+  return out;
+}
+
+function assertPlain(label: string, g: Parameters<typeof prose>[0]) {
+  for (const [where, text] of prose(g)) {
+    assertEquals(stripDashes(text), text, `${label}: ${where}`);
+  }
+}
+
+Deno.test("#265: nothing the generator writes into a plan carries an em dash", () => {
+  for (const d of ALL_DISTANCES) {
+    // Strength on: its detail line is the only session text the athlete reads that the
+    // distance table has no hand in.
+    assertPlain(d, block({ distance: d }));
+    assertPlain(`${d} + strength`, block({ distance: d, wantsStrength: true }));
+  }
+  for (const courseType of ["flat", "rolling", "hilly", "trail"] as const) {
+    // Hill repeats and the trail sentence are both appended text, not table text.
+    assertPlain(courseType, block({ prefs: { courseType }, wantsStrength: true }));
+  }
+  // Race-pace long runs (marathon peak weeks) and the asked-for-too-many warning.
+  assertPlain("big long runs", block({ prefs: { longRunsBig: 3 } }));
+  assertPlain("more big long runs than weeks", block({ prefs: { longRunsBig: 20 } }));
+});
+
+Deno.test("#265: race week and race day read as sentences, not dashed clauses", () => {
+  const g = block();
+  const raceWeek = g.weeks.at(-1)!;
+  assertEquals(raceWeek.focus, "Race week. The training is done. Everything this week serves race day.");
+  const raceDay = g.sessions.find((s) => s.type === "race")!;
+  assertEquals((raceDay.structure as { detail: string }).detail, `26.2 mi @ ${fmtPace(PACES.race)}, goal pace.`);
+});
+
+Deno.test("#265: the pace-basis note the generator appends to the rationale is plain too", () => {
+  for (const d of ["5k", "marathon"] as DistanceKey[]) {
+    for (const current of [fitnessAt(DISTANCES[d].meters / MI), null]) {
+      const { basis, g } = finishBlock(d, current);
+      assertEquals(stripDashes(basis.note!), basis.note, `${d}: the note itself`);
+      assertPlain(`${d} basis ${basis.source}`, g);
+    }
+  }
 });
