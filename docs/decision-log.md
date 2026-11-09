@@ -6,6 +6,24 @@ tags: [tempo, decision-log]
 
 Newest first. One entry per session that ships features or makes a product decision.
 
+## 2026-11-08: Open PRs merged, and coach and plan deployed
+
+### Decisions
+- **Every open PR merged except #217.** Body reports stay held until after the Drift Detector engine, as decided on 2026-10-29.
+- **#279's six rule calls take its recommendations for now.** They become the rules as written, and any one can be changed later.
+- **The held coach PRs (#269, #275) shipped after Friday's run, with #276 alongside.** `coach` and `plan` were deployed to staging, then to production, from #275's final commit, and #275 merged right after, so the app and the function landed together.
+- **A refused request body is drained, not abandoned.** On staging, `coach` logged its refusal of a 600 KB request but the 413 never reached the caller, which hung until it timed out, with or without a Content-Length. Reading the rest of the body before responding fixed it on the real runtime. Pinned in `request_size_test.ts`.
+
+### Shipped
+- #280 retired-runs read holds the ingest, #279 rulebook for the public TestFlight, #261 App Store listing drafts, #282 the projection names its race, #263 coach consent, #260 cancelled coach send, #269 plain coach voice, #276 request size caps, #275 one proposal at a time.
+- Production `coach` v25 and `plan` v11, matching `main`.
+- Checked on staging: a normal coach reply (no em dashes), an acknowledgement turn with no card, and 413s from both `coach` and `plan`. Nothing on a device.
+
+### Next up
+- Device checks from #263 (tap Agree first: the coach is off until then), #275, #276, #282, #280 and #260.
+- The Turkey Trot plan rebuild, after agreeing.
+- #217 when the Drift Detector engine is done.
+
 ## 2026-11-05: The rulebook catches up with the public TestFlight
 
 ### Decisions
