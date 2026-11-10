@@ -1,9 +1,9 @@
-// Regression suite for #63 — "the plan has no race week" (observed 2026-09-26).
+// Regression suite for #63: "the plan has no race week" (observed 2026-09-26).
 //
 // David's active Chicago block: 13 weeks from 2026-07-06, race 2026-10-11. The generator
 // turned a 13-week shape into a 13-week plan, so the last session of any kind fell on
 // 2026-10-04 and there were zero sessions on race day. He was eight days from a marathon
-// the app had no entry for. The shape was never at fault — propose_plan_shape excludes
+// the app had no entry for. The shape was never at fault, propose_plan_shape excludes
 // race week by contract; nothing appended it.
 //
 // These tests pin the contract the fix establishes: a plan's last session lands on or
@@ -169,7 +169,7 @@ Deno.test("mondayOf is idempotent and agrees with plan-week coordinates", () => 
 });
 
 // ═════════════════════════════════════════════════════════════════════════════════════════
-// #104 — every distance from the mile to the marathon (opened 2026-10-12).
+// #104. Every distance from the mile to the marathon (opened 2026-10-12).
 //
 // Before #104 the generator knew one race. A 5K athlete would have been handed 20-mile long
 // runs, a three-week taper and a race-day session hardcoded at 26.2 mi. The intake (#102)
@@ -183,7 +183,7 @@ const ALL_DISTANCES: DistanceKey[] = ["1mi", "5k", "10k", "15k", "10mi", "half",
 /// A 16-week block: 15 training weeks + race week, race on the final Sunday.
 const RACE_16 = sessionDate(new Date(BLOCK_START + "T00:00:00Z"), 15, 6);
 
-/// What the model typically proposes, including its OWN guess at a taper — deliberately the
+/// What the model typically proposes, including its OWN guess at a taper, deliberately the
 /// marathon's two weeks, so a passing test proves the table set the taper, not the model.
 function modelShape(trainingWeeks: number, o: Partial<Shape> = {}): Shape {
   const rest = trainingWeeks - 2;
@@ -532,7 +532,7 @@ Deno.test("#104: pace math for a non-marathon goal", () => {
 //
 // #102's goal_type `finish` arrives with goal_time_s null, and every pace in a plan was
 // derived from a goal time. The fix must not invent one (the goal row keeps null): paces get
-// their own basis — current fitness, else a conservative default — and the rationale says so.
+// their own basis (current fitness, else a conservative default) and the rationale says so.
 
 /// Best recent effort: 6 mi in 54:00 (9:00/mi), as features.riegel_current_race_s would
 /// project it to `raceMi`.

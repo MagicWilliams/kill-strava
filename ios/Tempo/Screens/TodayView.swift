@@ -28,7 +28,7 @@ struct TodayView: View {
         .refreshable { await store.refresh() }
     }
 
-    /// Says out loud when the numbers below aren't the corrected record — a fallback to raw
+    /// Says out loud when the numbers below aren't the corrected record. A fallback to raw
     /// Health data changes distances the athlete already fixed, and used to do it silently.
     @ViewBuilder private var dataWarning: some View {
         if let warning = store.dataWarning {
@@ -46,7 +46,7 @@ struct TodayView: View {
         }
     }
 
-    /// Real readiness from the load model — taps into the full breakdown.
+    /// Real readiness from the load model: taps into the full breakdown.
     private var readiness: some View {
         Button { router.openReadiness() } label: {
             Card {
@@ -97,8 +97,8 @@ struct TodayView: View {
         }
     }
 
-    /// What a day costs you, as a colour. Scanning down the screen — or later, down the Plan
-    /// list — the tint tells you the shape of the week before you read a word of it.
+    /// What a day costs you, as a colour. Scanning down the screen (or later, down the Plan
+    /// list) the tint tells you the shape of the week before you read a word of it.
     private func well(for s: SessionInfo) -> Tokens.Well {
         if s.status == "done" { return .success }
         if s.isQuality { return .warm }
@@ -307,14 +307,14 @@ struct TodayView: View {
         }
     }
 
-    /// Opening a run is a change of place, not a change of state — the heavier haptic is the
+    /// Opening a run is a change of place, not a change of state. The heavier haptic is the
     /// one that reads as arriving somewhere rather than as a button accepting a press.
     private func openRun(_ run: RunSummary) {
         Haptics.land()
         router.openRun(run)
     }
 
-    /// Weekly mileage counter — real miles from HealthKit, Mon–Sun week.
+    /// Weekly mileage counter: real miles from HealthKit, Mon–Sun week.
     private var week: some View {
         Card {
             HStack {
@@ -433,7 +433,7 @@ struct TodayView: View {
     // MARK: - Just running (#101)
 
     /// Today with nothing to train against: a feed of your own running rather than a
-    /// "No plan yet" card. Newest first, the way a feed reads — the run you just did, what
+    /// "No plan yet" card. Newest first, the way a feed reads. The run you just did, what
     /// the coach made of it, where that leaves you, then the longer view.
     @ViewBuilder private var justRunning: some View {
         freeRunCard
@@ -493,7 +493,7 @@ struct TodayView: View {
     }
 
     /// A link to a run, or nothing if the run isn't in the list on screen (the HealthKit
-    /// fallback carries different ids) — a link that goes nowhere is worse than none.
+    /// fallback carries different ids). A link that goes nowhere is worse than none.
     @ViewBuilder private func readLink(_ title: String, runID: UUID) -> some View {
         if let run = store.runs.first(where: { $0.id == runID }) {
             Button { openRun(run) } label: {
@@ -516,7 +516,7 @@ struct TodayView: View {
 }
 
 /// Circular readiness gauge. Sweeps up from zero the first time you see it, and animates
-/// between values after that — so a readiness that moved overnight is something you watch
+/// between values after that, so a readiness that moved overnight is something you watch
 /// move, rather than a number you had to have memorised yesterday to notice.
 struct ReadinessRing: View {
     let value: Double

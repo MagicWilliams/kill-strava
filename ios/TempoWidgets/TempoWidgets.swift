@@ -4,8 +4,8 @@ import WidgetKit
 /// Tempo's widgets (#76): the week at a glance, and what the coach wants next. And the run
 /// being recorded, on the Lock Screen and in the Dynamic Island (#119).
 ///
-/// Display only. Every number comes from the `WidgetSnapshot` the app last wrote — see that
-/// file for why the extension never fetches anything itself — or, for the run, from the
+/// Display only. Every number comes from the `WidgetSnapshot` the app last wrote (see that
+/// file for why the extension never fetches anything itself) or, for the run, from the
 /// Live Activity's content, which only the app sends.
 @main
 struct TempoWidgetsBundle: WidgetBundle {
@@ -28,7 +28,7 @@ struct TempoProvider: TimelineProvider {
         TempoEntry(date: .now, display: WidgetSnapshot.display(.sample(), at: .now))
     }
 
-    /// The widget gallery shows real numbers when there are some, and a sample otherwise —
+    /// The widget gallery shows real numbers when there are some, and a sample otherwise,
     /// an "Open Tempo" tile in the gallery would sell the widget as broken.
     func getSnapshot(in context: Context, completion: @escaping (TempoEntry) -> Void) {
         let stored = WidgetSnapshotStore.load()
@@ -125,7 +125,7 @@ struct WeekWidgetView: View {
     }
 
     /// The reference under the big number: the plan's target when there is one, last week
-    /// otherwise — the same choice the Lock Screen gauge makes.
+    /// otherwise. The same choice the Lock Screen gauge makes.
     private func comparison(_ week: WidgetSnapshot.Week) -> String {
         switch week.gaugeBasis {
         case .plan:     return "OF \(Fmt.miles(week.gaugeTarget ?? 0, week.units)) PLANNED"
@@ -316,7 +316,7 @@ struct CoachWidgetView: View {
 // MARK: - Shared pieces
 
 /// `SectionLabel` from the app's design system, which lives in `Components.swift` and drags
-/// the whole component library with it — this is the one piece the widgets need.
+/// the whole component library with it. This is the one piece the widgets need.
 private struct Eyebrow: View {
     let text: String
     var color: Color = Tokens.Palette.textTertiary
@@ -358,7 +358,7 @@ private struct NeedsApp: View {
 /// The snapshot counts in miles; these print in the snapshot's unit (#109), through the same
 /// `Units` the app formats with, so a widget and Today agree to the digit.
 private enum Fmt {
-    /// One decimal, matching Today's "This week" card — the numbers are meant to be checked
+    /// One decimal, matching Today's "This week" card. The numbers are meant to be checked
     /// against each other.
     static func miles(_ m: Double, _ units: Units) -> String { units.number(miles: m) }
 

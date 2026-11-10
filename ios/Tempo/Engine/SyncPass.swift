@@ -5,8 +5,8 @@ import Foundation
 /// it, and when a dropped candidate is worth saying out loud.
 ///
 /// This file exists because of a bug that never crashed and never logged (#37). HR
-/// enrichment used to run *between* the dedupe and the insert — one serial HealthKit query
-/// per new run — on the written premise that "kept is small: only new runs". On a phone
+/// enrichment used to run *between* the dedupe and the insert (one serial HealthKit query
+/// per new run), on the written premise that "kept is small: only new runs". On a phone
 /// with a five-year archive that premise was false: `kept` was 348. Every refresh spent
 /// itself on 348 HealthKit statistics queries, the upsert was never reached, nothing was
 /// written, no error was thrown, and the identical 348 were recomputed on the next launch.
@@ -73,7 +73,7 @@ enum SyncPass {
     /// The rows that reached the database, and the span of training they cover.
     ///
     /// Reported *after* the upsert, deliberately. "Kept" and "written" silently disagreeing
-    /// for weeks is precisely what hid #37 — the only number the app ever emitted was the
+    /// for weeks is precisely what hid #37. The only number the app ever emitted was the
     /// one computed before the write. An event that cannot be produced until the write
     /// returns makes that disagreement impossible again.
     struct WriteReport: Equatable {
@@ -95,7 +95,7 @@ enum SyncPass {
 
     /// The subset of a pass's proposed rows that the database confirmed it took.
     ///
-    /// #94: `writeReport` was being handed `kept` — the set dedupe *proposed* — so the
+    /// #94: `writeReport` was being handed `kept` (the set dedupe *proposed*) so the
     /// event named "runs written" reported intent. Six passes over three days claimed 47
     /// runs each and the table gained nothing: all 47 were archive runs already stored
     /// under a different `external_id`, and `ignoreDuplicates: true` drops a conflicting
@@ -107,14 +107,14 @@ enum SyncPass {
     /// upsert ignored is absent from that list and therefore absent from the report.
     ///
     /// Matching is case-insensitive: Swift's `UUID.uuidString` is uppercase, the column is
-    /// plain text, and a round trip that lowercased it would silently match nothing — which
+    /// plain text, and a round trip that lowercased it would silently match nothing, which
     /// is this same bug with the sign flipped. Order follows `proposed`, so the report's
     /// date span is unaffected by whatever order PostgREST returns.
     static func confirmedWrites(proposed: [RunSummary], writtenExternalIDs: [String]) -> [RunSummary] {
         guard !writtenExternalIDs.isEmpty else { return [] }
         let confirmed = Set(writtenExternalIDs.map { $0.lowercased() })
         // `external_id` is built from the summary's own id (`WorkoutRow.insert`), not from
-        // `externalID` — that field is nil on the ingest path.
+        // `externalID`. That field is nil on the ingest path.
         return proposed.filter { confirmed.contains($0.id.uuidString.lowercased()) }
     }
 
@@ -132,7 +132,7 @@ enum SyncPass {
     ///
     /// Bounded by construction, and that is the whole point: the number of HealthKit
     /// queries a refresh can make must not scale with the size of the archive. Feed this
-    /// the 348-run backlog from #37 and it answers with at most `limit` — or, when they are
+    /// the 348-run backlog from #37 and it answers with at most `limit`, or, when they are
     /// old runs, with none at all.
     ///
     /// Corrected rows are never touched: an HR the coach or the athlete set outranks
@@ -165,7 +165,7 @@ enum SyncPass {
     /// was the first event the telemetry table ever recorded, and it was noise (#37). The
     /// comment above it claimed the signal was "silent when healthy". It was not.
     ///
-    /// Two corrections. Only candidates carrying a uuid we have never stored count — a
+    /// Two corrections. Only candidates carrying a uuid we have never stored count. A
     /// workout already in the database is not evidence of anything. And a *standing*
     /// condition is reported once rather than forever: David's phone holds ~220 unexplained
     /// near-duplicates that will still be there on the next refresh and the one after it,

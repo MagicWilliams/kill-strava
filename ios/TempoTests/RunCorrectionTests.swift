@@ -211,7 +211,7 @@ final class RunCorrectionTests: XCTestCase {
             try RunCorrection.amendment(proposed: try self.action(#"{"type":"amend_run","run_id":"x","distance_m":0}"#), to: run, units: .mi)
         }, .notPositive("distance"))
         XCTAssertEqual(rejection {
-            // A card with neither totals nor facts — what the new coach leaves of a run card
+            // A card with neither totals nor facts: what the new coach leaves of a run card
             // whose only numbers were the model's own. It used to mark the run corrected
             // and change nothing.
             try RunCorrection.amendment(proposed: try self.action(#"{"type":"amend_run","run_id":"x","note":"n"}"#), to: run, units: .mi)
@@ -250,7 +250,7 @@ final class RunCorrectionTests: XCTestCase {
     }
 
     func testThePinnedBaseSurvivesStorage() throws {
-        // A Retry after a landed write — even after a relaunch — must compute from the run
+        // A Retry after a landed write (even after a relaunch) must compute from the run
         // the first attempt saw, or "add 1.2 mi" adds it twice.
         var card = try action(#"{"type":"amend_run","run_id":"x","unit":"mi","added_distance":1.2,"added_pace":"8:30"}"#)
         card.based_on = tuesday
@@ -286,7 +286,7 @@ final class RunCorrectionTests: XCTestCase {
 
     func testCardPreviewsAgainstThePinnedBaseOverTheLoadedRun() throws {
         // A failed card whose write landed: the loaded run already shows 7.20 mi. The card
-        // must still show what a Retry writes — the same 7.20, not 8.40.
+        // must still show what a Retry writes. The same 7.20, not 8.40.
         var card = try action(#"{"type":"amend_run","run_id":"x","unit":"mi","added_distance":1.2,"added_pace":"8:30"}"#)
         card.based_on = tuesday
         let alreadyCorrected = RunCorrection.Recorded(distance_m: 11587, duration_s: 3612, avg_hr: 148)

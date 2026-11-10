@@ -4,7 +4,7 @@ import Foundation
 ///
 /// Two writers produce rows from HKWorkouts: the HealthKit sync, which ingests everything in
 /// Health, and the run recorder, which writes the run it just saved so Today shows it without
-/// waiting for that sync. They must agree to the byte on `(user_id, source, external_id)` —
+/// waiting for that sync. They must agree to the byte on `(user_id, source, external_id)`,
 /// that triple is the unique key the sync dedupes on. If the recorder wrote the uuid
 /// lowercase, or under a different `source`, the next sync would see a stranger and insert
 /// the run a second time: the 2026-07-10 week that read 31 miles instead of 15, self-inflicted.
@@ -15,7 +15,7 @@ import Foundation
 /// over from its own save, and nothing below touches HealthKit.
 enum WorkoutRow {
 
-    /// What a saved workout says about itself — the fields a row is built from, as HealthKit
+    /// What a saved workout says about itself: the fields a row is built from, as HealthKit
     /// reports them, before any rounding.
     struct Workout: Codable, Equatable {
         /// `HKWorkout.uuid`. Becomes `external_id`, the dedupe key.
@@ -24,11 +24,11 @@ enum WorkoutRow {
         var end: Date
         /// `totalDistance` in meters; nil when the workout carried none.
         var distanceM: Double?
-        /// `HKWorkout.duration` — HealthKit's own moving time, paused stretches excluded.
+        /// `HKWorkout.duration`. HealthKit's own moving time, paused stretches excluded.
         var movingS: TimeInterval
         /// Average heart rate from the workout's statistics, in bpm; nil when none recorded.
         var avgHR: Double?
-        /// `HKMetadataKeyIndoorWorkout` — a treadmill run. Carried so both paths read it the
+        /// `HKMetadataKeyIndoorWorkout`: a treadmill run. Carried so both paths read it the
         /// same way, but `runs` has no column for it yet, so it does not reach the row.
         var indoor: Bool = false
         /// A treadmill run Tempo recorded and the athlete put right by its console (#116),
@@ -54,7 +54,7 @@ enum WorkoutRow {
     /// that it never becomes a row the sync would have refused.
     static let minimumDistanceM = 200
 
-    /// The workout as a run, before dedupe. `id` is the HealthKit uuid — this is the
+    /// The workout as a run, before dedupe. `id` is the HealthKit uuid. This is the
     /// ingest/fallback shape, not a database row.
     ///
     /// Two clocks, both straight off the workout record: `movingS` excludes paused stretches
@@ -85,7 +85,7 @@ enum WorkoutRow {
     /// The `runs` insert for a run that dedupe has kept. `s` must be a `summary(_:)` (or a
     /// dedupe merge of two), whose `id` is still the HealthKit uuid.
     ///
-    /// `external_id` is `uuid.uuidString` — **uppercase**, because that is how every one of the
+    /// `external_id` is `uuid.uuidString`, **uppercase**, because that is how every one of the
     /// 2,000+ rows already stored was written. The unique key compares text, so the case is
     /// part of the identity.
     static func insert(_ s: RunSummary, userID: String) -> RunInsert {
@@ -103,7 +103,7 @@ enum WorkoutRow {
     }
 
     /// `row`, marked the way every edited run is marked when `w` carries a console correction
-    /// (#116): `corrected`, the note, and `original` — the run as the phone counted it, the
+    /// (#116): `corrected`, the note, and `original`. The run as the phone counted it, the
     /// same pre-correction snapshot a coach amendment keeps. Once `corrected` is set, the
     /// athlete's word outranks the math everywhere (the HR backfill, the detail screen, the
     /// coach's own amendments, which keep this `original` rather than overwrite it).
@@ -120,7 +120,7 @@ enum WorkoutRow {
     }
 
     /// The run as the phone counted it: the estimate's distance and pace, everything else as
-    /// the row has it — a console correction changes the distance and nothing else.
+    /// the row has it. A console correction changes the distance and nothing else.
     static func original(_ row: RunInsert, estimateM: Double) -> RunInsert.Original {
         let meters = Int(estimateM.isFinite ? max(0, estimateM) : 0)
         return RunInsert.Original(

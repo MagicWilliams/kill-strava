@@ -3,7 +3,7 @@ import XCTest
 
 /// Today's "Coach's read" used to exist only for a run that fulfilled today's planned
 /// session. With no plan there is no session, so between blocks the home screen could never
-/// show a single thing the coach had said — even though every run the athlete opened was
+/// show a single thing the coach had said, even though every run the athlete opened was
 /// still being read (#101). The just-running Today shows the newest read instead, and these
 /// pin which one, and that an old read is never passed off as being about this morning.
 final class LatestReadTests: XCTestCase {
@@ -29,8 +29,8 @@ final class LatestReadTests: XCTestCase {
         XCTAssertEqual(LatestRead.state(lastRunID: lastRun, latest: r), .current(r))
     }
 
-    /// The read is real but about an earlier run. It still shows — it's the coach's latest
-    /// word — but marked as behind, so the card can date it and offer the newer run.
+    /// The read is real but about an earlier run. It still shows (it's the coach's latest
+    /// word) but marked as behind, so the card can date it and offer the newer run.
     func testAReadAboutAnEarlierRunIsBehind() {
         let r = read(olderRun, daysAgo: 4)
         XCTAssertEqual(LatestRead.state(lastRunID: lastRun, latest: r), .behind(r, lastRun: lastRun))

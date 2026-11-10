@@ -3,7 +3,7 @@ import UIKit
 
 /// The app's report line back to the people improving it.
 ///
-/// Tempo runs on exactly one phone, so there is no user base to aggregate — which is
+/// Tempo runs on exactly one phone, so there is no user base to aggregate, which is
 /// precisely why this matters. Every bug found so far was found by David noticing a wrong
 /// number and then reconstructing what happened from memory. These events make that
 /// reconstruction unnecessary: the triage agent reads `app_events`, ranks what recurs, and
@@ -61,7 +61,7 @@ enum Telemetry {
     /// `error(_:_:context:)` for a read whose caller may simply have gone away (#155).
     ///
     /// A cancellation is dropped, not reported: once a refresh is cancelled every await still
-    /// ahead of it throws, so logging them — even at `.info` under one name — would still be
+    /// ahead of it throws, so logging them (even at `.info` under one name) would still be
     /// one row per call site, not one per cancelled refresh. Any other error reports exactly
     /// as `error` does. The classification is `Engine/Cancellation.swift`, pinned by tests.
     static func errorUnlessCancelled(_ event: String, _ error: Error, context: [String: String] = [:]) {

@@ -72,7 +72,7 @@ final class PreRunTests: XCTestCase {
         XCTAssertNil(cta.target)
     }
 
-    /// The session is banked. A second run is his call, so the button stays — but a shakeout
+    /// The session is banked. A second run is his call, so the button stays, but a shakeout
     /// after the tempo must not run against the tempo's 7:45 for its whole length.
     func testADoneSessionStopsOfferingItself() {
         let cta = PreRun.startButton(mode: .training, session: session(), status: "done", units: .mi)
@@ -136,8 +136,8 @@ final class PreRunTests: XCTestCase {
         PreRun.raceEligible(raceDay: raceDay ?? day("2026-10-11"), blockClosed: closed, now: now, calendar: cal)
     }
 
-    /// Chicago was Sunday 11 Oct. Race is offered the day before, the day, and the day after
-    /// — in calendar days, so 6 a.m. on race morning counts the same as 11 p.m.
+    /// Chicago was Sunday 11 Oct. Race is offered the day before, the day, and the day after,
+    /// in calendar days, so 6 a.m. on race morning counts the same as 11 p.m.
     func testRaceIsOfferedWithinADayOfRaceDay() {
         XCTAssertTrue(raceEligible(day("2026-10-11", hour: 6)), "race morning")
         XCTAssertTrue(raceEligible(day("2026-10-11", hour: 23)), "race night")
@@ -170,7 +170,7 @@ final class PreRunTests: XCTestCase {
         XCTAssertEqual(PreRun.gate(kind: .race, access: .notDetermined), .explain)
     }
 
-    /// The treadmill needs no location, and nothing about location may block it — it is
+    /// The treadmill needs no location, and nothing about location may block it. It is
     /// the way out offered by every refusal message.
     func testTheTreadmillIsNeverBlockedByLocation() {
         for access in [LocationAccess.notDetermined, .denied, .restricted, .reducedAccuracy, .whenInUse, .always] {
@@ -251,7 +251,7 @@ final class PreRunTests: XCTestCase {
     // MARK: - Which screen covers the app
 
     /// The cover follows the recorder, not a view's opinion. Every phase after the countdown
-    /// keeps it up, including `.recovering` (#115) and a save that failed — a screen that
+    /// keeps it up, including `.recovering` (#115) and a save that failed. A screen that
     /// went away there would hide a run that is still on the line. The live screen has the
     /// run until the clock stops; the save screen (#129) has it from then until the reset.
     func testTheCoverFollowsTheRecordersPhase() {
@@ -267,7 +267,7 @@ final class PreRunTests: XCTestCase {
     }
 
     /// A run picked back up after a kill (#115) is shown in the same cover, in place of the
-    /// live screen — never alongside it — until he has answered it. An idle recorder never
+    /// live screen (never alongside it) until he has answered it. An idle recorder never
     /// gets a cover, recovered or not.
     func testARecoveredRunTakesTheSameCoverInsteadOfTheLiveScreen() {
         let phases: [RecorderState.Phase] = [

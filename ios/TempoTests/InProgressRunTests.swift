@@ -2,7 +2,7 @@ import XCTest
 @testable import Tempo
 
 /// Chicago, Sunday 11 Oct 2026: the recording of the marathon stopped and the run was lost
-/// (#111). #115 is the other half of that lesson — iOS killing the app mid-run must cost the
+/// (#111). #115 is the other half of that lesson, iOS killing the app mid-run must cost the
 /// tail of the curve and nothing else.
 ///
 /// The three things pinned here are the three that can only be checked on a real force-quit
@@ -20,7 +20,7 @@ final class InProgressRunTests: XCTestCase {
     private let t0 = ISO8601DateFormatter().date(from: "2026-10-11T12:30:00Z")!
     private func t(_ seconds: TimeInterval) -> Date { t0.addingTimeInterval(seconds) }
 
-    /// 8:00/mi — the pace every curve in this file is built at.
+    /// 8:00/mi. The pace every curve in this file is built at.
     private let mps = 3.35
 
     private let target = State.SessionTarget(
@@ -295,7 +295,7 @@ final class InProgressRunTests: XCTestCase {
         XCTAssertEqual(clocks.movingS, 720)
     }
 
-    /// The session came back paused. The gap is a `.recoveryGap` pause — and only he can lift
+    /// The session came back paused. The gap is a `.recoveryGap` pause, and only he can lift
     /// it, because we were not there to see him start running again.
     func testRecoveredPausedSessionTurnsTheGapIntoAPauseOnlyHeCanLift() {
         // Auto-pause on, so the last assertion is about the recovery gap and not about the
@@ -382,7 +382,7 @@ final class InProgressRunTests: XCTestCase {
         let spliced = Snapshot.splice(
             carried: carried,
             after: after,
-            // A session statistic below our own curve is one we trust less than the curve —
+            // A session statistic below our own curve is one we trust less than the curve,
             // never a reason to take metres back off a screen he is looking at.
             gapMetersM: Snapshot.gapMeters(carried: carried, session: Session(isPaused: false, distanceM: 100)),
             resumedAtS: 605
@@ -409,7 +409,7 @@ final class InProgressRunTests: XCTestCase {
 
     /// A session that survived the kill: the curve carries on from the snapshot, the
     /// two minutes nobody measured are credited from the session's own distance at the
-    /// moment recording came back, and Health's bookmark sits at what the session holds —
+    /// moment recording came back, and Health's bookmark sits at what the session holds,
     /// which, outdoors, is exactly the distance Tempo had written into it.
     func testAResumedRunCarriesTheSessionsGapAndWritesOnlyWhatHealthLacks() throws {
         let live = snapshot(savedAtS: 600)

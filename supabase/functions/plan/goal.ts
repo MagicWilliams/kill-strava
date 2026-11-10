@@ -1,4 +1,4 @@
-// What goal /plan is building for — resolved from the request and the athlete's current goal.
+// What goal /plan is building for: resolved from the request and the athlete's current goal.
 //
 // Pure, for the same reason generator.ts is: this decides which race a plan is shaped for,
 // and the failure is silent (a 5K athlete quietly handed a marathon block). index.ts does
@@ -7,7 +7,7 @@
 // Two facts shape it:
 //
 // 1. Migration 0013 (#102) adds goals.distance_m, course_type, goal_type, started_week and
-//    preferences — and it may not be applied when this deploys. Every read here tolerates
+//    preferences, and it may not be applied when this deploys. Every read here tolerates
 //    the columns being absent or null, and every write has a legacy shape that names none
 //    of them, so plan generation behaves exactly as before 0013 until 0013 exists.
 //
@@ -106,7 +106,7 @@ export function resolveGoal(
   const inherit = !!active && typeof body.race_date === "string" && active.race_date === body.race_date;
   const pick = (key: string) => given(body[key]) ? body[key] : inherit ? active![key] : undefined;
 
-  // A request that names a distance by label alone must not inherit the old goal's metres —
+  // A request that names a distance by label alone must not inherit the old goal's metres,
   // "5k" with a carried-over 42195 would resolve to a marathon.
   //
   // What the request names must resolve on its own: an unknown label is not a distance, and
@@ -156,7 +156,7 @@ export function isFinishGoal(goalType: string | null | undefined): boolean {
   return t === "finish" || t === "just_finish";
 }
 
-/// Whether a plan for this goal type needs a target time. Only a stated time goal does — and
+/// Whether a plan for this goal type needs a target time. Only a stated time goal does, and
 /// an absent type, which is how every goal before the intake arrives. "pr" and "unsure" ask
 /// the coach to propose a target, but right after a race there is often nothing honest to
 /// propose; paces then come from current fitness, as for "finish". Mirrors

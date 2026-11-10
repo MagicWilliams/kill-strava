@@ -4,18 +4,18 @@ import Foundation
 ///
 /// This exists because of *where* those lines used to be written from.
 /// `ChatStore.invokePlanEngine` appended "Plan is live: 16 weeks…" itself, from inside the
-/// switch that executes a confirmed card — which runs before `confirm` appends the
-/// "Confirmed — …" turn that caused it. The transcript told the story backwards: the coach
+/// switch that executes a confirmed card, which runs before `confirm` appends the
+/// "Confirmed: …" turn that caused it. The transcript told the story backwards: the coach
 /// announcing the result above the tap that asked for it (#39).
 ///
 /// Returning the line instead of writing it takes that choice away from the write path. The
 /// apply path can no longer decide where its narration lands; only `ChatStore.apply` can, and
-/// it puts it after the confirmation. That is the actual fix — the ordering is structural now
+/// it puts it after the confirmation. That is the actual fix. The ordering is structural now
 /// rather than a line of code someone has to keep in the right place.
 ///
 /// Pure, so the wording can be pinned. Every way this regresses is a sentence that reads
-/// wrong — a plan announced as "0 weeks", a stray "base_build" with the underscore still in
-/// it — rather than anything that crashes.
+/// wrong (a plan announced as "0 weeks", a stray "base_build" with the underscore still in
+/// it) rather than anything that crashes.
 enum PlanNarration {
 
     /// What the `plan` Edge Function reported, in the shape the transcript cares about.

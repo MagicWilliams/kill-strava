@@ -1,6 +1,6 @@
 import Foundation
 
-/// The runner's current fitness as one smoothed number — the Drift Detector's input
+/// The runner's current fitness as one smoothed number: the Drift Detector's input
 /// (PRD-02 item #2, issue #244). Pure, no I/O. The design and every constant below are
 /// argued in `docs/spike-fitness-formula.md`; this file is that spec, implemented.
 ///
@@ -123,14 +123,14 @@ enum FitnessEstimate {
     ///     %max(t) = 0.8 + 0.1894393·e^(−0.012778·t) + 0.2989558·e^(−0.1932605·t)
     ///
     /// Source: J. Daniels & J. Gilbert, *Oxygen Power: Performance Tables for Distance
-    /// Runners* (1979) — the equations behind the VDOT tables in *Daniels' Running Formula*.
+    /// Runners* (1979). The equations behind the VDOT tables in *Daniels' Running Formula*.
     /// The book prints only the tables; the equations are reproduced by L. Simpson, "The
     /// Daniels/Gilbert Formula" (simpsonassociatesinc.com/runningmath1.htm, pp. 2–3), the
     /// reference cited by Wikipedia's "Jack Daniels (coach)" VDOT section.
     ///
     /// Checked against the published table rather than trusted: at VDOT 50 these equations
     /// give 5K 19:56, 10K 41:20, half 1:31:31, marathon 3:10:40, against the printed row's
-    /// 19:57 / 41:21 / 1:31:35 / 3:10:49 — every cell within 0.1%. The VDOT 30 row agrees to
+    /// 19:57 / 41:21 / 1:31:35 / 3:10:49. Every cell within 0.1%. The VDOT 30 row agrees to
     /// 0.2%. Both rows are pinned in `FitnessEstimateTests` at 0.25%.
     static func vdot(meters: Double, seconds: Double) -> Double {
         guard meters > 0, seconds > 0 else { return 0 }
@@ -186,7 +186,7 @@ enum FitnessEstimate {
     /// fitness. Demotion only removes evidence.
     ///
     /// - `rpe`: the athlete's word outranks the math. 1–2 is recovery, 3–4 easy, however
-    ///   fast it looks. Applies to segments too — RPE rates the whole session.
+    ///   fast it looks. Applies to segments too. RPE rates the whole session.
     /// - `avgHR` / `measuredMaxHR`: only a *measured* max (`profiles.max_hr`), never
     ///   220 − age or 192, whose ~10 bpm error is bigger than the signal. Callers pass nil HR
     ///   for segments: the run's average includes the easy miles around the segment.
@@ -219,7 +219,7 @@ enum FitnessEstimate {
     /// - Parameters:
     ///   - efforts: `run_efforts` by run id. A missing key means the run was never scanned
     ///     (or is manual), which is "no segments", not an error.
-    ///   - measuredMaxHR: `RunStore.maxHR`, the profile value — **not** `effectiveMaxHR`.
+    ///   - measuredMaxHR: `RunStore.maxHR`, the profile value, **not** `effectiveMaxHR`.
     ///     Nil turns the HR rule off.
     static func estimate(
         runs: [RunSummary],
@@ -325,7 +325,7 @@ enum FitnessEstimate {
         }
 
         // Segments only from a run that is not itself an artefact: a watch left recording
-        // at 77:00/mi can hold "5K" miles at 5:02/mi — a car, not a race (#229).
+        // at 77:00/mi can hold "5K" miles at 5:02/mi. A car, not a race (#229).
         if let parentPace = run.paceSecPerMile, parentPace <= slowestPaceSecPerMile {
             for effort in efforts where segmentKeys.contains(effort.distanceM) && effort.durationS <= maxEffortS {
                 // True distance, not the rounded key: the half is 21,097.5 m, stored as 21,098.

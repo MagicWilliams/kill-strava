@@ -1,4 +1,4 @@
-// #239 — a "pr" or "unsure" goal time comes from the app's suggested_goal, or from the athlete.
+// #239: a "pr" or "unsure" goal time comes from the app's suggested_goal, or from the athlete.
 //
 // The number this guards is the pace basis for every training pace in a block. What these pin:
 // a model-invented target is turned back, every allowed number gets through, and a build

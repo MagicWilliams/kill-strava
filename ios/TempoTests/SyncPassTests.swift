@@ -4,7 +4,7 @@ import XCTest
 /// Regression suite for the sync that kept 348 runs and wrote none of them (#37).
 ///
 /// The bug had no crash and no error log. HR enrichment ran between the dedupe and the
-/// insert — one serial HealthKit query per new run, on the premise that "kept is small" —
+/// insert (one serial HealthKit query per new run, on the premise that "kept is small")
 /// and with a five-year archive `kept` was 348. The refresh never reached the write, and
 /// three telemetry events hours apart carried byte-identical counts as the same 348 were
 /// recomputed on every launch.
@@ -146,7 +146,7 @@ final class SyncPassTests: XCTestCase {
 
     func testEnrichmentIsCappedEvenWhenEveryRowQualifies() {
         // 100 recent runs all missing HR: the refresh takes 25 and leaves the rest for the
-        // next one. The cap is the point — an uncapped loop here is what stalled the write.
+        // next one. The cap is the point. An uncapped loop here is what stalled the write.
         let recent = (0..<100).map { row(daysAgo: Double($0) / 10) }
         XCTAssertEqual(SyncPass.hrEnrichmentTargets(rows: recent, now: Self.now).count,
                        SyncPass.hrEnrichmentLimit)
@@ -187,7 +187,7 @@ final class SyncPassTests: XCTestCase {
 
     func testWriteReportCountsRowsAndTheSpanTheyCover() {
         // The number David needs after this ships: not "kept", but "written", and over
-        // which years — that is what settles whether the 348 are archive or last week.
+        // which years. That is what settles whether the 348 are archive or last week.
         let written = [row(daysAgo: 0), row(daysAgo: 400), row(daysAgo: 10)]
         let report = SyncPass.writeReport(for: written)
         XCTAssertEqual(report.count, 3)
@@ -251,7 +251,7 @@ final class SyncPassTests: XCTestCase {
     func testIDCasingCannotSilentlyZeroTheCount() {
         // `UUID.uuidString` is uppercase; the column is plain text. A round trip that
         // lowercased it would match nothing and report 0 writes on a pass that wrote
-        // everything — the same lie as #94 with the sign flipped.
+        // everything. The same lie as #94 with the sign flipped.
         let proposed = (0..<3).map { row(daysAgo: Double($0)) }
         let lowercased = proposed.map { $0.id.uuidString.lowercased() }
         XCTAssertEqual(SyncPass.confirmedWrites(proposed: proposed, writtenExternalIDs: lowercased).count, 3)

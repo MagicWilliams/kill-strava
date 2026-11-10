@@ -3,18 +3,18 @@ import Supabase
 import UIKit
 
 /// The I/O half of saving a recorded run to Tempo (#122): write its `runs` row, hand the
-/// journal off, and put the run on Today. Every decision — what row, whether to write it at
-/// all, what to do after a failure — is in `Engine/RecordedRunSave.swift` and pinned there.
+/// journal off, and put the run on Today. Every decision (what row, whether to write it at
+/// all, what to do after a failure) is in `Engine/RecordedRunSave.swift` and pinned there.
 ///
 /// Call `save` once the workout is in Apple Health (#114 owns that save; this never touches
 /// HealthKit). The order is fixed and matches `RunJournal`'s contract: **Health, then row, then
-/// journal.** The row write is the part the athlete waits on — Today is redrawn before `save`
-/// returns — while the journal is handed off and finishes on its own clock.
+/// journal.** The row write is the part the athlete waits on (Today is redrawn before `save`
+/// returns) while the journal is handed off and finishes on its own clock.
 @MainActor
 enum RecordedRunSaver {
 
     enum Outcome: Equatable {
-        /// The run has a row — written now, or found already there — and the journal is on
+        /// The run has a row (written now, or found already there) and the journal is on
         /// its way to it.
         case saved(runID: UUID)
         /// Too short to be a run (`WorkoutRow.minimumDistanceM`). It stays in Health only.
@@ -32,7 +32,7 @@ enum RecordedRunSaver {
     /// when the phone goes back in a pocket.
     ///
     /// `kind` and `goalID` ride along in the queue (#178). This save does not link a race
-    /// itself — the recorder does that with the outcome — but if it is queued, the retry that
+    /// itself (the recorder does that with the outcome) but if it is queued, the retry that
     /// lands it is the only one left to.
     @discardableResult
     static func save(
@@ -46,7 +46,7 @@ enum RecordedRunSaver {
         let assertion = UIApplication.shared.beginBackgroundTask(withName: "recorded-run-save")
         defer { if assertion != .invalid { UIApplication.shared.endBackgroundTask(assertion) } }
 
-        // Queue first, attempt second — see `RecordedRunSave.Pending`.
+        // Queue first, attempt second. See `RecordedRunSave.Pending`.
         let pending = RecordedRunSave.Pending(
             workout: workout,
             journal: journal,
@@ -65,11 +65,11 @@ enum RecordedRunSaver {
     /// Retry whatever an earlier save left queued. Called at the end of every refresh, so a
     /// run saved in a dead spot lands the next time the app opens or is pulled to refresh.
     ///
-    /// By then the sync has usually ingested the run from Health already — same mapping, same
-    /// row — so the retry finds it (`.alreadyStored`) and all that is left is the journal.
+    /// By then the sync has usually ingested the run from Health already (same mapping, same
+    /// row) so the retry finds it (`.alreadyStored`) and all that is left is the journal.
     ///
     /// A race that lands here is filed as its block's race now (#178), the link the recorder
-    /// could not write with no row to point at — through the same `RaceLinker` write.
+    /// could not write with no row to point at, through the same `RaceLinker` write.
     static func retryPending(store: RunStore) async {
         let queue = PendingQueue.load()
         guard !queue.isEmpty else { return }
@@ -136,7 +136,7 @@ enum RecordedRunSaver {
         }
     }
 
-    /// Live rows starting within the dedupe window of the workout, newest first — the same
+    /// Live rows starting within the dedupe window of the workout, newest first. The same
     /// filter and order as the archive read the sync dedupes against, cut to the only slice
     /// that can matter.
     private static func fetchNearby(_ workout: WorkoutRow.Workout) async throws -> [RunSummary] {
@@ -171,8 +171,8 @@ enum RecordedRunSaver {
 
     private struct RowMissingAfterWrite: Error {}
 
-    /// The sync's own write — same upsert, same conflict key, `ignoreDuplicates` so a row the
-    /// sync wrote a moment earlier is left exactly as it is — then the row's id, looked up by
+    /// The sync's own write (same upsert, same conflict key, `ignoreDuplicates` so a row the
+    /// sync wrote a moment earlier is left exactly as it is) then the row's id, looked up by
     /// that key because an ignored duplicate returns nothing.
     private static func write(_ row: RunInsert) async throws -> UUID {
         try await Supa.client
@@ -193,7 +193,7 @@ enum RecordedRunSaver {
         return id
     }
 
-    /// A console correction onto a row the sync wrote first — see
+    /// A console correction onto a row the sync wrote first: see
     /// `RecordedRunSave.correctionPatch`. Best effort: the run and its distance are already
     /// right, and a failure here costs the "corrected" mark, not the journal, so it is
     /// reported and the save goes on.

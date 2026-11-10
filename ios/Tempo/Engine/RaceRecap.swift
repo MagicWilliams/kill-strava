@@ -1,12 +1,12 @@
 import Foundation
 
-/// The goal race, read back mat by mat — pure, no I/O.
+/// The goal race, read back mat by mat, pure, no I/O.
 ///
 /// A marathon is the one run where a generic run-detail page undersells what happened. The
 /// questions after a race are specific: what did I go through halfway in, where did I start
 /// giving time back, did the heart rate run away from me, was the block worth it. Every one
-/// of those is arithmetic over two series the phone already holds — cumulative distance
-/// against time, and heart rate against time — so the arithmetic lives here, where it can be
+/// of those is arithmetic over two series the phone already holds (cumulative distance
+/// against time, and heart rate against time) so the arithmetic lives here, where it can be
 /// pinned, and `RaceRecapView` only draws it.
 ///
 /// Inputs are plain arrays on purpose (`RunDetail` builds them from HealthKit). Nothing here
@@ -91,8 +91,8 @@ enum RaceRecap {
     ///
     /// A run recorded in Race mode writes itself into `goals.race_run_id`, and that is the
     /// athlete's word: once a goal names its race, that run and only that run is the race.
-    /// The date-and-distance guess is for a goal that names none — a race run on a Garmin, or
-    /// a race-mode save that never got its link written — and would otherwise also hand the
+    /// The date-and-distance guess is for a goal that names none (a race run on a Garmin, or
+    /// a race-mode save that never got its link written) and would otherwise also hand the
     /// recap to, say, a second long recording on race day.
     static func isGoalRace(run: RunSummary, goal: GoalInfo?, calendar: Calendar = .current) -> Bool {
         guard let goal else { return false }
@@ -100,8 +100,8 @@ enum RaceRecap {
         return isRace(run: run, goal: goal, calendar: calendar)
     }
 
-    /// The run among `runs` that was `goal`'s race: the linked run when it is loaded, else —
-    /// if `guessing` — the longest run `isRace` picks out on race day.
+    /// The run among `runs` that was `goal`'s race: the linked run when it is loaded, else (
+    /// if `guessing`) the longest run `isRace` picks out on race day.
     ///
     /// A link whose run isn't in `runs` falls back to the guess rather than to nothing: the
     /// column is `on delete set null`, so a link that resolves to no row is a run not loaded
@@ -120,7 +120,7 @@ enum RaceRecap {
     /// treated as GPS error and scaled away.
     ///
     /// Why this exists: a certified course is measured along the shortest legal line, and
-    /// nobody runs that line — so every watch reads a marathon a little long. Chicago is worse
+    /// nobody runs that line, so every watch reads a marathon a little long. Chicago is worse
     /// than most. The first half is a canyon of towers and the course goes *under* Wacker and
     /// Columbus, and GPS bouncing off glass adds distance that was never run: 26.4–26.8 mi is
     /// the normal reading for a runner who ran exactly 26.2. Placed on raw distance, the 5K
@@ -128,14 +128,14 @@ enum RaceRecap {
     /// finish arrives "at" 26.2 with half a mile still to run. Checked against the official
     /// chip splits, the recap would be wrong at every mat in the same direction.
     ///
-    /// So, when the reading is plausibly *that* — 100% to 103% of the race — the whole
+    /// So, when the reading is plausibly *that* (100% to 103% of the race) the whole
     /// cumulative curve is shrunk uniformly until the finish lands on 42,195 m. Uniform
     /// scaling assumes the error is spread along the course, which is not quite true
     /// (downtown is worse than Pilsen), but it is the only assumption the data supports, and
     /// it is right where it matters most: the finish.
     ///
     /// Outside the band, raw distance stands. Past 103% (27.0 mi for a marathon) the excess is
-    /// too big to be drift — it is a warm-up, a walk to gear check, or a watch left running —
+    /// too big to be drift (it is a warm-up, a walk to gear check, or a watch left running)
     /// and stretching the race to swallow it would move every mat. Under 100% the watch read
     /// short, and there is no principled way to invent the missing metres.
     static let overreadBand: ClosedRange<Double> = 1.00...1.03
@@ -154,7 +154,7 @@ enum RaceRecap {
         }
         let k = raceMeters / total
         var scaled = meters.map { $0 * k }
-        // Exactly the race distance, not one rounding error short of it — otherwise the finish
+        // Exactly the race distance, not one rounding error short of it, otherwise the finish
         // mat would be "unreachable" by a nanometre and fall back to a different code path.
         scaled[scaled.count - 1] = raceMeters
         return Normalised(meters: scaled, scale: k)
@@ -207,7 +207,7 @@ enum RaceRecap {
     /// Places every mat on the (already normalised) curve.
     ///
     /// The finish mat is always present: at the race distance when the curve reaches it, and
-    /// otherwise at the end of the run — a watch that read short still finished the race.
+    /// otherwise at the end of the run. A watch that read short still finished the race.
     /// Intermediate mats past the end of a short reading are omitted rather than guessed.
     static func mats(times: [Double], meters: [Double], raceMeters: Double, goalS: Int?) -> [Mat] {
         guard times.count == meters.count, let lastT = times.last, raceMeters > 0 else { return [] }
@@ -252,7 +252,7 @@ enum RaceRecap {
     }
 
     /// First and second half, split at exactly half the race distance on the normalised
-    /// curve — so for a marathon, the same instant as the Half mat.
+    /// curve, so for a marathon, the same instant as the Half mat.
     static func halves(times: [Double], meters: [Double], raceMeters: Double, finishS: Double) -> Halves? {
         guard let halfT = time(atMeters: raceMeters / 2, times: times, meters: meters),
               finishS > halfT else { return nil }
@@ -274,7 +274,7 @@ enum RaceRecap {
     }
 
     /// Mean HR before the halfway instant vs. from it to the finish. Samples after the finish
-    /// (the shuffle to the medal) are excluded — they would drag the second half down.
+    /// (the shuffle to the medal) are excluded. They would drag the second half down.
     static func hrDrift(hrTimes: [Double], hrBPM: [Double], halfS: Double, finishS: Double) -> HRDrift? {
         guard hrTimes.count == hrBPM.count else { return nil }
         var first: [Double] = [], second: [Double] = []
@@ -291,7 +291,7 @@ enum RaceRecap {
     // MARK: - Fade point
 
     /// Giving back less than this between the most-banked mat and the finish is noise, not a
-    /// fade — a few seconds lost on a bridge and won back is not where the race turned.
+    /// fade. A few seconds lost on a bridge and won back is not where the race turned.
     static let fadeToleranceS = 15.0
 
     /// The mat where the athlete was furthest ahead of goal before time started coming back:
@@ -299,7 +299,7 @@ enum RaceRecap {
     /// provided the finish is more than `fadeToleranceS` worse than it.
     ///
     /// Nil when there is no goal, or when the finish is itself the most-banked point (the
-    /// athlete never faded — even pace or a strong close).
+    /// athlete never faded, even pace or a strong close).
     static func fadePoint(_ mats: [Mat]) -> Mat? {
         guard let finish = mats.last, finish.isFinish, let finishDelta = finish.deltaS else { return nil }
         var best: Mat?
@@ -381,7 +381,7 @@ enum RaceRecap {
         }
     }
 
-    /// The sixteen weeks before race day, race day itself excluded — the race is the result
+    /// The sixteen weeks before race day, race day itself excluded. The race is the result
     /// of the block, not part of it, and counting it would make every block look 26 miles
     /// bigger and its longest run the race.
     ///

@@ -29,7 +29,7 @@ struct GoalInfo: Decodable, Identifiable, Hashable {
     var started_week: Int? = nil
     var preferences: GoalPreferences? = nil
 
-    // How the block ended (#100, migration 0013). All nil on an open block — and on every
+    // How the block ended (#100, migration 0013). All nil on an open block, and on every
     // read that doesn't select them: `loadPlan` deliberately doesn't, so the active goal
     // still loads on a database where 0013 hasn't been applied.
     var completed_at: Date? = nil
@@ -53,7 +53,7 @@ extension GoalInfo {
 
     /// Hand-written so the newer columns can never cost the athlete their goal. Each one
     /// after the four originals is decoded with `try?`: a malformed `preferences` or `review`
-    /// blob loses that field, not the row — and a goal that fails to decode reads, on every
+    /// blob loses that field, not the row, and a goal that fails to decode reads, on every
     /// screen, as no goal at all.
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -77,12 +77,12 @@ extension GoalInfo {
     }
 }
 
-/// `goals.review` — the coach's retrospective on a closed block, cached so it costs one
+/// `goals.review`. The coach's retrospective on a closed block, cached so it costs one
 /// Claude call per block rather than one per visit. Versioned so the shape can grow.
 struct BlockRetrospective: Codable, Hashable {
     var v: Int? = 1
     let text: String
-    /// ISO 8601, kept as the string that was written — it is provenance, not arithmetic.
+    /// ISO 8601, kept as the string that was written. It is provenance, not arithmetic.
     let generated_at: String?
 }
 
@@ -185,7 +185,7 @@ extension RunStore {
                 .execute()
                 .value
         } catch {
-            // Transient failure — keep whatever we're showing. Reported because a
+            // Transient failure: keep whatever we're showing. Reported because a
             // *persistent* run of these looks identical to "the plan vanished" from
             // the athlete's side, and that ambiguity cost days in July.
             Telemetry.error("plan.load_failed", error)
@@ -246,7 +246,7 @@ extension RunStore {
         if let newSessions { sessions = newSessions }
 
         // Decoded as an array rather than `.single()`: PostgREST turns a zero-row
-        // `.single()` into a thrown 406, and on almost every day there is no check-in yet —
+        // `.single()` into a thrown 406, and on almost every day there is no check-in yet,
         // so the old shape logged a 406 on every single refresh (#224). The `try?` hid it
         // from the athlete but not from the edge logs. This is the same correction the
         // profile read got on 2026-08-23; that sweep missed this call site, which is why
@@ -327,7 +327,7 @@ extension RunStore {
         )
     }
 
-    // MARK: Matcher (Stage D) — completed runs claim their planned sessions
+    // MARK: Matcher (Stage D), completed runs claim their planned sessions
 
     func matchRunsToSessions() async {
         guard plan != nil else { return }
@@ -356,7 +356,7 @@ extension RunStore {
         session.run_id.flatMap { id in runs.first { $0.id == id } }
     }
 
-    // MARK: Auto-adaptation (Stage E, small tweaks) — adapt small silently
+    // MARK: Auto-adaptation (Stage E, small tweaks), adapt small silently
 
     /// If a quality/long session was missed earlier THIS week and a later easy day
     /// remains, the hard session takes the easy slot (the easy day is skipped).
@@ -420,7 +420,7 @@ extension RunStore {
         todayCheckIn = CheckInInfo(date: row.date, feels_ok: feelsOk, note: note)
     }
 
-    // MARK: Projection (Stage F, v1) — recomputed after every refresh
+    // MARK: Projection (Stage F, v1), recomputed after every refresh
 
     /// The rule itself lives in `Engine/ProjectionHistory.swift` so the detail chart can
     /// replay it over past dates. Kept in one place deliberately: two copies would drift,

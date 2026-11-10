@@ -1,15 +1,15 @@
 import Foundation
 
-/// Training-load model — the deterministic math behind readiness.
+/// Training-load model: the deterministic math behind readiness.
 ///
 /// Each run scores load = miles × intensity², where intensity is the run's pace
-/// relative to the athlete's own recent baseline (their median pace — so the model
+/// relative to the athlete's own recent baseline (their median pace, so the model
 /// is self-calibrating and works without HR). A run the athlete rated scores his RPE
-/// instead, in the same units — see `LoadModel.load(of:baseline:)`. Two exponential
+/// instead, in the same units. See `LoadModel.load(of:baseline:)`. Two exponential
 /// moving averages:
-///   CTL (fitness, 42-day) — what you've built
-///   ATL (fatigue,  7-day) — what you're carrying
-///   Form = CTL − ATL      — what you can spend today
+///   CTL (fitness, 42-day): what you've built
+///   ATL (fatigue,  7-day): what you're carrying
+///   Form = CTL − ATL:      what you can spend today
 struct FitnessMetrics {
     let readiness: Int          // 0–100
     let ctl: Double
@@ -38,7 +38,7 @@ struct FitnessMetrics {
 
 enum LoadModel {
 
-    /// Compute current metrics from real runs. `checkInOK == false` caps readiness —
+    /// Compute current metrics from real runs. `checkInOK == false` caps readiness,
     /// the athlete's own report outranks the math.
     static func compute(runs: [RunSummary], checkInOK: Bool?, now: Date = .now) -> FitnessMetrics? {
         guard !runs.isEmpty else { return nil }
@@ -97,14 +97,14 @@ enum LoadModel {
     /// and 3/4 × 1.08 ≈ 0.81 by RPE 3; a threshold run ~15 % faster scores ~1.38 by pace
     /// and 7/4 × 0.85 ≈ 1.49 by RPE 7. So a block that switches from pace to RPE scoring
     /// mid-way doesn't put a step into the CTL chart. It is a calibration, not a fact
-    /// about the athlete — if his logged RPEs run consistently high or low against his
+    /// about the athlete. If his logged RPEs run consistently high or low against his
     /// paces, this is the number to move.
     static let referenceRPE = 4.0
 
-    /// One run's contribution to the day's load, in miles-at-median-pace — or nil when the
+    /// One run's contribution to the day's load, in miles-at-median-pace, or nil when the
     /// run can't be scored at all and is skipped, as it always was.
     ///
-    /// **With an RPE (#123): session-RPE load.** Foster's session RPE — effort × minutes —
+    /// **With an RPE (#123): session-RPE load.** Foster's session RPE (effort × minutes)
     /// is a validated training-load measure that needs no heart rate, which is the point:
     /// Garmin's HR doesn't reliably reach us, and pace alone reads a hot, sick, or
     /// heavy-legged 8:30 as the same 8:30 as a fresh one. The athlete's own number does
@@ -119,7 +119,7 @@ enum LoadModel {
     /// skipped before.
     ///
     /// **Without one: pace load, unchanged.** miles × intensity², intensity = baseline /
-    /// pace. The expression is kept exactly as it was — same operands, same order — because
+    /// pace. The expression is kept exactly as it was (same operands, same order) because
     /// the 2,000+ runs that predate the journal never get an RPE and their numbers are
     /// pinned bit-for-bit (`LoadModelRPETests`).
     ///
@@ -127,7 +127,7 @@ enum LoadModel {
     /// both land in the same daily bucket, so a history that is mostly pace-scored with
     /// RPE'd runs arriving from the recorder needs no switch-over: the RPE'd ones simply
     /// count what he said they cost. RPE replaces the pace score for that run rather than
-    /// averaging with it — averaging would dilute exactly the disagreement (an easy pace
+    /// averaging with it, averaging would dilute exactly the disagreement (an easy pace
     /// that felt like a 9) that makes RPE worth asking for.
     ///
     /// An RPE outside 1–10 is ignored rather than clamped (the database refuses one, so it

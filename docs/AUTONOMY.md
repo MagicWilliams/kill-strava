@@ -24,7 +24,7 @@ telemetry + logs + code  ──▶  SCOUT   ──▶  GitHub Issues
                                  merge
 ```
 
-Three roles, deliberately separated — a single agent that finds, fixes, and judges its own
+Three roles, deliberately separated. A single agent that finds, fixes, and judges its own
 work grades its own homework.
 
 - **Scout** (`.claude/agents/scout.md`) finds problems, files issues, writes no code.
@@ -38,7 +38,7 @@ Run them with `/triage`, `/build-next`, `/brief`.
 
 Autonomy without verification is noise generation. CI is the only thing standing between
 "an agent wrote plausible Swift" and "the app still works." It is also, for cloud agents,
-literally the compiler — Linux sandboxes have no Xcode, so a cloud Builder pushes and reads
+literally the compiler. Linux sandboxes have no Xcode, so a cloud Builder pushes and reads
 the Actions result rather than compiling anything itself.
 
 The gate is deliberately narrow and honest about it: **it proves the app compiles and the
@@ -47,7 +47,7 @@ that. Every PR therefore carries on-device verification steps for him.
 
 ## Why telemetry exists
 
-Tempo has one user, so there is no aggregate signal — and yet every real bug so far (the
+Tempo has one user, so there is no aggregate signal, and yet every real bug so far (the
 vanished plan, the Garmin double-count reading 31 miles instead of 15, HR zones capping at
 15s) was found by David noticing a wrong number and reconstructing the cause from memory.
 
@@ -55,7 +55,7 @@ vanished plan, the Garmin double-count reading 31 miles instead of 15, HR zones 
 already knows are interesting; Scout ranks what recurs. This converts David's dogfooding from
 an anecdote into an input.
 
-It is not a crash reporter and holds no health data or PII — counts, durations, and stable
+It is not a crash reporter and holds no health data or PII: counts, durations, and stable
 enum-ish keys only. See `ios/Tempo/Services/Telemetry.swift`.
 
 ## Where the split runs
@@ -73,7 +73,7 @@ enum-ish keys only. See `ios/Tempo/Services/Telemetry.swift`.
 The binding rules live in `CLAUDE.md` and every agent reads them. The load-bearing ones:
 
 - Nothing merges without David.
-- No migration is applied and no edge function deployed by an agent — the SQL ships in the PR
+- No migration is applied and no edge function deployed by an agent. The SQL ships in the PR
   and stops there. `coach` is live in his hands while he trains.
 - No writes to the production database.
 - No agent claims device-verified behavior.
@@ -86,7 +86,7 @@ told that a noisy board is worse than an empty one. EM is explicitly licensed to
 is not worth doing.
 
 **Unverified change accumulates.** Merged PRs mean "compiled and passed tests," not "works."
-If David goes a fortnight without running the app, the loop is producing unverified change —
+If David goes a fortnight without running the app, the loop is producing unverified change,
 EM checks for this each brief and says so.
 
 **The queue starves.** If `agent-ready` is empty, the bottleneck is specification, not

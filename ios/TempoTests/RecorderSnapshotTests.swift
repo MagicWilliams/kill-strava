@@ -222,7 +222,7 @@ final class RecorderSnapshotTests: XCTestCase {
         XCTAssertTrue(zip(chunks, chunks.dropFirst()).allSatisfy { $0.to == $1.from }, "contiguous, no overlap")
         XCTAssertEqual(chunks.map(\.meters).reduce(0, +), timeline.last!.m, accuracy: 1e-9)
 
-        // From a bookmark part-way along — what Health already held — only the rest.
+        // From a bookmark part-way along (what Health already held) only the rest.
         let bookmark = timeline[300]
         let rest = DistanceChunks.backlog(timeline: timeline, flushed: bookmark)
         XCTAssertEqual(rest.first?.from, bookmark)

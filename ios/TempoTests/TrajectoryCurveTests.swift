@@ -3,7 +3,7 @@ import XCTest
 
 /// The expected trajectory for the Drift Detector (PRD-02 item #3, #235, approved by David
 /// 2026-10-29). Before this, the only "this week" number Tempo had was planned mileage, so
-/// the only thing drift could have been measured against was the goal itself — and against
+/// the only thing drift could have been measured against was the goal itself, and against
 /// the goal every runner is "off track" in week 2 of a 16-week block (PRD §6.1).
 ///
 /// The failures this pins are all the quiet kind: a curve that hits the goal on race day
@@ -107,7 +107,7 @@ final class TrajectoryCurveTests: XCTestCase {
         let c = curve(weeks: 16)
         XCTAssertEqual(c.expectedTime(on: addDays(46, to: c.signupDate, in: cal))!, 12_150, accuracy: 1e-9)
         XCTAssertEqual(c.expectedTime(on: addDays(23, to: c.signupDate, in: cal))!, 12_375, accuracy: 1e-9)
-        // Week 2 of a 16-week block expects barely any gain — the case PRD §6.2 is about.
+        // Week 2 of a 16-week block expects barely any gain: the case PRD §6.2 is about.
         XCTAssertEqual(c.expectedTime(on: addDays(7, to: c.signupDate, in: cal))!, 12_600 - 900 * 7 / 92, accuracy: 1e-9)
     }
 

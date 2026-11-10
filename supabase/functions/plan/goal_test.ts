@@ -1,4 +1,4 @@
-// #104 — /plan must work before AND after migration 0013, and must not forget the race.
+// #104: /plan must work before AND after migration 0013, and must not forget the race.
 //
 // Two ways this goes wrong silently, both pinned here:
 //

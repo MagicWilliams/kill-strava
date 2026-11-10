@@ -13,7 +13,7 @@ settings:
     MARKETING_VERSION: "0.1.0"
     CURRENT_PROJECT_VERSION: "1"
     SWIFT_VERSION: "5.9"
-    DEVELOPMENT_TEAM: "2P8QGJVNJ7"   # David Latimore II (Personal Team) — survives xcodegen regeneration
+    DEVELOPMENT_TEAM: "2P8QGJVNJ7"   # David Latimore II (Personal Team), survives xcodegen regeneration
 packages:
   Supabase:
     url: https://github.com/supabase/supabase-swift
@@ -61,14 +61,14 @@ targets:
         #   activating a .playback session from the background fails with '!pla'.
         # Deliberately absent: `workout-processing` is documented for watchOS only. On iPhone
         #   (iOS 26+, our minimum) the running HKWorkoutSession is what keeps a run alive in the
-        #   background — including treadmill runs, which have no location updates.
+        #   background: including treadmill runs, which have no location updates.
         UIBackgroundModes: [location, audio]
         # Lock Screen + Dynamic Island while recording (#119).
         NSSupportsLiveActivities: true
-        # HTTPS only, nothing custom — declaring it here skips the export-compliance
+        # HTTPS only, nothing custom, declaring it here skips the export-compliance
         # question App Store Connect otherwise asks on every single TestFlight build.
         ITSAppUsesNonExemptEncryption: false
-        # tempo://today, tempo://coach — where a widget tap lands (WidgetLink).
+        # tempo://today, tempo://coach. Where a widget tap lands (WidgetLink).
         CFBundleURLTypes:
           - CFBundleURLName: studio.delight.tempo
             CFBundleURLSchemes: [tempo]
@@ -83,7 +83,7 @@ targets:
       path: Tempo/Tempo.entitlements
       properties:
         com.apple.developer.healthkit: true
-        # Shared with TempoWidgets — the only channel between the app and its widgets.
+        # Shared with TempoWidgets: the only channel between the app and its widgets.
         # Must match WidgetSnapshot.appGroup and the extension's entitlements exactly.
         com.apple.security.application-groups:
           - group.studio.delight.tempo
@@ -114,7 +114,7 @@ targets:
       path: TempoWidgets/Info.plist
       properties:
         CFBundleDisplayName: Tempo
-        # Must equal the app's on every build — App Store Connect rejects an upload whose
+        # Must equal the app's on every build: App Store Connect rejects an upload whose
         # extension version disagrees with its host. CI's CURRENT_PROJECT_VERSION override
         # applies to both targets.
         CFBundleShortVersionString: $(MARKETING_VERSION)

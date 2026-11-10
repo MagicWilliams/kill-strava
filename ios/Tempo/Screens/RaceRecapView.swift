@@ -22,7 +22,7 @@ struct RaceRecapView: View {
     @State private var loading = true
     @State private var shareImage: Image?
 
-    /// The block this run closed, if one recorded it — otherwise the active goal. Once a block
+    /// The block this run closed, if one recorded it, otherwise the active goal. Once a block
     /// is closed `store.goal` is the *next* goal (or nothing), and reading it would grade
     /// Chicago against a race that hasn't happened.
     private var goal: GoalInfo? { store.raceGoal(for: run) ?? store.goal }
@@ -235,7 +235,7 @@ struct RaceRecapView: View {
         let id: Int
         /// Along the course, in the athlete's unit.
         let distance: Double
-        /// Seconds ahead of goal — the delta negated, so ahead plots *up*.
+        /// Seconds ahead of goal: the delta negated, so ahead plots *up*.
         let ahead: Double
     }
 

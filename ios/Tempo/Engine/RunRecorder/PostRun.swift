@@ -31,7 +31,7 @@ enum PostRun {
         case race(saving: Bool, failure: String?)
         /// Saved, but somewhere he won't see it on Today straight away: say where, then Done.
         case saved(note: String)
-        /// Nothing left to show — saved, or discarded. Reset, and the cover closes: onto Today,
+        /// Nothing left to show: saved, or discarded. Reset, and the cover closes: onto Today,
         /// or for a race with a row onto its recap, pushed underneath by the app root
         /// (`RaceFinish.destination`, #117) so this screen never has to know.
         case close
@@ -86,7 +86,7 @@ enum PostRun {
     /// After Tempo refused the row, the workout is already in Apple Health and a discard
     /// leaves it there (`WorkoutRecorder` never deletes a finished workout; the sync will
     /// ingest it). Telling him the run is gone would be false, and he'd go looking for it
-    /// to delete in Health — so the message says what actually goes: his notes.
+    /// to delete in Health, so the message says what actually goes: his notes.
     static func discardMessage(alreadyInHealth: Bool) -> String {
         alreadyInHealth
             ? "The run is already in Apple Health and stays there. What you wrote here is thrown away."
@@ -163,8 +163,8 @@ enum PostRun {
     /// "Tuesday tempo", "Saturday long run", "Thursday treadmill run", "Sunday morning run".
     ///
     /// Written as the title whenever he leaves the field alone, so a recorded run is never
-    /// untitled. Named for the session he set out to run when there was one — whether or not
-    /// he hid its target ("run free" hides a number, it doesn't change what the run was) —
+    /// untitled. Named for the session he set out to run when there was one, whether or not
+    /// he hid its target ("run free" hides a number, it doesn't change what the run was),
     /// otherwise for where and when. The day is the calendar day the run *started*, in his
     /// time zone: a run that crosses midnight is still Tuesday's run.
     static func defaultTitle(
@@ -260,7 +260,7 @@ enum PostRun {
     }
 
     /// The pairs offered: in service only, the default first, then newest first. A retired
-    /// pair is never offered after a run — that is what retiring it means (#121).
+    /// pair is never offered after a run. That is what retiring it means (#121).
     static func shoeOptions(_ shoes: [Shoe], defaultID: UUID?) -> [Shoe] {
         shoes
             .filter { !$0.isRetired }

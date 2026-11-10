@@ -5,7 +5,7 @@ import Foundation
 ///
 /// Pure because both halves failed silently. On 2026-10-14 a fresh install chose "Just
 /// running for now"; the coach opened by presenting 6 days a week and a Sunday long run as
-/// "locked in" — the profile's column defaults, which nobody had said — then asked about
+/// "locked in" (the profile's column defaults, which nobody had said) then asked about
 /// strength, ended on a statement, and never called `complete_onboarding`. No crash; the
 /// athlete was simply shut out of the app behind a chat that had nothing left to say.
 enum OnboardingFacts {
@@ -36,13 +36,13 @@ enum OnboardingFacts {
         case daysPerWeek, longRunDay, riskTolerance
     }
 
-    /// `onboarding.known` — facts the athlete has given, so the interview confirms rather than
+    /// `onboarding.known`, facts the athlete has given, so the interview confirms rather than
     /// re-asks. A defaulted setting is left out, not marked: the prompt treats everything in
     /// `known` as the athlete's word, so a default in it is a claim made on their behalf.
     ///
     /// - Parameters:
-    ///   - given: settings the athlete answered — recorded in this interview, or confirmed on
-    ///     a card — as opposed to read back from a column default.
+    ///   - given: settings the athlete answered (recorded in this interview, or confirmed on
+    ///     a card) as opposed to read back from a column default.
     ///   - planOnFile: an active goal exists, so the settings were what its plan was built
     ///     from, and count as given.
     ///   - maxHR, birthdate: nullable columns, so present means somebody said so.

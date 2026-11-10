@@ -3,13 +3,13 @@ import XCTest
 
 /// The coach answered one message with two proposal cards, both Confirm buttons were live, and
 /// tapping both started two writes at once. After #33 each of those also fired an
-/// acknowledgement round trip, so two coach replies landed in the transcript — and the second
+/// acknowledgement round trip, so two coach replies landed in the transcript, and the second
 /// was built from a `CoachContext` snapshotted while the first write was still running, which
 /// is how the coach ends up narrating a number that is mid-correction (#38).
 ///
 /// These pin the admission rules, because every way they can be wrong is quiet. Admit too much
 /// and the race is back. Admit too little and a Confirm the athlete deliberately tapped
-/// vanishes with no error and no card change — indistinguishable from a dead button.
+/// vanishes with no error and no card change, indistinguishable from a dead button.
 final class ConfirmQueueTests: XCTestCase {
 
     private let cardA = UUID()
@@ -43,7 +43,7 @@ final class ConfirmQueueTests: XCTestCase {
     }
 
     /// Tap order is the order they apply. Three cards from one busy reply should not reshuffle
-    /// themselves — an amend and the plan rebuild that reads it are not commutative.
+    /// themselves. An amend and the plan rebuild that reads it are not commutative.
     func testTapOrderIsApplyOrder() {
         var queue = ConfirmQueue()
         _ = queue.admit(cardA, offering: .pending)
@@ -72,7 +72,7 @@ final class ConfirmQueueTests: XCTestCase {
         XCTAssertEqual(queue.accepted, [cardA], "and it must not join the line twice")
     }
 
-    /// Double-tapping a card that is *waiting* is the likelier version — its button is gone,
+    /// Double-tapping a card that is *waiting* is the likelier version. Its button is gone,
     /// but a queued tap is easy to repeat before the card redraws.
     func testWaitingCardTappedAgainIsIgnored() {
         var queue = ConfirmQueue()
@@ -83,7 +83,7 @@ final class ConfirmQueueTests: XCTestCase {
     }
 
     /// Already-resolved cards keep their answer. Re-admitting an applied card would run the
-    /// write a second time — a duplicate run, or an amend applied to its own result.
+    /// write a second time. A duplicate run, or an amend applied to its own result.
     func testResolvedCardsAreNotOffers() {
         for state: ChatMessage.ActionState in [.applying, .applied, .dismissed] {
             var queue = ConfirmQueue()
@@ -92,14 +92,14 @@ final class ConfirmQueueTests: XCTestCase {
         }
     }
 
-    /// A card whose message or action is gone — resolved elsewhere and replayed on load.
+    /// A card whose message or action is gone: resolved elsewhere and replayed on load.
     func testMissingCardIsIgnored() {
         var queue = ConfirmQueue()
         XCTAssertEqual(queue.admit(cardA, offering: nil), .ignore)
         XCTAssertEqual(queue.accepted, [])
     }
 
-    /// Retry is a real offer. A failed write puts the button back, and that tap has to work —
+    /// Retry is a real offer. A failed write puts the button back, and that tap has to work,
     /// including when it lands while another confirm is still going.
     func testFailedCardIsStillAnOfferAndCanBeRetried() {
         var queue = ConfirmQueue()
@@ -122,7 +122,7 @@ final class ConfirmQueueTests: XCTestCase {
 
     /// `CoachView` reads this in the pending/failed branch to decide whether the buttons are
     /// still honest. A tap the queue has banked must not leave a button that looks live and
-    /// does nothing — that is the symptom the athlete would actually see.
+    /// does nothing. That is the symptom the athlete would actually see.
     func testATappedCardKnowsItIsWaiting() {
         var queue = ConfirmQueue()
         _ = queue.admit(cardA, offering: .pending)

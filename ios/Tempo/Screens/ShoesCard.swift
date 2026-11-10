@@ -3,7 +3,7 @@ import SwiftUI
 /// Shoes, on You (#121): every pair in service with its mileage, the retired ones folded
 /// away, and the nudge when a pair is getting close to done.
 ///
-/// Mileage is summed from `store.runs` — the runs already on the phone — so it moves the
+/// Mileage is summed from `store.runs` (the runs already on the phone) so it moves the
 /// moment a tagged run syncs, with no shoe read of its own. All the arithmetic is in
 /// `ShoeMileage`; this view draws it.
 struct ShoesCard: View {
@@ -97,7 +97,7 @@ struct ShoesCard: View {
 
     // MARK: - Rows
 
-    /// Tap for the actions: default, retire. A Menu rather than swipe actions — this is a
+    /// Tap for the actions: default, retire. A Menu rather than swipe actions. This is a
     /// card in a scroll view, not a List, and a swipe there fights the scroll.
     private func activeRow(_ shoe: Shoe, _ tally: ShoeMileage.Tally) -> some View {
         let isDefault = shoes.defaultShoeID == shoe.id
@@ -115,7 +115,7 @@ struct ShoesCard: View {
                         .font(Tokens.Font.ui(14, .semibold)).foregroundStyle(Tokens.Palette.textPrimary)
                         .lineLimit(1)
                     if isDefault {
-                        // Volt as a fill with onVolt on it — the one legal way to wear it.
+                        // Volt as a fill with onVolt on it: the one legal way to wear it.
                         Tag(text: "Default", fg: Tokens.Palette.onVolt, bg: Tokens.Palette.volt)
                     }
                     Spacer()
@@ -210,7 +210,7 @@ struct ShoesCard: View {
 
 /// A new pair: a name, and the miles already on it if it isn't new.
 struct AddShoeSheet: View {
-    /// Whether the athlete has no pair in service yet — then the first one starts as the
+    /// Whether the athlete has no pair in service yet: then the first one starts as the
     /// default, which they can see and switch off.
     let firstPair: Bool
     /// Saves; returns whether it landed.

@@ -87,7 +87,7 @@ struct ProposedAction: Codable, Equatable {
     var reason: String? = nil
 
     /// create_plan only: what the athlete tapped in the intake (#102). Stamped by the app,
-    /// never sent by the model — see `IntakeHandoff.stamping`.
+    /// never sent by the model. See `IntakeHandoff.stamping`.
     var intake: IntakeStamp? = nil
     /// create_plan only: answers the athlete changed in this conversation, which unlike the
     /// rest of the card do outrank the form. Folded into `intake` when the card is stamped.
@@ -101,10 +101,10 @@ struct ChatMessage: Identifiable, Equatable {
     enum Role: String { case user, coach }
     enum ActionState: String, Equatable {
         case pending      // card showing Confirm/Dismiss
-        case applying     // write in flight — card shows progress
-        case applied      // success — card stays as evidence
+        case applying     // write in flight: card shows progress
+        case applied      // success: card stays as evidence
         case dismissed
-        case failed       // error — buttons return, retryable
+        case failed       // error: buttons return, retryable
 
         /// What gets written to the DB. `applying` deliberately never persists: an app
         /// killed mid-write cannot know whether the write landed, so the row stays
@@ -121,7 +121,7 @@ struct ChatMessage: Identifiable, Equatable {
 }
 
 /// Drives one coach conversation: history persists in Supabase (`coach_messages`),
-/// replies come from the `coach` Edge Function — Claude grounded in the
+/// replies come from the `coach` Edge Function. Claude grounded in the
 /// athlete's real recent training via `CoachContext`.
 ///
 /// The coach can PROPOSE data edits (tool calls). The function never writes;
@@ -144,7 +144,7 @@ final class ChatStore: ObservableObject {
 
     /// The conversation this store is reading and writing.
     ///
-    /// Set by the Coach tab before `load`. Nil means "whichever one is live" — `load`
+    /// Set by the Coach tab before `load`. Nil means "whichever one is live", `load`
     /// resolves it through `CoachThreadService.ensureThread`, which is the path the
     /// onboarding interview and any deep link into the tab take. It stays nil only if that
     /// resolution fails, and then nothing is scoped: see `load`.
@@ -154,7 +154,7 @@ final class ChatStore: ObservableObject {
     /// `coach_memory` and the recap of the previous conversation.
     ///
     /// Published because the thread shows the athlete the same two values the model is
-    /// given — the "Picking up from" note is not a separate summary of the context, it *is*
+    /// given. The "Picking up from" note is not a separate summary of the context, it *is*
     /// the context.
     struct Carried: Equatable {
         var facts: [String] = []
@@ -180,7 +180,7 @@ final class ChatStore: ObservableObject {
     // Wire types
     struct WireMessage: Codable { let role: String; let content: String }
     /// `features` tells the coach what this build can read. A coach that predates a feature
-    /// ignores the key; a coach that has it only uses it for a build that asks — which is
+    /// ignores the key; a coach that has it only uses it for a build that asks, which is
     /// what lets the app and the function ship in either order (#206).
     private struct CoachRequest: Encodable {
         let messages: [WireMessage]
@@ -219,11 +219,11 @@ final class ChatStore: ObservableObject {
     }
 
     /// Load persisted history; on a fresh account, open with a data-grounded status read.
-    /// In onboarding mode, always (re)open the interview — resuming where it left off.
+    /// In onboarding mode, always (re)open the interview, resuming where it left off.
     ///
     /// The page is the *newest* `ChatHistory.pageSize` messages, so the ordering lives in
     /// two halves that have to agree: descending here, flipped back in `ChatHistory`. See
-    /// that file for why — ascending plus a limit loaded the oldest 200 (#93).
+    /// that file for why, ascending plus a limit loaded the oldest 200 (#93).
     func load(context: CoachContext) async {
         guard !loaded else { return }
         loaded = true
@@ -232,7 +232,7 @@ final class ChatStore: ObservableObject {
         if threadID == nil {
             threadID = try? await CoachThreadService.ensureThread()
             if threadID == nil {
-                // No thread and no way to make one — an unreachable server, or no session.
+                // No thread and no way to make one: an unreachable server, or no session.
                 // The conversation still works; it is this turn's history that can't be
                 // scoped, so it is loaded unscoped rather than shown as empty.
                 Telemetry.warn("coach.thread_unresolved", "sending in an unscoped conversation")
@@ -277,7 +277,7 @@ final class ChatStore: ObservableObject {
     private func openIfPermitted(context: CoachContext) async {
         guard !opened, CoachConsentStore.shared.maySend else { return }
         opened = true
-        // A freshly sent intake is the turn to answer, onboarding or not — it replaces the
+        // A freshly sent intake is the turn to answer, onboarding or not. It replaces the
         // generic opener rather than queueing behind it.
         if let runStore, runStore.intakeHandoff?.sentToCoach == false {
             await sendIntake(runStore: runStore)
@@ -291,7 +291,7 @@ final class ChatStore: ObservableObject {
         } else {
             return
         }
-        // Hidden kickoff — only the coach's reply is shown or persisted.
+        // Hidden kickoff: only the coach's reply is shown or persisted.
         isThinking = true
         defer { isThinking = false }
         let history = messages.suffix(12).map {
@@ -374,8 +374,8 @@ final class ChatStore: ObservableObject {
     /// button on a tap it has already banked.
     @Published private(set) var confirmQueue = ConfirmQueue()
 
-    /// Tail of the resolution queue. Everything that ends in a coach round trip — every
-    /// confirm, and the acknowledgement a dismiss asks for — waits on its predecessor here,
+    /// Tail of the resolution queue. Everything that ends in a coach round trip (every
+    /// confirm, and the acknowledgement a dismiss asks for) waits on its predecessor here,
     /// for the same reason `handleReply` applies onboarding facts sequentially.
     private var resolutionTail: Task<Void, Never>?
 
@@ -397,7 +397,7 @@ final class ChatStore: ObservableObject {
     /// Execute a confirmed action. The card walks pending → applying → applied/failed.
     ///
     /// One at a time. Two cards on screen means two live Confirm buttons, and tapping both
-    /// used to run two writes concurrently plus — since #33 — two coach round trips, the
+    /// used to run two writes concurrently plus (since #33) two coach round trips, the
     /// second reasoning from a context snapshotted mid-write (#38). A tap that arrives while
     /// another confirm is in flight is queued, never dropped: the athlete meant it, and its
     /// card says it is waiting instead of offering a button that does nothing.
@@ -484,11 +484,11 @@ final class ChatStore: ObservableObject {
         let reloaded = await runStore.reloadFromSupabase()
         if !reloaded {
             // The write landed; only the re-read didn't. Saying nothing here is what makes
-            // a saved edit look discarded — the card goes green and the numbers don't move.
+            // a saved edit look discarded. The card goes green and the numbers don't move.
             errorText = "Saved, but your runs couldn't be re-read just now. Pull to refresh on Today."
         }
         // The re-read has to come first. Ask before it and the coach answers out of the
-        // pre-correction context — "that puts you at 25 for the week" about the very run it
+        // pre-correction context ("that puts you at 25 for the week") about the very run it
         // just grew to 8 miles. That ordering is the whole reason this call sits down here.
         busyLabel = nil   // the save is done; what follows is the coach thinking, not the write
         await acknowledgeIfWarranted(
@@ -501,8 +501,8 @@ final class ChatStore: ObservableObject {
 
     /// Dismiss does not queue the way Confirm does, and deliberately so: it writes nothing,
     /// so there is no write to serialize and no reason to make the athlete watch a spinner to
-    /// be told "no" was heard. The card greys out on the tap. A second tap is already a no-op
-    /// — the card is no longer an open offer.
+    /// be told "no" was heard. The card greys out on the tap. A second tap is already a no-op:
+    /// the card is no longer an open offer.
     ///
     /// Its *acknowledgement* is a different animal. That is a coach round trip appended to the
     /// transcript, which is the half of #38 that dismiss shares, so it joins the same queue as
@@ -515,7 +515,7 @@ final class ChatStore: ObservableObject {
         messages[idx].actionState = .dismissed
         persist(.dismissed, for: messageID)
         append(.user, "Dismissed: \(action.displaySummary)")
-        // Nothing was written, so there is nothing to re-read — the current context is current.
+        // Nothing was written, so there is nothing to re-read. The current context is current.
         await queued { [weak self] in
             await self?.acknowledgeIfWarranted(.dismissed, action: action, runStore: runStore)
         }.value
@@ -524,9 +524,9 @@ final class ChatStore: ObservableObject {
     /// One turn of coach reply to a resolved card, when `CoachAcknowledgement` says the
     /// transition earns one.
     ///
-    /// Nothing new is sent: `confirm`/`dismiss` have already appended "Confirmed — …" /
-    /// "Dismissed — …" as a user turn, so the coach is answering a message that is genuinely
-    /// in the transcript. The context is built *here*, at call time, rather than passed in —
+    /// Nothing new is sent: `confirm`/`dismiss` have already appended "Confirmed: …" /
+    /// "Dismissed: …" as a user turn, so the coach is answering a message that is genuinely
+    /// in the transcript. The context is built *here*, at call time, rather than passed in,
     /// a context captured before the write would describe the state the athlete just changed.
     ///
     /// A failed round trip stays quiet. The change landed and the green card says so; an
@@ -545,8 +545,8 @@ final class ChatStore: ObservableObject {
         ) else { return }
         isThinking = true
         defer { isThinking = false }
-        // A plan confirm puts its narration *after* the "Confirmed — …" turn, so the raw
-        // transcript ends on a coach line — a history the model rejects as prefill (#193).
+        // A plan confirm puts its narration *after* the "Confirmed: …" turn, so the raw
+        // transcript ends on a coach line, a history the model rejects as prefill (#193).
         // It is folded into the confirm turn on the wire; the bubbles on screen are untouched.
         let history = CoachAcknowledgement.wireHistory(messages.suffix(24).map {
             CoachAcknowledgement.Turn(role: $0.role == .user ? .user : .assistant, content: $0.text)
@@ -557,7 +557,7 @@ final class ChatStore: ObservableObject {
             acknowledging: true
         ) {
             // No card comes out of this turn, which is what stops a tap chaining into another
-            // card. "Confirmed — Correct Oct 27" reads to a model like agreement to correct Oct
+            // card. "Confirmed: Correct Oct 27" reads to a model like agreement to correct Oct
             // 27, and on 2026-11-04 that put the same correction up four times.
             handleReply(reply, acknowledging: true)
         }
@@ -608,7 +608,7 @@ final class ChatStore: ObservableObject {
             var avg_pace_sec: Int?
             var corrected = true
             var correction_note: String
-            var coach_takeaway: AnyJSON = .null   // stale after a correction — regenerates on next open
+            var coach_takeaway: AnyJSON = .null   // stale after a correction, regenerates on next open
             var original: Original?
             struct Original: Encodable {
                 let distance_m: Int
@@ -684,7 +684,7 @@ final class ChatStore: ObservableObject {
         // Upsert, not insert, and for the same reason the ingest path does it
         // (`HealthService.sync`): a second Confirm must be a no-op, not an error. A
         // plain insert would raise on the unique constraint, the card would go to `failed`,
-        // and the athlete would be invited to retry a write that had already landed — a
+        // and the athlete would be invited to retry a write that had already landed. A
         // false failure on top of the duplicate this change exists to prevent.
         try await Supa.client
             .from("runs")
@@ -708,14 +708,14 @@ final class ChatStore: ObservableObject {
         runStore.setRiskTolerance(level)
     }
 
-    /// Returns the line to narrate, for the caller to place — see `PlanNarration`.
+    /// Returns the line to narrate, for the caller to place. See `PlanNarration`.
     private func applyCreatePlan(_ action: ProposedAction, runStore: RunStore) async throws -> String? {
         guard let request = planRequest(for: action, runStore: runStore) else { throw ActionError.badParams }
         guard let intake = action.intake else {
             return try await invokePlanEngine(request, runStore: runStore)
         }
         // The intake's profile half lands first: `plan` reads days, long-run day, strength
-        // and risk from the profile, not from the request. Only here, on Confirm — writing it
+        // and risk from the profile, not from the request. Only here, on Confirm, writing it
         // at form submit would let a dismissed card reshape the plan the athlete is still on.
         guard let uid = Supa.userID?.uuidString else { throw ActionError.badParams }
         try await Supa.client.from("profiles").update(intake.profilePatch).eq("id", value: uid).execute()
@@ -752,7 +752,7 @@ final class ChatStore: ObservableObject {
         )
     }
 
-    /// Returns the line to narrate, for the caller to place — see `PlanNarration`.
+    /// Returns the line to narrate, for the caller to place. See `PlanNarration`.
     private func applyPlanSettings(_ action: ProposedAction, runStore: RunStore, regenerate: Bool = true) async throws -> String? {
         guard let uid = Supa.userID?.uuidString,
               action.days_per_week != nil || action.long_run_day != nil else { throw ActionError.badParams }
@@ -829,9 +829,9 @@ final class ChatStore: ObservableObject {
     /// the line describing what came back.
     ///
     /// It deliberately does not append that line itself. It used to, and since it runs inside
-    /// the confirmed-action switch, the result landed above the "Confirmed — …" turn that
-    /// asked for it (#39). Handing the line back lets the caller — which knows whether a
-    /// confirmation turn precedes it — decide where it goes.
+    /// the confirmed-action switch, the result landed above the "Confirmed: …" turn that
+    /// asked for it (#39). Handing the line back lets the caller (which knows whether a
+    /// confirmation turn precedes it) decide where it goes.
     private func invokePlanEngine(_ request: PlanRequest, runStore: RunStore) async throws -> String? {
         struct Rep: Decodable {
             let weeks: Int?
@@ -907,8 +907,8 @@ final class ChatStore: ObservableObject {
     /// nothing on screen would disagree.
     ///
     /// The fact is added to `carried` immediately rather than waiting for the next load, so
-    /// the coach's acknowledgement turn — which happens seconds later, with a context built
-    /// at call time — already knows what it has just been told to remember.
+    /// the coach's acknowledgement turn (which happens seconds later, with a context built
+    /// at call time) already knows what it has just been told to remember.
     private func applyRemember(_ action: ProposedAction) async throws {
         guard let fact = action.fact?.trimmingCharacters(in: .whitespacesAndNewlines),
               !fact.isEmpty else { throw ActionError.badParams }
@@ -963,7 +963,7 @@ final class ChatStore: ObservableObject {
     private func handleReply(_ reply: CoachReply, acknowledging: Bool = false) {
         var actions = reply.proposed_actions ?? []
 
-        // Onboarding: small facts apply silently — the athlete's answer was the consent.
+        // Onboarding: small facts apply silently. The athlete's answer was the consent.
         // SEQUENTIAL, and any plan rebuild is coalesced to a single run at the end
         // (parallel applies once raced two simultaneous regenerations).
         if onboardingMode, let store = runStore {
@@ -981,7 +981,7 @@ final class ChatStore: ObservableObject {
                             switch action.type {
                             case "update_athlete":       try await self.applyAthleteUpdate(action, runStore: store)
                             case "update_plan_settings":
-                                // `regenerate: false` — nothing to narrate; the rebuild below is.
+                                // `regenerate: false`. Nothing to narrate; the rebuild below is.
                                 _ = try await self.applyPlanSettings(action, runStore: store, regenerate: false)
                                 settingsTouched = true
                             case "set_risk_tolerance":   try await self.applyRiskTolerance(action, runStore: store)
@@ -994,8 +994,8 @@ final class ChatStore: ObservableObject {
                         }
                     }
                     if settingsTouched, let goal = store.goal, PlanRequest.canRegenerate(goal) {
-                        // No confirmation turn to sit under here — the interview applied these
-                        // silently — so the narration goes in on its own.
+                        // No confirmation turn to sit under here (the interview applied these
+                        // silently) so the narration goes in on its own.
                         do {
                             if let line = try await self.invokePlanEngine(
                                 self.regenerating(goalTimeS: goal.goalTimeSeconds, raceName: goal.raceName, raceDate: goal.raceDate, runStore: store),
@@ -1031,7 +1031,7 @@ final class ChatStore: ObservableObject {
             append(.coach, text, action: stamped)
         } else {
             // The v11 guard is supposed to make this unreachable. If it fires, the guard
-            // has a hole — and only telemetry would ever tell us.
+            // has a hole, and only telemetry would ever tell us.
             Telemetry.warn("coach.empty_reply", "reached the supposedly-unreachable path")
             errorText = "Coach sent an empty reply. Try again."
         }
@@ -1109,8 +1109,8 @@ final class ChatStore: ObservableObject {
             // cancels the URLSession task under us. #201 routed four such catch sites
             // through `errorUnlessCancelled`; this one was missed, and on 2026-10-29 two
             // NSURLErrorDomain -999 cancellations landed as `coach.invoke_failed` error
-            // rows that read like a new coach regression (#248). A real invoke failure —
-            // non-2xx, offline, decode drift — still reports exactly as before.
+            // rows that read like a new coach regression (#248). A real invoke failure (
+            // non-2xx, offline, decode drift) still reports exactly as before.
             Telemetry.errorUnlessCancelled("coach.invoke_failed", error)
             return .failed
         }
@@ -1131,7 +1131,7 @@ final class ChatStore: ObservableObject {
         )
         Task { try? await Supa.client.from("coach_messages").insert(row).execute() }
         // The thread sorts by its last message and the idle clock runs from it, so every
-        // message moves it — including the coach's, which is what keeps a conversation the
+        // message moves it, including the coach's, which is what keeps a conversation the
         // athlete is reading from being summarized out from under them.
         if let threadID { CoachThreadService.touch(threadID) }
     }

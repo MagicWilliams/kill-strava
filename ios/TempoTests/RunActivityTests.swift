@@ -47,7 +47,7 @@ final class RunActivityTests: XCTestCase {
 
     // MARK: - The Lock Screen and the live screen never disagree
 
-    /// The same run, the same instant, every slot both screens show — in both units, from
+    /// The same run, the same instant, every slot both screens show, in both units, from
     /// the first metre past a marathon, a centimetre either side of every split boundary.
     /// The Lock Screen restates the live screen's rules because the extension can't compile
     /// `LiveRunDisplay`; this is what keeps the restatement honest.
@@ -171,7 +171,7 @@ final class RunActivityTests: XCTestCase {
         }
     }
 
-    /// Past its stale date the app has stopped updating — most likely iOS killed it — so the
+    /// Past its stale date the app has stopped updating (most likely iOS killed it) so the
     /// Lock Screen stops passing its numbers off as live.
     func testAStaleActivitySaysToOpenTempo() {
         XCTAssertEqual(RunActivityDisplay(sample(.running)).status, "Running")
@@ -264,7 +264,7 @@ final class RunActivityTests: XCTestCase {
     // MARK: - After a kill
 
     /// iOS killed Tempo mid-run; the Live Activity outlived it. The relaunched app keeps the
-    /// one for the run it picked back up, and ends every other — a leftover from a run
+    /// one for the run it picked back up, and ends every other. A leftover from a run
     /// that's already over would tick on the Lock Screen for hours.
     func testOnRelaunchTheRecoveredRunsActivityIsKeptAndEveryOtherEnded() {
         let ours = UUID(), old = UUID(), older = UUID()

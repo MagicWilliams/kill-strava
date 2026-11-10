@@ -2,7 +2,7 @@ import XCTest
 @testable import Tempo
 
 /// Chicago, 11 Oct 2026. The recap will be read once, closely, with the official chip splits
-/// open in another app — and every number on it is checkable against them. A mat placed a
+/// open in another app, and every number on it is checkable against them. A mat placed a
 /// few hundred metres early does not look broken; it looks like a fast 5K. That is the shape
 /// of every past bug in this engine layer: a plausible number, quietly wrong.
 ///
@@ -12,7 +12,7 @@ import XCTest
 final class RaceRecapTests: XCTestCase {
 
     private let marathon = RaceRecap.marathonMeters
-    /// 3:15:00 — a round goal so even-pace expectations are easy to read.
+    /// 3:15:00. A round goal so even-pace expectations are easy to read.
     private let goal = 11_700
 
     private let cal: Calendar = {
@@ -31,7 +31,7 @@ final class RaceRecapTests: XCTestCase {
     }
 
     /// A cumulative distance/time curve built from legs of constant pace, sampled every
-    /// 50 m — roughly what a watch writes to Health.
+    /// 50 m, roughly what a watch writes to Health.
     private func curve(_ legs: [(meters: Double, seconds: Double)]) -> (times: [Double], meters: [Double]) {
         var times: [Double] = [0], meters: [Double] = [0]
         var t = 0.0, m = 0.0
@@ -140,7 +140,7 @@ final class RaceRecapTests: XCTestCase {
 
     // MARK: - The explicit link (#117)
 
-    /// Once a goal names its race run, that run is the race and nothing else is — not even a
+    /// Once a goal names its race run, that run is the race and nothing else is, not even a
     /// second long recording on race day that the guess would also have taken.
     func testTheLinkedRunIsTheRaceAndNothingElseIs() {
         var g = GoalInfo(id: UUID(), race_name: "Chicago", race_date: "2026-10-11", goal_time_seconds: 11_700,
@@ -206,7 +206,7 @@ final class RaceRecapTests: XCTestCase {
 
     /// The Chicago case: watch reads 26.6 mi for a race run at perfectly even pace. Scaled,
     /// the finish lands on exactly 42,195 m at the end of the run, and the 5K mat is where it
-    /// really is — not 230 m early.
+    /// really is, not 230 m early.
     func testOverreadInsideTheBandIsScaledOntoTheCourse() {
         let measured = 26.6 * 1609.34   // 42,808 m, 101.5%
         let r = recap(evenCurve(meters: measured, seconds: Double(goal)))
@@ -228,7 +228,7 @@ final class RaceRecapTests: XCTestCase {
                        "unscaled, the 5K would read \(Double(goal) * 5_000 / measured)s — a fast split that never happened")
     }
 
-    /// 27.5 mi is 104.9% — too far over to be drift. It is a warm-up or a watch left running,
+    /// 27.5 mi is 104.9%, too far over to be drift. It is a warm-up or a watch left running,
     /// so distance stays raw and the finish mat sits where the raw curve reaches 42,195 m,
     /// well before the end of the recording.
     func testOverreadOutsideTheBandKeepsRawDistance() {
@@ -241,7 +241,7 @@ final class RaceRecapTests: XCTestCase {
     }
 
     /// The band edges: just under 103% still scales, a hair above does not, and a short reading
-    /// is never stretched. A short reading still gets a finish mat — at the end of the run.
+    /// is never stretched. A short reading still gets a finish mat, at the end of the run.
     func testOverreadBandEdgesAndShortReadings() {
         XCTAssertTrue(RaceRecap.normalise(meters: [0, marathon * 1.0299], raceMeters: marathon).wasScaled)
         XCTAssertFalse(RaceRecap.normalise(meters: [0, marathon * 1.0301], raceMeters: marathon).wasScaled)
@@ -256,7 +256,7 @@ final class RaceRecapTests: XCTestCase {
     // MARK: - Sign convention
 
     /// Delta is actual minus goal. Ahead of goal pace is negative ("banked"), behind is
-    /// positive ("given back") — the table, the chart and the share card all read this.
+    /// positive ("given back"). The table, the chart and the share card all read this.
     func testDeltaSignConvention() {
         let fast = recap(evenCurve(meters: marathon, seconds: 11_400))   // 5:00 under
         XCTAssertEqual(fast.finishDeltaS ?? .nan, -300, accuracy: 0.01)
@@ -300,7 +300,7 @@ final class RaceRecapTests: XCTestCase {
     // MARK: - HR drift
 
     /// Garmin writes HR to Health sparsely, sometimes barely at all. Nineteen samples in the
-    /// first half is not enough to call a mean — the drift tile must say so, not guess.
+    /// first half is not enough to call a mean. The drift tile must say so, not guess.
     func testHRDriftIsNilWhenEitherHalfIsSparse() {
         let first = (0..<19).map { Double($0) * 300 }                 // 19 samples before 5,850 s
         let second = (0..<60).map { 5_900 + Double($0) * 90 }         // plenty after
@@ -334,7 +334,7 @@ final class RaceRecapTests: XCTestCase {
     }
 
     /// The classic Chicago: out 2:00 ahead through 30K, then the wall. The fade point is the
-    /// 30K mat — the last moment the race was going to plan.
+    /// 30K mat. The last moment the race was going to plan.
     func testFadePointIsTheMostBankedMatBeforeTimeCameBack() {
         let goalPerMeter = Double(goal) / marathon
         let banked30 = 30_000 * goalPerMeter - 120

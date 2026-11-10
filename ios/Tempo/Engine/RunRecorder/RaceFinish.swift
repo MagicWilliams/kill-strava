@@ -54,7 +54,7 @@ enum RaceFinish {
     ///     replaced mid-run) never files an ordinary day as the block's race.
     ///
     /// A closed block is never relinked: its race is whatever the close-out recorded. An open
-    /// goal that already names a race run is relinked — the newest Race-mode recording wins,
+    /// goal that already names a race run is relinked. The newest Race-mode recording wins,
     /// because the case that happens is a false start (start, stop, start again), and the
     /// second recording is the race.
     static func link(

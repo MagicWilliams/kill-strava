@@ -2,7 +2,7 @@
 //
 // Rule 3, kept by David on 2026-10-15: numbers come from code, words come from the model.
 // Before this, amend_run/add_run asked Claude for the FINAL corrected totals and an estimated
-// HR, and the app wrote them into `runs` — where they feed the load model, readiness and the
+// HR, and the app wrote them into `runs`. Where they feed the load model, readiness and the
 // projection. Now the tools carry the athlete's own facts ("another 1.2 mi at 8:30", "the
 // watch stopped 14 minutes early") and `ios/Tempo/Engine/RunCorrection.swift` computes the
 // totals from the stored run.

@@ -3,7 +3,7 @@ import XCTest
 
 /// Pins the moving/elapsed rules. Every past bug in this layer produced a wrong number on
 /// screen rather than a crash, and the two clocks are exactly the kind of pair where an
-/// off-by-one direction — showing elapsed where moving was meant — looks completely normal
+/// off-by-one direction (showing elapsed where moving was meant) looks completely normal
 /// and quietly makes every pace read slow.
 final class TimeAccountingTests: XCTestCase {
 
@@ -46,7 +46,7 @@ final class TimeAccountingTests: XCTestCase {
     }
 
     func testAnAbsurdlyLongStopIsKeptNotFiltered() {
-        // 2026-01-10 in the real archive: 4.34 mi, 49 min moving, 1h58m elapsed — the watch
+        // 2026-01-10 in the real archive: 4.34 mi, 49 min moving, 1h58m elapsed. The watch
         // was left running. That is a fact about the run, and the athlete's record outranks
         // our sense of a plausible stop. Moving time stays sane, which is the point.
         let c = TimeAccounting.resolve(movingS: 2952, elapsedS: 7063)
@@ -90,7 +90,7 @@ final class TimeAccountingTests: XCTestCase {
     }
 
     func testIdenticalDurationIsAPlainDuplicateNotASecondClock() {
-        // Same distance AND same duration carries no new information — that is migration
+        // Same distance AND same duration carries no new information. That is migration
         // 0008's re-export class, and there is no elapsed time to learn from it.
         let start = Date(timeIntervalSince1970: 1_700_000_000)
         XCTAssertFalse(TimeAccounting.isSameRunTwoClocks(
@@ -100,7 +100,7 @@ final class TimeAccountingTests: XCTestCase {
     }
 
     func testRunsFarApartInTimeAreNotTheSameRun() {
-        // Same distance to the meter can happen twice — a measured loop, a treadmill.
+        // Same distance to the meter can happen twice: a measured loop, a treadmill.
         // Hours apart, it is two runs.
         let start = Date(timeIntervalSince1970: 1_700_000_000)
         XCTAssertFalse(TimeAccounting.isSameRunTwoClocks(

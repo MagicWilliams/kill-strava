@@ -4,13 +4,13 @@ import Foundation
 ///
 /// The first screen is decided entirely by a Supabase round-trip: sign in, then read the
 /// athlete's `profiles` row to learn whether onboarding is done. Every step can fail, and on
-/// 2026-08-23 all of them did at once — the free-tier project auto-paused after a week of
+/// 2026-08-23 all of them did at once. The free-tier project auto-paused after a week of
 /// inactivity, so nothing answered. The gate at the time had only two states ("profile is
 /// nil → splash" and "profile loaded → app"), which meant an unreachable backend was
 /// **indistinguishable from still loading**: the splash stayed up forever with no way out.
 ///
 /// The rule encoded here: *a failure never looks like loading.* Two corollaries, both
-/// load-bearing —
+/// load-bearing,
 ///
 ///  - Unreachable gets its own state, carrying a reason and a retry.
 ///  - A failed profile read must never fall through to `.onboarding`. Demoting an onboarded
@@ -23,7 +23,7 @@ enum LaunchGate: Equatable {
     case unreachable(reason: String)
 
     /// Outcome of reading the athlete's profile row. Distinguishes "no row yet" (a genuinely
-    /// new athlete — onboard them) from "couldn't ask" (say so instead of guessing).
+    /// new athlete, onboard them) from "couldn't ask" (say so instead of guessing).
     enum Profile: Equatable {
         case onboarded      // row exists, onboarded_at set
         case new            // row exists but never onboarded, or no row yet
@@ -55,7 +55,7 @@ enum LaunchGate: Equatable {
 /// A leash for work that must not stall a screen.
 ///
 /// `URLSession.shared` waits 60s per request by default, and the launch path chains four of
-/// them — so an unreachable backend can hold the splash for minutes before anything gives
+/// them, so an unreachable backend can hold the splash for minutes before anything gives
 /// up. Launch work gets a short deadline and a real error instead.
 ///
 /// This is belt to `Supa`'s braces (which shortens the transport timeout globally): the

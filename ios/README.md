@@ -1,4 +1,4 @@
-# Tempo — iOS
+# Tempo: iOS
 
 SwiftUI app. The Xcode project is generated from `project.yml` via **XcodeGen** so it
 stays reproducible and merge-friendly (no `.xcodeproj` in git).
@@ -15,9 +15,9 @@ real device (HealthKit isn't available in the simulator).
 
 ## Fonts
 Drop these `.ttf` files into `Tempo/Resources/Fonts/` (all free):
-- **Space Grotesk** — `SpaceGrotesk-Bold.ttf`
-- **Inter** — `Inter-Regular.ttf`, `Inter-Medium.ttf`, `Inter-SemiBold.ttf`, `Inter-Bold.ttf`
-- **Roboto Mono** — `RobotoMono-Medium.ttf`
+- **Space Grotesk**: `SpaceGrotesk-Bold.ttf`
+- **Inter**: `Inter-Regular.ttf`, `Inter-Medium.ttf`, `Inter-SemiBold.ttf`, `Inter-Bold.ttf`
+- **Roboto Mono**: `RobotoMono-Medium.ttf`
 
 The UI falls back to system fonts until they're added, so it builds without them.
 
@@ -36,6 +36,6 @@ Tempo/
 The `Supabase` SPM package is declared in `project.yml`; `xcodegen generate` resolves it.
 Supabase project `Tempo` (`lpgdhqqroyqdrjsrlodo`) is provisioned with the schema + RLS applied.
 
-Status: **app shell + data layer scaffold** — five screens render from mock data and the
+Status: **app shell + data layer scaffold**. Five screens render from mock data and the
 real pace engine; Supabase client, models, and HealthKit ingest are in place.
 Next: **Sign in with Apple** (so ingested runs get a `user_id`), then swap screens to live data.

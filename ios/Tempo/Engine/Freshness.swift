@@ -1,12 +1,12 @@
 import Foundation
 
-/// Fitness / fatigue / form in one plain word — the Freshness card on the just-running
+/// Fitness / fatigue / form in one plain word: the Freshness card on the just-running
 /// Today and the current-fitness card on Progress (#101).
 ///
 /// Readiness already turns the load model into a word, but readiness answers a training
 /// question: *can I do quality today?* "Primed" and "Run easy" are instructions, and with no
 /// plan there is nothing to instruct. Freshness answers the question someone between blocks
-/// actually has: *where am I?* — rested, carrying a week, or on the way up.
+/// actually has: *where am I?*, rested, carrying a week, or on the way up.
 ///
 /// Thresholds are on form as a fraction of fitness, the same quantity readiness is built
 /// from (`readiness = 55 + formPct × 90`), so the two words never contradict each other:
@@ -17,7 +17,7 @@ enum Freshness {
     enum State: Equatable {
         /// Fitness is negligible: little or no running in the last six weeks.
         case rested
-        /// Form well above zero — fatigue has cleared off the fitness underneath it.
+        /// Form well above zero: fatigue has cleared off the fitness underneath it.
         case fresh
         /// Fatigue well above fitness. The day after a marathon reads like this, correctly.
         case carryingFatigue
@@ -50,9 +50,9 @@ enum Freshness {
     /// Below this CTL there is nothing meaningful to read form off. CTL is roughly average
     /// daily load in easy-mile units, so 0.5 is about three and a half easy miles a week.
     static let restedBelowCTL = 0.5
-    /// Form / fitness above this is fresh — readiness ≥ 70, inside Primed.
+    /// Form / fitness above this is fresh: readiness ≥ 70, inside Primed.
     static let freshAbove = 0.17
-    /// Form / fitness below this is carrying fatigue — readiness ≤ 46, Loaded or below.
+    /// Form / fitness below this is carrying fatigue: readiness ≤ 46, Loaded or below.
     static let fatiguedBelow = -0.10
     /// Fitness up at least this fraction over four weeks counts as building.
     static let buildingGain = 0.05

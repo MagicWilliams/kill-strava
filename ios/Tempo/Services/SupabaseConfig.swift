@@ -2,10 +2,10 @@ import Foundation
 
 /// Supabase connection for the Tempo project.
 ///
-/// These are **public client credentials** — the publishable key is meant to ship in the app,
+/// These are **public client credentials**. The publishable key is meant to ship in the app,
 /// and all data access is gated by Row-Level Security (a signed-in user only ever sees their
 /// own rows). The `service_role` key and the Anthropic key are secrets and live ONLY in
-/// Supabase Edge Function secrets — never here, never in git.
+/// Supabase Edge Function secrets, never here, never in git.
 enum SupabaseConfig {
 
     private enum Backend {
@@ -29,7 +29,7 @@ enum SupabaseConfig {
     /// The simulator talks to staging. A real device always talks to production.
     ///
     /// This split is what makes the app runnable by anyone who isn't David. Launching Tempo
-    /// signs in anonymously, and that is a *write* — pointed at production it would leave a
+    /// signs in anonymously, and that is a *write*, pointed at production it would leave a
     /// stray user and profile row in his real project every time someone booted a simulator
     /// to look at a screen. Against staging it costs nothing, which is the whole reason
     /// staging exists.
@@ -49,7 +49,7 @@ enum SupabaseConfig {
     static var url: URL { backend.url }
     static var publishableKey: String { backend.publishableKey }
 
-    /// For anything that needs to say which environment it is talking to — a debug banner,
+    /// For anything that needs to say which environment it is talking to. A debug banner,
     /// a telemetry tag, or a human reading a log and wondering why the archive is empty.
     static var isStaging: Bool { backend.url == Backend.staging.url }
 }

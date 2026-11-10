@@ -20,7 +20,7 @@ enum Supa {
     )
 
     /// `URLSession.shared` waits 60s per request and 7 days for a resource. A paused or
-    /// unreachable project then reads as a hang rather than a failure — which is exactly
+    /// unreachable project then reads as a hang rather than a failure, which is exactly
     /// how the 2026-08-23 splash freeze presented. Fail fast enough to show a retry.
     private static let session: URLSession = {
         let config = URLSessionConfiguration.default
@@ -34,7 +34,7 @@ enum Supa {
     ///
     /// supabase-swift stores the session in the Keychain by default. In the iOS Simulator
     /// that write fails silently: `signInAnonymously()` returns a perfectly good session,
-    /// and one line later `auth.session` and `auth.currentUser` are both empty — so every
+    /// and one line later `auth.session` and `auth.currentUser` are both empty, so every
     /// call that guards on `Supa.userID` quietly does nothing, and the launch gate reports
     /// "Couldn't load your profile" for a profile it never asked for.
     ///
@@ -58,7 +58,7 @@ enum Supa {
     /// Ensure a session exists. Beta-of-one: anonymous auth (the session persists in the
     /// keychain across launches). Replaced by Sign in with Apple before TestFlight.
     ///
-    /// Returns whether we ended up with a usable session — the launch gate needs to tell
+    /// Returns whether we ended up with a usable session. The launch gate needs to tell
     /// "signed in" from "couldn't reach auth", and a `Bool` is the whole difference between
     /// showing a retry and showing a splash forever.
     @discardableResult
@@ -68,7 +68,7 @@ enum Supa {
             _ = try await client.auth.signInAnonymously()
             // Verify the session actually landed rather than trusting the call that made it.
             // A sign-in that succeeds on the wire but cannot be read back is, to every
-            // caller downstream, identical to never having signed in — they all guard on
+            // caller downstream, identical to never having signed in. They all guard on
             // `Supa.userID`. Returning `true` there reports a success we cannot back up, and
             // the athlete gets "Couldn't load your profile" for a profile nothing ever asked
             // for. Same rule as LaunchGate: a failure must never wear another failure's face.
@@ -90,7 +90,7 @@ enum Supa {
     }
 }
 
-/// UserDefaults-backed session storage. Simulator only — see `Supa.sessionStorage`.
+/// UserDefaults-backed session storage. Simulator only. See `Supa.sessionStorage`.
 private struct SimulatorSessionStorage: AuthLocalStorage {
     func store(key: String, value: Data) throws { UserDefaults.standard.set(value, forKey: key) }
     func retrieve(key: String) throws -> Data? { UserDefaults.standard.data(forKey: key) }

@@ -4,9 +4,9 @@ import XCTest
 /// Pins the journal on Run Detail (#124): what shows, and what an edit after the fact writes.
 ///
 /// Runs recorded since 13 Oct 2026 carry a title, photo, effort, feel, notes and shoes (#120,
-/// #129). Run Detail is where he goes back to them — and every way that can go wrong is
+/// #129). Run Detail is where he goes back to them, and every way that can go wrong is
 /// quiet. A photo key signed with the wrong case is a hero that never loads and logs an
-/// error on every visit. An effort tile reading "—" on 2,000 imported Garmin runs. An edit
+/// error on every visit. An effort tile reading as empty on 2,000 imported Garmin runs. An edit
 /// sheet that hides the retired pair a run was worn in, or picks up today's default shoe on
 /// a run he never tagged. A deleted note that survives the save. A failed write shown as
 /// saved. Each test below is one of those.
@@ -85,7 +85,7 @@ final class RunDetailJournalTests: XCTestCase {
         XCTAssertEqual(RunDetailJournal.hero(hasPhoto: true, photoFailed: true, hasRoute: false), .banner)
     }
 
-    /// Every run without a photo — all 2,000 imported ones — looks exactly as it did.
+    /// Every run without a photo (all 2,000 imported ones) looks exactly as it did.
     func testWithoutAPhotoTheHeroIsWhatItWas() {
         XCTAssertEqual(RunDetailJournal.hero(hasPhoto: false, photoFailed: false, hasRoute: true), .map)
         XCTAssertEqual(RunDetailJournal.hero(hasPhoto: false, photoFailed: false, hasRoute: false), .banner)
@@ -102,7 +102,7 @@ final class RunDetailJournalTests: XCTestCase {
 
     // MARK: - The tiles
 
-    /// An imported run has no journal. No tile says "—" for an effort he never rated.
+    /// An imported run has no journal. No tile shows a placeholder for an effort he never rated.
     func testAnImportedRunShowsNoJournalTiles() {
         let entry = RunJournalEntry()
         XCTAssertEqual(RunDetailJournal.tiles(entry, shoes: [shoe("Pegasus")]), [])
@@ -205,7 +205,7 @@ final class RunDetailJournalTests: XCTestCase {
         XCTAssertTrue(RunDetailJournal.plan(draft, original: stored, photo: .keep).isNoop)
     }
 
-    /// A deleted note must be written as null — an omitted key is "leave it alone" to
+    /// A deleted note must be written as null: an omitted key is "leave it alone" to
     /// PostgREST, and the old note would survive the save.
     func testDeletingANoteAfterTheFactWritesNull() throws {
         let stored = RunJournalEntry(rpe: 8, notes: "Ran it too hot", title: "Tuesday tempo")
@@ -222,7 +222,7 @@ final class RunDetailJournalTests: XCTestCase {
         XCTAssertNil(json["photo_path"], "the fields write never touches the photo")
     }
 
-    /// Unlike the save screen, a cleared title is no title — the page goes back to the date.
+    /// Unlike the save screen, a cleared title is no title. The page goes back to the date.
     func testClearingTheTitleRemovesItRatherThanDefaultingIt() {
         let stored = RunJournalEntry(title: "Saturday long run")
         var draft = RunDetailJournal.draft(from: stored)
@@ -329,7 +329,7 @@ final class RunDetailJournalTests: XCTestCase {
     }
 
     /// The delete runs after the row write and only if it landed. A photo write that failed
-    /// leaves `photo_path` naming the old object — deleting it there is deleting the photo
+    /// leaves `photo_path` naming the old object, deleting it there is deleting the photo
     /// that is still on screen.
     func testAFailedOrUntouchedPhotoWriteDeletesNothing() {
         let old = RunJournalPayload.photoPath(userID: uid, runID: runID, photoID: photoID)
@@ -367,7 +367,7 @@ final class RunDetailJournalTests: XCTestCase {
         XCTAssertNil(RunDetailJournal.orphanedObjectKey(previous: ours, photo: .removed, userID: nil))
 
         // Normalized the same way the read normalizes it, so the key handed to Storage is
-        // the key Storage holds — not `run-photos/run-photos/…`.
+        // the key Storage holds, not `run-photos/run-photos/…`.
         XCTAssertEqual(RunDetailJournal.orphanedObjectKey(previous: "run-photos/" + ours,
                                                           photo: .removed, userID: uid),
                        ours)

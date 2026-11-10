@@ -73,7 +73,7 @@ final class ProposedActionPersistenceTests: XCTestCase {
     }
 
     /// The crash-safety rule. An app killed mid-write cannot know whether the write landed,
-    /// so `applying` must never reach the database — the row stays pending and the athlete
+    /// so `applying` must never reach the database. The row stays pending and the athlete
     /// is re-offered the action rather than shown a state the app can't stand behind.
     func testApplyingNeverPersists() {
         XCTAssertEqual(ChatMessage.ActionState.applying.durable, .pending)

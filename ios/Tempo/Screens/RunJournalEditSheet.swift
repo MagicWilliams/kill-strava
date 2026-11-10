@@ -2,7 +2,7 @@ import SwiftUI
 import PhotosUI
 import UIKit
 
-/// Edit a run's journal after the fact (#124): title, effort, feel, notes, photo, shoes —
+/// Edit a run's journal after the fact (#124): title, effort, feel, notes, photo, shoes,
 /// the save screen's questions (`SaveRunView`, frame 7a), asked again from Run Detail.
 ///
 /// What it writes is decided in `RunDetailJournal.plan`; how each write landed, and what the
@@ -11,7 +11,7 @@ import UIKit
 /// a cleared title is no title, and the shoe is exactly what the picker shows.
 struct RunJournalEditSheet: View {
     let runID: UUID
-    /// The heading the page falls back to with no title — the title field's placeholder.
+    /// The heading the page falls back to with no title: the title field's placeholder.
     let fallbackHeading: String
     /// The photo already showing on the page, if it loaded.
     let initialPhoto: UIImage?
@@ -313,7 +313,7 @@ struct RunJournalEditSheet: View {
             var photo: RunDetailJournal.PhotoResult = .untouched
             switch plan.photo {
             case .replace:
-                // One call does both, fields first — the save screen's own path.
+                // One call does both, fields first. The save screen's own path.
                 let outcome = await RunJournal.record(plan.entry, photo: upload, forRun: runID).value
                 fieldsSaved = outcome.fieldsSaved
                 switch outcome.photo {

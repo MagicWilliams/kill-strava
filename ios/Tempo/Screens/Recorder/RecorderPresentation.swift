@@ -13,10 +13,10 @@ extension View {
     /// Start is handed over in two steps on purpose. The sheet sets `router.pendingStart` and
     /// closes; `.start` is sent from the sheet's `onDismiss`, once it is gone. Sent while the
     /// sheet was still leaving, the cover would be presented on top of a dismissing sheet,
-    /// which SwiftUI drops silently — a countdown that never appears over a session that is
+    /// which SwiftUI drops silently. A countdown that never appears over a session that is
     /// already preparing.
     func runRecorder(router: TabRouter, recorder: WorkoutRecorder) -> some View {
-        // Read here, in the caller's `body`, where Observation tracks it — not inside the
+        // Read here, in the caller's `body`, where Observation tracks it, not inside the
         // binding's getter, which SwiftUI may call outside any tracking scope.
         let covered = PreRun.screen(for: recorder.state.phase, recovered: recorder.recovered != nil) != .none
         return sheet(

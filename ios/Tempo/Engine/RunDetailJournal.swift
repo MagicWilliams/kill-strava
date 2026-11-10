@@ -1,7 +1,7 @@
 import Foundation
 
-/// The journal on Run Detail (#124): what the athlete said about a run — title, photo,
-/// effort, feel, notes, shoes — shown on the run's page and editable after the fact.
+/// The journal on Run Detail (#124): what the athlete said about a run (title, photo,
+/// effort, feel, notes, shoes) shown on the run's page and editable after the fact.
 ///
 /// Every decision is here, purely, so it can be pinned. `Screens/RunDetailView.swift` and
 /// `Screens/RunJournalEditSheet.swift` draw it; `Services/RunJournal.swift` writes it.
@@ -27,7 +27,7 @@ enum RunDetailJournal {
 
     enum Hero: Equatable {
         /// His photo, full width. `routeButton`: a route exists, so a button on the photo
-        /// opens the full map — the photo takes the hero's place, never the map's.
+        /// opens the full map. The photo takes the hero's place, never the map's.
         case photo(routeButton: Bool)
         /// The route, as before the journal existed.
         case map
@@ -56,7 +56,7 @@ enum RunDetailJournal {
     /// The key is `<uid>/<run>/<photo>.jpg` inside `run-photos` (`RunJournalPayload.photoPath`).
     /// Storage's read policy compares the first segment to `auth.uid()::text`, which Postgres
     /// prints **lowercase**, so a path whose first segment isn't the signed-in athlete's
-    /// lowercase uid would be refused — and a refused sign request is a hero that silently
+    /// lowercase uid would be refused, and a refused sign request is a hero that silently
     /// never loads. Asking anyway costs a round trip and an error log per page view, so the
     /// path is checked here and not asked for.
     ///
@@ -88,7 +88,7 @@ enum RunDetailJournal {
     /// absent, never Units.missing: an imported Garmin run has no RPE, and a dash would read as "he
     /// rated it nothing".
     ///
-    /// - Effort shows only for an RPE on the 1–10 scale — the same rule the load model and
+    /// - Effort shows only for an RPE on the 1–10 scale. The same rule the load model and
     ///   the coach apply, so the page never shows an effort the numbers ignored.
     /// - Shoes show only once the pair resolves to a name. A tag whose pair hasn't loaded (or
     ///   doesn't exist) is not a tile; a retired pair is, labelled as retired, because it is
@@ -172,7 +172,7 @@ enum RunDetailJournal {
 
     /// The edit, decided: the journal the run should end up with, and which writes that takes.
     struct Plan: Equatable {
-        /// The journal after the edit. `photoPath` is the original's — the photo moves on its
+        /// The journal after the edit. `photoPath` is the original's. The photo moves on its
         /// own write, and only once it has landed (see `applied`).
         let entry: RunJournalEntry
         /// Whether the text fields differ from what is stored, once both are normalized the
@@ -188,7 +188,7 @@ enum RunDetailJournal {
     ///
     /// Unlike the save screen (`PostRun.journal`), a blank title here is **no title**, not
     /// the default one: he cleared it on purpose, and the page falls back to the date. And
-    /// the shoe is whatever the picker says, with no default — see `draft(from:)`.
+    /// the shoe is whatever the picker says, with no default. See `draft(from:)`.
     static func plan(_ draft: PostRun.Draft, original: RunJournalEntry, photo: PhotoChange) -> Plan {
         let title = draft.title.trimmingCharacters(in: .whitespacesAndNewlines)
         let notes = draft.notes.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -254,7 +254,7 @@ enum RunDetailJournal {
 
     // MARK: - The object left behind
 
-    /// The object in `run-photos` that no row names any more, safe to delete — or nil when
+    /// The object in `run-photos` that no row names any more, safe to delete, or nil when
     /// there is nothing to delete.
     ///
     /// Replacing a photo uploads a new object and moves `photo_path` to it; removing one
@@ -265,12 +265,12 @@ enum RunDetailJournal {
     ///
     /// Three guards, each of them a way a delete could take a photo that is still in use:
     ///
-    /// - the write has to have **landed** — after `.failed` or `.untouched` the old object is
+    /// - the write has to have **landed**, after `.failed` or `.untouched` the old object is
     ///   still the one `photo_path` names and the one on screen;
     /// - the old key must not *be* the new one, so an upsert that overwrote its own object
     ///   (the retry in `RunJournal.attachPhoto`) doesn't then delete it;
     /// - the key has to pass `photoObjectKey`, so a stored path outside the athlete's own
-    ///   prefix — not something this build wrote — is never handed to a delete.
+    ///   prefix (not something this build wrote) is never handed to a delete.
     static func orphanedObjectKey(previous: String?, photo: PhotoResult, userID: UUID?) -> String? {
         guard let previous = photoObjectKey(previous, userID: userID) else { return nil }
         switch photo {

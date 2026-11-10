@@ -148,7 +148,7 @@ struct ReadinessDetailView: View {
 ///
 /// Pulled out of `fitnessCurve` so the offer probe can measure it (#81). A bare
 /// `HStack { label; Spacer(); trailing }` reports the sum of its parts, and third-of-a-point
-/// text widths can add back up to a hair past the width it was offered — enough, through a
+/// text widths can add back up to a hair past the width it was offered, enough, through a
 /// page column, to let the whole screen drag sideways (#74). Whether a given row drifts
 /// depends on its exact text widths, so the shape alone doesn't prove it; `DetailLayoutTests`
 /// is what decides.

@@ -231,7 +231,7 @@ final class AutoPauseTests: XCTestCase {
     // MARK: - It cannot end a run
 
     func testNoSampleStreamCanTakeTheRunOutOfRunningOrPaused() {
-        // Seeded noise across every regime — standing, walking, running, garbage, silences —
+        // Seeded noise across every regime (standing, walking, running, garbage, silences)
         // fed for an hour per seed. Whatever auto-pause decides, the run is still live.
         var rng = SplitMix64(seed: 0x113)
         let gaps: [TimeInterval] = [0.2, 1, 1, 1, 2, 3, 6, 30]

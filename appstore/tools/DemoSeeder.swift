@@ -2,7 +2,7 @@ import Foundation
 import HealthKit
 import CoreLocation
 
-/// SCRATCH ONLY — never committed. Writes a fictional runner into the simulator's Apple Health
+/// SCRATCH ONLY: never committed. Writes a fictional runner into the simulator's Apple Health
 /// so the App Store screenshots come through the real ingest and engine.
 enum DemoSeeder {
     static func log(_ m: String) {
@@ -138,7 +138,7 @@ enum DemoSeeder {
         }
     }
 
-    // MARK: Route — a loop of Central Park's drives, in order.
+    // MARK: Route. A loop of Central Park's drives, in order.
     static let loop: [CLLocationCoordinate2D] = [
         (40.7681,-73.9812),(40.7712,-73.9796),(40.7745,-73.9762),(40.7790,-73.9727),(40.7830,-73.9695),
         (40.7870,-73.9664),(40.7915,-73.9631),(40.7958,-73.9597),(40.7984,-73.9574),(40.7994,-73.9539),
@@ -260,7 +260,7 @@ enum DemoSeeder {
 }
 
 private extension Double {
-    /// Whole miles, then the remainder — the shape `distance` samples take.
+    /// Whole miles, then the remainder. The shape `distance` samples take.
     var chunks: [Double] {
         var left = self, out: [Double] = []
         while left > 0.01 { let c = Swift.min(1, left); out.append(c); left -= c }

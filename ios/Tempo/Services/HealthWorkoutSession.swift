@@ -14,7 +14,7 @@ import HealthKit
 /// Tempo writes its curve instead (`DistanceChunks`), so the run in Health is the run the
 /// athlete watched. Outdoors that is `TrackMath`'s GPS curve, as he runs. On a treadmill it
 /// is his step count from Core Motion, written once at Save, after the console has had its
-/// say (#116, `TreadmillDistance`) — a sample in the builder can never be taken back out.
+/// say (#116, `TreadmillDistance`). A sample in the builder can never be taken back out.
 /// Heart rate is collected when a Watch or strap is paired, reported up when it arrives,
 /// and never waited for.
 @MainActor
@@ -86,7 +86,7 @@ final class HealthWorkoutSession: NSObject, WorkoutSessionDriving {
         (builder.metadata[RecordingMetadata.recordingIDKey] as? String).flatMap(UUID.init(uuidString:))
     }
 
-    /// Whether the recovered session was paused when it was recovered — `.recovered`'s
+    /// Whether the recovered session was paused when it was recovered, `.recovered`'s
     /// argument.
     var isPaused: Bool { session.state == .paused }
 

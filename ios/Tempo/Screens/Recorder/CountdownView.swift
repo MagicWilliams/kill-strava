@@ -1,8 +1,8 @@
 import SwiftUI
 
 /// 3-2-1 (#126, frame 3). The recorder is already in `.countdown`: the workout session is
-/// prepared and GPS is warming. This screen only decides *when* the clock starts — at zero,
-/// or at the first tap — by sending `.countdownDone`. Cancel sends `.discard`, which the
+/// prepared and GPS is warming. This screen only decides *when* the clock starts (at zero,
+/// or at the first tap) by sending `.countdownDone`. Cancel sends `.discard`, which the
 /// reducer turns back into idle with nothing recorded.
 struct CountdownView: View {
     let startedAt: Date

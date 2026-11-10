@@ -40,7 +40,7 @@ enum RecorderEffect: Equatable {
 extension RecorderEffect {
 
     /// The effects of going from `old` to `new`. Empty when nothing outside the state needs
-    /// to change — including every transition into and out of `.recovering`, which belongs
+    /// to change, including every transition into and out of `.recovering`, which belongs
     /// to kill recovery (#115) and is deliberately left to it.
     static func between(_ old: RecorderState, _ new: RecorderState) -> [RecorderEffect] {
         switch (old.phase, new.phase) {

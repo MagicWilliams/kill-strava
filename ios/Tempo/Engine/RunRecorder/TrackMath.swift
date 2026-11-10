@@ -3,19 +3,19 @@ import Foundation
 /// GPS fixes in, the numbers a live run screen shows out: distance, current and average pace,
 /// splits, elevation gain (#112).
 ///
-/// Every number Tempo has shown until now came from somebody else's recorder — Garmin wrote
+/// Every number Tempo has shown until now came from somebody else's recorder. Garmin wrote
 /// the run, HealthKit stored it, `RunDetailLoader` read it back. The recorder is the first
 /// time Tempo itself turns raw CoreLocation fixes into a distance, and raw fixes lie: the
 /// first few before a lock can be hundreds of metres off, a tall building or an underpass
 /// throws one fix across the street, and altitude wanders by metres while standing still.
 /// None of that crashes. It just makes the distance read long and the climb read huge, live,
-/// in front of the athlete — the same silent-wrong-number failure every engine bug on this
+/// in front of the athlete. The same silent-wrong-number failure every engine bug on this
 /// board has had.
 ///
 /// Pure by construction. A `Fix` is a plain value, not a `CLLocation`, so a test can build
 /// a whole track out of arithmetic; the service that owns `CLLocationManager` maps one to
-/// the other and calls `Track.ingest` per update. Nothing here knows about pause states —
-/// that is the state machine's job (#111) — or about mi vs km: the split length comes in
+/// the other and calls `Track.ingest` per update. Nothing here knows about pause states (
+/// that is the state machine's job (#111)) or about mi vs km: the split length comes in
 /// as metres, and `Units` (#108) is what will supply it.
 ///
 /// The distance curve is a `[BestEfforts.Point]` on purpose: it is the same cumulative
@@ -31,15 +31,15 @@ enum TrackMath {
     /// A fix claiming worse than this is not used, for distance or anything else.
     ///
     /// An iPhone with a clear sky reports 3–10 m; 25 m is the edge of "it knows roughly which
-    /// side of the street you're on". Past that the fix is a guess — the urban canyon and the
-    /// cold-start cases — and a guess still carries a precise-looking coordinate, which is
+    /// side of the street you're on". Past that the fix is a guess (the urban canyon and the
+    /// cold-start cases) and a guess still carries a precise-looking coordinate, which is
     /// exactly the problem. Dropping it costs nothing on a straight road: the next good fix
     /// bridges the gap with a straight line.
     static let maxHorizontalAccuracyM = 25.0
 
     /// Faster than this between two fixes is a teleport, not running.
     ///
-    /// 7 m/s is 3:50/mi (2:23/km) — faster than David's strides and well beyond any pace he
+    /// 7 m/s is 3:50/mi (2:23/km), faster than David's strides and well beyond any pace he
     /// sustains for even a second between fixes, but under the mile world record, so a real
     /// athlete is never rejected for being quick. A 300 m jump in one second reads as 300 m/s
     /// and goes. Speed is measured from the last *accepted* fix, so a rejection costs no
@@ -49,7 +49,7 @@ enum TrackMath {
 
     /// Consecutive accurate, mutually consistent fixes that count as "locked".
     ///
-    /// The first fixes after CoreLocation wakes are its worst — a cached position from where
+    /// The first fixes after CoreLocation wakes are its worst. A cached position from where
     /// the phone last was, then a few that converge. Three in a row that agree with each
     /// other is the cheapest proof the receiver has settled. Nothing before the lock is used.
     static let lockFixCount = 3
@@ -59,7 +59,7 @@ enum TrackMath {
     /// "Light" smoothing, deliberately: three fixes is about one second of lag at 1 Hz, and
     /// it takes the per-fix jitter out of the zig-zag that otherwise inflates distance. The
     /// averaged position carries the averaged timestamp, so on a steady run the smoothed
-    /// track is still on time — splits do not drift late.
+    /// track is still on time, splits do not drift late.
     static let positionSmoothingFixes = 3
 
     /// Distance is credited only once the smoothed position has moved this far from where it
@@ -68,7 +68,7 @@ enum TrackMath {
     /// The fix for a phone standing still at a light: GPS wander of a metre or two each
     /// second adds up to real-looking distance over a minute. Five metres is under two
     /// seconds of running, so the live number never visibly stalls, and on a straight line
-    /// or a gentle curve the chord is the path — the credited total does not shrink.
+    /// or a gentle curve the chord is the path. The credited total does not shrink.
     static let distanceStepM = 5.0
 
     /// Slower than this between two credited points counts as stopped, not moving.
@@ -115,8 +115,8 @@ enum TrackMath {
 
     /// The climb has to reverse by this much before it counts as turning.
     ///
-    /// GPS altitude wanders by a few metres even on a track. Summing every upward wiggle —
-    /// what `RunDetailLoader` did with imported routes until #144 — turns a flat 10 K into a
+    /// GPS altitude wanders by a few metres even on a track. Summing every upward wiggle (
+    /// what `RunDetailLoader` did with imported routes until #144) turns a flat 10 K into a
     /// hilly one.
     /// With a 3 m hysteresis, noise smaller than that never registers, while a real climb is
     /// still counted in full once it has established itself.
@@ -175,9 +175,9 @@ enum TrackMath {
         case awaitingLock
         /// Worse than `maxHorizontalAccuracyM`, or no valid position at all.
         case inaccurate
-        /// Older than the start of the run — CoreLocation's cached last-known position.
+        /// Older than the start of the run: CoreLocation's cached last-known position.
         case stale
-        /// Not after the last fix used — a duplicate or an out-of-order delivery.
+        /// Not after the last fix used: a duplicate or an out-of-order delivery.
         case outOfOrder
         /// Implies running faster than `maxSpeedMps` from the last fix used.
         case tooFast
@@ -191,13 +191,13 @@ enum TrackMath {
 
     // MARK: - Output
 
-    /// One mile or one kilometre — whatever `splitMeters` the caller asked for.
+    /// One mile or one kilometre: whatever `splitMeters` the caller asked for.
     struct Split: Equatable {
         /// 1-based. The last split may be partial.
         let index: Int
         let meters: Double
         let durationS: Double
-        /// Seconds per full split length — i.e. per mile or per km.
+        /// Seconds per full split length: i.e. per mile or per km.
         let paceS: Double
         /// Net change across the split, end minus start. Nil when no altitude was recorded.
         let elevationDeltaM: Double?
@@ -229,8 +229,8 @@ enum TrackMath {
         /// The moment the athlete pressed start. t = 0 on every curve.
         let start: Date
 
-        /// Cumulative credited distance against time. Starts at (0, 0) — the clock runs from
-        /// the press of start, lock or no lock — and gains a point each time distance is
+        /// Cumulative credited distance against time. Starts at (0, 0) (the clock runs from
+        /// the press of start, lock or no lock) and gains a point each time distance is
         /// credited, so a stop shows as one long flat segment.
         private(set) var timeline: [BestEfforts.Point] = [BestEfforts.Point(t: 0, m: 0)]
         /// Smoothed altitude against time, one point per accepted fix that had one.
@@ -239,7 +239,7 @@ enum TrackMath {
         private(set) var elevationLossM = 0.0
         /// Seconds between credited points that were faster than `stoppedSpeedMps`.
         private(set) var movingS = 0.0
-        /// How many fixes each verdict has handed out — diagnostics, and what the tests read.
+        /// How many fixes each verdict has handed out: diagnostics, and what the tests read.
         private(set) var verdicts: [Verdict: Int] = [:]
         /// Time of the newest fix used, seconds from start.
         private(set) var lastFixT: Double?
@@ -268,7 +268,7 @@ enum TrackMath {
         /// becomes this track's history exactly, so splits, pace and the distance on screen
         /// carry straight on from it. What does not come back is the position: no fix is
         /// trusted from before the gap, for the same reason none is trusted across a pause
-        /// (`resumeAfterPause`) — he is somewhere else now. The next fixes lock and anchor
+        /// (`resumeAfterPause`). He is somewhere else now. The next fixes lock and anchor
         /// afresh, at the cost of a couple of seconds of display lag.
         ///
         /// The climb so far comes back as totals, and the hysteresis starts over on top of
@@ -325,7 +325,7 @@ enum TrackMath {
             lockCandidates.append(fix)
             guard lockCandidates.count >= TrackMath.lockFixCount else { return .awaitingLock }
 
-            // Locked. The candidates were good all along — they become the first of the track.
+            // Locked. The candidates were good all along. They become the first of the track.
             let settled = lockCandidates
             lockCandidates.removeAll()
             for f in settled { use(f) }
@@ -405,7 +405,7 @@ enum TrackMath {
         /// Credit the last few metres when the run ends.
         ///
         /// Live, distance trails the athlete by up to one `distanceStepM` plus the smoothing
-        /// lag — invisible on a screen that updates every second, but on a short run it is
+        /// lag, invisible on a screen that updates every second, but on a short run it is
         /// over 1 % of the total, and it should not be left on the road. Idempotent: a
         /// second call has nothing left to credit.
         mutating func close() {
@@ -485,7 +485,7 @@ enum TrackMath {
 
     /// The instant `target` metres was first reached, linearly interpolated; nil if the run
     /// never got that far. A flat stretch (a stop) is charged to the time *before* the
-    /// crossing, never after — the athlete reached the marker when they reached it.
+    /// crossing, never after. The athlete reached the marker when they reached it.
     static func time(atMeters target: Double, in timeline: [BestEfforts.Point]) -> Double? {
         guard let first = timeline.first, let last = timeline.last, target <= last.m else { return nil }
         if target <= first.m { return first.t }
@@ -541,7 +541,7 @@ enum TrackMath {
         return best.isFinite ? best : nil
     }
 
-    /// Seconds per `unitMeters`. Nil under 5 % of a unit — the same guard as
+    /// Seconds per `unitMeters`. Nil under 5 % of a unit. The same guard as
     /// `TimeAccounting.paceSecPerMile`: a 50 m blip produces a pace in the hours.
     static func averagePace(meters: Double, seconds: Double, unitMeters: Double) -> Double? {
         guard unitMeters > 0, meters > unitMeters * 0.05, seconds > 0 else { return nil }
@@ -553,8 +553,8 @@ enum TrackMath {
     /// Every full `splitMeters` the run has covered, plus the partial one in progress when it
     /// is at least `minPartialSplitFraction` long.
     ///
-    /// Each boundary's time is interpolated at exactly `k × splitMeters` — the same rule as
-    /// `RunDetailLoader`'s mile splits — so a mile split is a mile, not "the credited point
+    /// Each boundary's time is interpolated at exactly `k × splitMeters` (the same rule as
+    /// `RunDetailLoader`'s mile splits) so a mile split is a mile, not "the credited point
     /// nearest a mile". Elevation change is read off the smoothed altitude curve at those
     /// same two instants.
     static func splits(
@@ -614,8 +614,8 @@ enum TrackMath {
     /// Gain and loss with a dead band.
     ///
     /// Until the altitude has moved `threshold` from where it started, nothing counts. Once
-    /// a direction is established, every metre further in that direction counts at once —
-    /// so a real 30 m hill reads 30 m, not 27 — and the direction only flips after a
+    /// a direction is established, every metre further in that direction counts at once (
+    /// so a real 30 m hill reads 30 m, not 27) and the direction only flips after a
     /// reversal of at least `threshold`. Noise smaller than the band can wobble forever and
     /// add nothing.
     struct Hysteresis: Equatable {
@@ -658,7 +658,7 @@ enum TrackMath {
         }
     }
 
-    /// Gain and loss over a whole altitude series — the batch form of what `Track` does live.
+    /// Gain and loss over a whole altitude series: the batch form of what `Track` does live.
     static func elevation(_ altitudes: [Double], threshold: Double = elevationHysteresisM) -> (gainM: Double, lossM: Double) {
         var h = Hysteresis(threshold: threshold)
         for a in altitudes { h.add(a) }
@@ -671,7 +671,7 @@ enum TrackMath {
     /// This is what an imported run's detail page reports (#144). Before it, imported routes
     /// summed every upward wiggle of a ±5 centred mean while recorded runs used the
     /// hysteresis, so the same road read two different climbs depending on which device
-    /// wrote it down — and the imported number was the inflated one. David chose one method
+    /// wrote it down, and the imported number was the inflated one. David chose one method
     /// everywhere, knowing it lowers the gain on every historical run.
     static func elevation(rawAltitudes raw: [Double]) -> (gainM: Double, lossM: Double) {
         var window: [Double] = []

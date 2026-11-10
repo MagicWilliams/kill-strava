@@ -11,7 +11,7 @@ import UIKit
 enum Motion {
     /// Finger-down feedback. Fast, slightly springy, never bouncy enough to feel loose.
     static let press = Animation.spring(response: 0.3, dampingFraction: 0.62)
-    /// New data landing in an existing view — a counter rolling, a bar re-lengthening.
+    /// New data landing in an existing view: a counter rolling, a bar re-lengthening.
     static let settle = Animation.spring(response: 0.55, dampingFraction: 0.85)
     /// First paint of a gauge or chart. Slower on purpose; it only happens once.
     static let draw = Animation.easeOut(duration: 0.7)
@@ -19,13 +19,13 @@ enum Motion {
     static let reveal = Animation.spring(response: 0.4, dampingFraction: 0.85)
     /// Tab selection and other small discrete state flips.
     static let tab = Animation.spring(response: 0.3, dampingFraction: 0.7)
-    /// Matched-geometry navigation — a card growing into a screen.
+    /// Matched-geometry navigation: a card growing into a screen.
     static let nav = Animation.spring(response: 0.42, dampingFraction: 0.82)
 }
 
 // MARK: - Reduce Motion
 
-/// SwiftUI does **not** honour Reduce Motion for you — `.animation` runs regardless. Every
+/// SwiftUI does **not** honour Reduce Motion for you: `.animation` runs regardless. Every
 /// animation in Tempo goes through one of the helpers below so the setting is respected in
 /// one place instead of being forgotten in twelve.
 extension View {
@@ -65,8 +65,8 @@ private struct RollingNumber: ViewModifier {
 
 /// Animates a value in from zero on first appearance, then animates to each new target.
 ///
-/// The wrapper exists because a ring or a bar wants two different curves — a slow `draw` the
-/// first time you see it, a quicker `settle` when a refresh moves it — and hand-rolling that
+/// The wrapper exists because a ring or a bar wants two different curves (a slow `draw` the
+/// first time you see it, a quicker `settle` when a refresh moves it) and hand-rolling that
 /// pair of `onAppear`/`onChange` per gauge is how half of them end up not animating at all.
 ///
 /// ```swift
@@ -116,7 +116,7 @@ extension EnvironmentValues {
 }
 
 extension View {
-    /// Marks this view as the visual origin of a zoom push — the card that grows into the
+    /// Marks this view as the visual origin of a zoom push: the card that grows into the
     /// screen. A no-op without a namespace, where the push just cross-fades.
     @ViewBuilder
     func zoomSource(_ id: some Hashable, in namespace: Namespace.ID?) -> some View {
@@ -141,7 +141,7 @@ extension View {
 
 // MARK: - Haptics
 
-/// Deliberately *not* gated on Reduce Motion — haptics are how the app stays legible when
+/// Deliberately *not* gated on Reduce Motion: haptics are how the app stays legible when
 /// animation is turned off, not another thing to turn off with it.
 ///
 /// Generators are held rather than allocated per call: `prepare()` is what buys the sub-frame
@@ -161,13 +161,13 @@ enum Haptics {
         impactLight.prepare()
     }
 
-    /// The selected thing changed — tab switch, scrubbing across the training wall.
+    /// The selected thing changed: tab switch, scrubbing across the training wall.
     static func select() {
         selection.selectionChanged()
         selection.prepare()
     }
 
-    /// A decision was committed — confirming a coach proposal, banking a check-in.
+    /// A decision was committed: confirming a coach proposal, banking a check-in.
     static func commit() {
         notice.notificationOccurred(.success)
         notice.prepare()
@@ -179,7 +179,7 @@ enum Haptics {
         notice.prepare()
     }
 
-    /// A heavier landing — a screen arriving, a run opening.
+    /// A heavier landing: a screen arriving, a run opening.
     static func land() {
         impactMedium.impactOccurred()
         impactMedium.prepare()

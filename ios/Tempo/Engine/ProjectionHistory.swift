@@ -1,6 +1,6 @@
 import Foundation
 
-/// The finish projection, replayed over time — pure, no I/O.
+/// The finish projection, replayed over time, pure, no I/O.
 ///
 /// `RunStore.recomputeProjection()` keeps no state between calls. It is a function of
 /// exactly three things, the runs on file, the moment you ask, and the race it is asked about:
@@ -10,11 +10,11 @@ import Foundation
 ///
 /// The distance is an argument, never a constant. Until #185 it was hardcoded to 26.2, and
 /// with a 5K goal the app quoted a ~4:18 "projected finish" against a 5K on Progress, You
-/// and Coach — and every refresh wrote that marathon number back over the 5K one the `plan`
+/// and Coach, and every refresh wrote that marathon number back over the 5K one the `plan`
 /// function had stored. No default here on purpose: every caller has to say which race.
 ///
 /// Because of that, the whole history of what the projection *would have been* is
-/// reconstructible right now from the archive already in memory — no new table, no waiting
+/// reconstructible right now from the archive already in memory. No new table, no waiting
 /// months for a chart to fill. A `projection_history` table would have been strictly worse:
 /// it could only ever record the future, and it would start lying the day the formula
 /// changed. So this replays the rule instead.
@@ -42,7 +42,7 @@ enum ProjectionHistory {
     static let maxQualifyingPaceSecPerMile = 1_200
 
     /// Training weeks run Mon–Sun. Held here, like `RunHistory.calendar`, so the engine
-    /// stays pure — no actor isolation, no store to construct in a test.
+    /// stays pure. No actor isolation, no store to construct in a test.
     static let calendar: Calendar = {
         var c = Calendar(identifier: .iso8601)
         c.firstWeekday = 2
@@ -61,7 +61,7 @@ enum ProjectionHistory {
 
     // MARK: - A single moment
 
-    /// The one effort the projection rests on as of `asOf` — fastest average pace among
+    /// The one effort the projection rests on as of `asOf`: fastest average pace among
     /// qualifying runs in the trailing window (at least `minQualifyingMiles`, no slower
     /// than `maxQualifyingPaceSecPerMile`). Nil when nothing qualifies.
     ///
@@ -121,7 +121,7 @@ enum ProjectionHistory {
     // MARK: - Which race
 
     /// The distance the projection is asked about: the goal's `distance_m`, then its
-    /// `distance` label, then the marathon — and the marathon only when there is no goal at
+    /// `distance` label, then the marathon, and the marathon only when there is no goal at
     /// all (just-running mode, where the number answers "what could I run a marathon in").
     ///
     /// Deliberately `RaceRecap.raceMeters(goal:)` and not a second reading of the goal: the
@@ -160,7 +160,7 @@ enum ProjectionHistory {
     ///
     /// The goal has to be the plan's own goal. `loadPlan` keeps the previous goal when the
     /// goal read fails, and projecting to *that* race's distance would overwrite a correct
-    /// number with one for a different race — #185 again, by another road. With no matching
+    /// number with one for a different race, #185 again, by another road. With no matching
     /// goal the stored value (written by the `plan` function, at the goal's distance) stands.
     static func rewrite(
         storedFinishS: Int?,
@@ -191,10 +191,10 @@ enum ProjectionHistory {
     /// extrapolate from, and drawing a number there would claim a fitness reading that
     /// nobody took.
     ///
-    /// `from` may safely be `.distantPast` — it clamps to the oldest run, since no window
+    /// `from` may safely be `.distantPast`. It clamps to the oldest run, since no window
     /// ending before that can contain anything.
     ///
-    /// Every point is projected to the one `raceMeters` passed in — the race being asked
+    /// Every point is projected to the one `raceMeters` passed in. The race being asked
     /// about now, not whatever the goal was on that date.
     static func series(
         runs: [RunSummary],

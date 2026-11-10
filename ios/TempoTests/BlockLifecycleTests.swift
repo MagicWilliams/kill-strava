@@ -5,8 +5,8 @@ import XCTest
 /// the goal was active, the race date was in the past, and Today offered a rest day as if
 /// the next build started tomorrow (#100).
 ///
-/// The phase decides when Today asks "review your block". These pin the day boundaries —
-/// a card that appears an evening early asks a man to review a race he hasn't run yet — and
+/// The phase decides when Today asks "review your block". These pin the day boundaries (
+/// a card that appears an evening early asks a man to review a race he hasn't run yet) and
 /// the one rule with a reason behind it: a race date passing never closes a block by itself.
 final class BlockLifecycleTests: XCTestCase {
 
@@ -51,7 +51,7 @@ final class BlockLifecycleTests: XCTestCase {
     }
 
     /// `racePassed` does not decay into `closed` with time. Weeks later the card is still
-    /// there — the athlete closes a block, the calendar doesn't.
+    /// there. The athlete closes a block, the calendar doesn't.
     func testRacePassedNeverClosesOnItsOwn() {
         XCTAssertEqual(phase(chicago(), at("2026-12-25", 12)), .racePassed)
         XCTAssertEqual(phase(chicago(), at("2027-10-11", 12)), .racePassed)
@@ -71,8 +71,8 @@ final class BlockLifecycleTests: XCTestCase {
                        "closed beats every date rule")
     }
 
-    /// A plan stood down without its goal being closed — a regeneration, the way four plans
-    /// were retired on 2026-07-10 (migration 0010) — is not a block to review.
+    /// A plan stood down without its goal being closed (a regeneration, the way four plans
+    /// were retired on 2026-07-10 (migration 0010)) is not a block to review.
     func testADonePlanIsClosed() {
         XCTAssertEqual(phase(chicago(), at("2026-10-12", 9), plan: plan(status: "done")), .closed)
         XCTAssertEqual(BlockLifecycle.phase(goal: chicago(), plan: nil, now: at("2026-10-12", 9), calendar: cal),

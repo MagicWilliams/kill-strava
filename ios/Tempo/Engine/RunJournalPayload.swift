@@ -12,7 +12,7 @@ struct RunJournalEntry: Hashable, Codable {
     var feelTags: [String] = []
     var notes: String? = nil
     var title: String? = nil
-    /// Object key inside `run-photos`, not a URL — the bucket is private, so a viewer asks
+    /// Object key inside `run-photos`, not a URL. The bucket is private, so a viewer asks
     /// Storage for a short-lived signed URL when it needs to draw the photo.
     var photoPath: String? = nil
     var shoeID: UUID? = nil
@@ -21,7 +21,7 @@ struct RunJournalEntry: Hashable, Codable {
 }
 
 /// What of a journal the coach sees (#123): effort, feel and notes on each recent run, so
-/// it can say "you logged heavy legs three runs straight". Title, photo and shoe stay out —
+/// it can say "you logged heavy legs three runs straight". Title, photo and shoe stay out,
 /// they say nothing about how the run went.
 ///
 /// Every field is nil when there is nothing to say, so the key is absent from the payload
@@ -68,7 +68,7 @@ enum RunJournalPayload {
     /// Whether a PostgREST error means "you named a column this database doesn't have".
     ///
     /// The archive read is the one read the whole app hangs off. If it asks for `rpe` before
-    /// 0016 is applied, PostgREST refuses the entire select — and every screen goes from
+    /// 0016 is applied, PostgREST refuses the entire select, and every screen goes from
     /// 2,000 runs to "Couldn't reach the server", over a column nothing reads yet. So the
     /// read asks for the journal, and on *this* error, and only this one, asks again without
     /// it. Anything else (offline, auth, 5xx) is a real failure and must stay one, or the
@@ -115,7 +115,7 @@ enum RunJournalPayload {
             try c.encode(feelTags, forKey: .feelTags)
             try c.encode(notes, forKey: .notes)
             try c.encode(title, forKey: .title)
-            // Lowercase, to match how Postgres prints a uuid back — keeps the payload
+            // Lowercase, to match how Postgres prints a uuid back, keeps the payload
             // byte-comparable with what a read returns.
             try c.encode(shoeID?.uuidString.lowercased(), forKey: .shoeID)
         }
@@ -124,7 +124,7 @@ enum RunJournalPayload {
     /// Normalize what the post-run screen collected into the row that gets written.
     ///
     /// - An RPE outside 1–10 is **dropped, not sent**. The column's check constraint would
-    ///   reject it, and a rejected update loses the whole row — the athlete's notes would go
+    ///   reject it, and a rejected update loses the whole row. The athlete's notes would go
     ///   down with a bad slider value.
     /// - Whitespace-only text is "didn't say", so it is written as `null`, not as a blank
     ///   string the Run Detail page would then render as an empty card.
@@ -140,7 +140,7 @@ enum RunJournalPayload {
         )
     }
 
-    /// The second write, once the photo is in Storage. `nil` clears it — encoded explicitly
+    /// The second write, once the photo is in Storage. `nil` clears it, encoded explicitly
     /// for the same reason as `Fields`.
     struct PhotoPathUpdate: Encodable, Equatable {
         let photoPath: String?
@@ -160,7 +160,7 @@ enum RunJournalPayload {
     /// Where a run's photo lives in the bucket: `<user>/<run>/<photo>.jpg`.
     ///
     /// The first segment is the whole security model. Migration 0016's policies compare it
-    /// to `auth.uid()::text`, which Postgres prints **lowercase** — and `UUID.uuidString` is
+    /// to `auth.uid()::text`, which Postgres prints **lowercase**, and `UUID.uuidString` is
     /// **uppercase**. Built naively, every upload would be refused by RLS, and because the
     /// journal never blocks the run save, nothing on screen would say so: the photo would
     /// just never appear. So every segment is lowercased here, where a test can see it.
@@ -205,7 +205,7 @@ enum RunJournalPayload {
 
     /// Whether a failed write is worth trying again.
     ///
-    /// `nil` is a transport failure — no HTTP answer at all — which is the cellular dead
+    /// `nil` is a transport failure (no HTTP answer at all), which is the cellular dead
     /// spot this retry exists for. 408, 429 and 5xx are the server saying "not now". Every
     /// other 4xx is a "no" that will be a "no" next time too (RLS refused the path, the file
     /// is over the bucket limit, the column doesn't exist yet), and retrying those just

@@ -3,13 +3,13 @@ import UIKit
 import XCTest
 @testable import Tempo
 
-/// The palette is the one part of the design system that is pure, total, and checkable —
+/// The palette is the one part of the design system that is pure, total, and checkable,
 /// a fixed set of colours with arithmetic relationships that either hold or don't.
 ///
 /// It earns tests for the same reason the engine does: every way it fails is silent. A hex
 /// that's four points too light doesn't crash, it ships a label nobody can read, on one theme,
 /// on a screen the author happened not to open. Two of the assertions below were already
-/// failing when they were first written — `textTertiary` was under 4.5:1 on dark cards, and
+/// failing when they were first written, `textTertiary` was under 4.5:1 on dark cards, and
 /// `voltMark` was too close to the unfilled day dot to tell the two apart on white.
 ///
 /// Ratios are WCAG 2.1 relative luminance. Thresholds: 4.5:1 for text, 3:1 for meaningful
@@ -95,8 +95,8 @@ final class DesignTokenTests: XCTestCase {
         }
     }
 
-    /// Status colours land on whatever card the thing they're describing lives in — an `info`
-    /// adaptation note sits in a session card whose tint depends on the session type — so they
+    /// Status colours land on whatever card the thing they're describing lives in (an `info`
+    /// adaptation note sits in a session card whose tint depends on the session type) so they
     /// have to clear on every ground too, not just their own.
     func testStatusTextClears4point5OnEveryGround() {
         let status: [(String, Color)] = [
@@ -148,7 +148,7 @@ final class DesignTokenTests: XCTestCase {
 
     // MARK: - Surfaces
 
-    /// A card is now a fill and nothing else — no border, no shadow. So the fill differing
+    /// A card is now a fill and nothing else: no border, no shadow. So the fill differing
     /// from what's behind it isn't a nicety, it's the entire mechanism.
     func testWellsSeparateFromCanvasAndFromTheirOwnInset() {
         for (theme, style) in themes {
@@ -180,7 +180,7 @@ final class DesignTokenTests: XCTestCase {
         }
     }
 
-    /// Level 0 is "no run". It has to read as absence on both grounds — close to the card it
+    /// Level 0 is "no run". It has to read as absence on both grounds, close to the card it
     /// sits on, and clearly apart from level 1.
     func testWallRampEmptyLevelReadsAsEmpty() {
         for (theme, style) in themes {

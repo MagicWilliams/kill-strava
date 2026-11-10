@@ -4,8 +4,8 @@ import XCTest
 /// Pins the overlapping-runs queue (#30).
 ///
 /// After 0008 and 0009 retired every duplicate that was one by construction, ~108 pairs of
-/// live runs still overlapped in time, and every all-time number — Records, the training
-/// wall, biggest week and month, the coach's context — counted both. They can't be resolved
+/// live runs still overlapped in time, and every all-time number (Records, the training
+/// wall, biggest week and month, the coach's context) counted both. They can't be resolved
 /// by rule: on 2023-11-19 the database holds the marathon (26.68 mi / 188 min) beside the
 /// watch left running afterwards (27.59 mi / 304 min, HR 119), and "keep the longest" and
 /// "keep the one with HR" both delete the race. So the engine finds pairs and David rules.
@@ -41,8 +41,8 @@ final class OverlapReviewTests: XCTestCase {
     // MARK: - Detection
 
     func testMarathonAndTheWatchLeftRunningSurfaceAsAPairWithNothingChosen() {
-        // 2023-11-19, as stored. The blob is longer and carries HR — every simple rule's
-        // favourite — so the only safe output is the pair itself, in time order.
+        // 2023-11-19, as stored. The blob is longer and carries HR (every simple rule's
+        // favourite) so the only safe output is the pair itself, in time order.
         let marathon = run(0, miles: 26.68, durationMin: 188)
         let blob = run(2, miles: 27.59, durationMin: 304, hr: 119)
 
@@ -68,8 +68,8 @@ final class OverlapReviewTests: XCTestCase {
     }
 
     func testFindsThePairQuery4MissesWhenTheEarlierRunHasTheLargerID() {
-        // 0009's review query joins on a.id < b.id AND b starting after a, so this pair —
-        // earlier run holding the larger uuid — never showed up in it.
+        // 0009's review query joins on a.id < b.id AND b starting after a, so this pair (
+        // earlier run holding the larger uuid) never showed up in it.
         let big = UUID(uuidString: "FFFFFFFF-0000-0000-0000-000000000000")!
         let small = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
         let earlier = run(0, miles: 6, durationMin: 50, id: big)

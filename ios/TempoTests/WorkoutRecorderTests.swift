@@ -395,7 +395,7 @@ final class WorkoutRecorderTests: XCTestCase {
     }
 
     /// The watch reaches the race distance: said once, at the goal's own distance, with the
-    /// race clock — and in place of the split that lands on the same update, not after it.
+    /// race clock, and in place of the split that lands on the same update, not after it.
     func testARaceSaysItsDistanceOnceAtTheGoalsDistance() async throws {
         goal = raceGoal()
         let recorder = await started(.race, units: .km)
@@ -645,7 +645,7 @@ final class WorkoutRecorderTests: XCTestCase {
     }
 
     /// No GPS on a treadmill: the distance is his step count, there is no route, and not a
-    /// metre goes into the workout until Save — a sample in Health can't be taken back if the
+    /// metre goes into the workout until Save. A sample in Health can't be taken back if the
     /// console disagrees (#116). Skipped, the workout gets the step count exactly.
     func testATreadmillRunCountsStepsAndWritesThemOnlyAtSave() async throws {
         let recorder = await started(.treadmill)
@@ -723,7 +723,7 @@ final class WorkoutRecorderTests: XCTestCase {
         XCTAssertNil(saved.first?.workout.correction)
     }
 
-    /// Steps taken while paused — the walk to the water fountain — are not distance.
+    /// Steps taken while paused (the walk to the water fountain) are not distance.
     func testStepsWhilePausedAreNotDistance() async {
         let recorder = await started(.treadmill)
         belt(recorder, through: 200)
@@ -761,7 +761,7 @@ final class WorkoutRecorderTests: XCTestCase {
 
     /// The save screen's splits table (#130) is the one Health will read back: the same
     /// rescale the save writes. And once the first Save has written the distance, the stepper
-    /// is locked — what is in Health can't be re-corrected by a Retry.
+    /// is locked. What is in Health can't be re-corrected by a Retry.
     func testTheSaveScreenPreviewsTheSplitsTheSaveWrites() async throws {
         let recorder = await started(.treadmill, units: .km)
         belt(recorder)
@@ -1072,7 +1072,7 @@ final class WorkoutRecorderTests: XCTestCase {
 
     // MARK: - Kill recovery at launch (#115)
 
-    /// iOS killed Tempo. A new process, a new recorder, fresh GPS and voice — everything the
+    /// iOS killed Tempo. A new process, a new recorder, fresh GPS and voice. Everything the
     /// old process held in memory is gone, and the telemetry starts from the relaunch.
     private func relaunched(units: Units = .km) -> WorkoutRecorder {
         location = FakeLocation()
@@ -1104,8 +1104,8 @@ final class WorkoutRecorderTests: XCTestCase {
     }
 
     /// The case #115 exists for: killed 2 km in, he runs on for two minutes with nothing
-    /// listening, and Tempo comes back to the same run — same recording, same clock, the
-    /// live screen up again — and Health ends up with every metre on screen exactly once.
+    /// listening, and Tempo comes back to the same run (same recording, same clock, the
+    /// live screen up again) and Health ends up with every metre on screen exactly once.
     func testAKilledRunWhoseSessionSurvivedPicksUpWhereItWas() async throws {
         let before = await started()
         run(before, line(from: 0, seconds: 600, secPerKm: 300))
@@ -1159,7 +1159,7 @@ final class WorkoutRecorderTests: XCTestCase {
         XCTAssertEqual(persisted.last, .some(nil), "in Health: the snapshot is gone")
     }
 
-    /// The session was paused when Tempo died, so the gap was a stop — and only he lifts it.
+    /// The session was paused when Tempo died, so the gap was a stop, and only he lifts it.
     func testASessionPausedThroughTheGapComesBackPausedUntilHeResumes() async throws {
         let before = await started()
         run(before, line(from: 0, seconds: 300, secPerKm: 300))
@@ -1321,8 +1321,8 @@ final class WorkoutRecorderTests: XCTestCase {
     }
 
     /// Core Motion kept counting the belt while Tempo was dead. The run comes back counting
-    /// from its last snapshot, so the gap is credited, and the whole run — none of which
-    /// was in Health yet — goes in once, at Save.
+    /// from its last snapshot, so the gap is credited, and the whole run (none of which
+    /// was in Health yet) goes in once, at Save.
     func testATreadmillRunComesBackCountingFromItsLastSnapshot() async throws {
         let before = await started(.treadmill)
         belt(before, through: 300)
@@ -1353,8 +1353,8 @@ final class WorkoutRecorderTests: XCTestCase {
         XCTAssertEqual(recorder.state.phase, .saved(workoutID: survivor.workoutID))
     }
 
-    /// A session with no run of ours behind it — the snapshot was already cleared for a run
-    /// he saved or discarded — is ended, not saved, and there is nothing to show him.
+    /// A session with no run of ours behind it (the snapshot was already cleared for a run
+    /// he saved or discarded) is ended, not saved, and there is nothing to show him.
     func testASessionWithNoRunBehindItIsEndedNotSaved() async {
         let recorder = relaunched()
         let stray = FakeSession()

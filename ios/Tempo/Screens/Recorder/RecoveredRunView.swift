@@ -9,7 +9,7 @@ import SwiftUI
 /// screen, so the two can never be up at once. It reads the run's own phase and offers only
 /// what the reducer allows from there:
 ///
-/// - the session survived: the run is going again — keep going (to the live screen), or end
+/// - the session survived: the run is going again. Keep going (to the live screen), or end
 ///   and save it;
 /// - it did not: "Save what we have" or "Discard", the only two ways out of `.recovering`;
 /// - it died on the save screen: Save or Discard, as the save screen would.

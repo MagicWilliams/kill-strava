@@ -2,8 +2,8 @@ import Foundation
 
 /// Every decision between Today's Start button and the first second of a run (#126).
 ///
-/// The screens around it — the button in today's session card, the pre-run sheet, the
-/// countdown — are drawn to the signed-off frames (#125, "01 · Start → countdown"). What they
+/// The screens around it (the button in today's session card, the pre-run sheet, the
+/// countdown) are drawn to the signed-off frames (#125, "01 · Start → countdown"). What they
 /// *say* and what they *allow* is decided here, purely, because each of these is a place a
 /// run can be lost before it starts: a Start button that offers a tempo on a rest day, a Race
 /// option that tags a Tuesday jog as the marathon (#117), a GPS pill that says "strong" on a
@@ -261,7 +261,7 @@ enum PreRun {
 
     /// What covers the app while a run exists. Follows the recorder's phase, so the live
     /// screen comes up after the countdown, after a relaunch into a recovered run (#115), and
-    /// goes away only when the run is reset — never because a view decided so on its own.
+    /// goes away only when the run is reset, never because a view decided so on its own.
     enum Screen: Equatable {
         case none
         case countdown
@@ -279,7 +279,7 @@ enum PreRun {
     }
 
     /// `recovered` is `WorkoutRecorder.recovered != nil`. It outranks the phase for any run
-    /// that exists — a rescued run in `.recovering` has only the prompt's two ways out — and
+    /// that exists (a rescued run in `.recovering` has only the prompt's two ways out) and
     /// never conjures a cover for a recorder that is idle.
     static func screen(for phase: RecorderState.Phase, recovered: Bool = false) -> Screen {
         switch phase {

@@ -1,17 +1,17 @@
-// Tempo coach — Claude behind a Supabase Edge Function.
+// Tempo coach: Claude behind a Supabase Edge Function.
 // The app sends chat history + a compact snapshot of real training data
 // (recent runs with ids, weekly mileage, goal, risk tolerance); the Anthropic
 // key never leaves the server.
 //
 // Write path: the coach PROPOSES actions via tool calls (amend_run / add_run /
-// set_risk_tolerance). The function never writes to the DB — proposals are
+// set_risk_tolerance). The function never writes to the DB, proposals are
 // returned to the app, which renders a confirm card and executes the write
 // client-side under RLS after the athlete confirms. `remember` is the same deal
 // for a durable fact (#87): the card is the athlete's consent, the app writes it.
 //
 // Modes: no mode is a chat turn. `takeaway` reads one run, `block_review` one
 // training block, and `summarize` writes up a finished thread as {title, summary}
-// (#87) — all three one-shot, no tools, nothing persisted here.
+// (#87), all three one-shot, no tools, nothing persisted here.
 
 import { sanitizeHistory, type WireMessage } from "./history.ts";
 import { runEditing, shapeRunInput, speaksRunFacts } from "./run_corrections.ts";
@@ -43,13 +43,13 @@ const MODEL = "claude-sonnet-5";
 // 400 takeaway) were sized for a model that didn't think: the coach spent the
 // entire 1200 on thinking, returned a lone thinking block with no text, and
 // every message came back "Lost my train of thought there." The retry used the
-// same ceiling, so it failed identically — the fallback line was unreachable
+// same ceiling, so it failed identically. The fallback line was unreachable
 // in theory and unavoidable in practice.
 //
 // max_tokens is a ceiling, not a target: thinking stops on its own and billing
 // is on tokens actually produced, so a generous ceiling costs nothing and is
 // the only thing standing between a long answer and a mid-sentence cut. Effort
-// is the dial that actually bounds thinking — medium, because the coach does
+// is the dial that actually bounds thinking, medium, because the coach does
 // real arithmetic (corrected pace/distance totals for amend_run) and must land
 // tool calls reliably, but doesn't need to deliberate over 2–6 sentences.
 const SAMPLING = {
@@ -123,7 +123,7 @@ Deno.serve(async (req) => {
     // #193: Anthropic rejects the request outright if the array ends in an assistant turn,
     // and the client can only report that as an opaque 502. Done once, here, because all
     // three calls below (first round, tool continuation, empty-reply retry) rebuild the same
-    // array — the continuation round appends its own assistant+user pair on top of it.
+    // array. The continuation round appends its own assistant+user pair on top of it.
     const anthropicMessages = cleanCoachTurns(sanitizeHistory(wireMessages));
     if (anthropicMessages.length === 0) {
       return Response.json({ error: "history must end with a user turn" }, { status: 400 });
@@ -175,7 +175,7 @@ Deno.serve(async (req) => {
     const offered = toolBlocks.filter((b) => !rejected.has(b.id ?? ""));
     for (const [id, why] of surplusCards(offered, context)) rejected.set(id, why);
 
-    // The model often emits ONLY a tool call, no prose — which would stall the
+    // The model often emits ONLY a tool call, no prose, which would stall the
     // conversation (especially the onboarding interview). One continuation round:
     // feed back tool results and let the coach keep talking.
     if ((toolBlocks.length > 0 && !reply) || rejected.size > 0) {
@@ -213,7 +213,7 @@ Deno.serve(async (req) => {
       }
     }
 
-    // The model occasionally returns whitespace-only content with no tool calls —
+    // The model occasionally returns whitespace-only content with no tool calls,
     // never surface an empty bubble. One retry, then an honest fallback line.
     if (!reply && toolBlocks.length === 0) {
       console.error("empty completion", JSON.stringify({ stop_reason: data.stop_reason, usage: data.usage }));
@@ -254,7 +254,7 @@ Deno.serve(async (req) => {
     // Whatever the rounds above produced, the app gets at most one card.
     toolBlocks = oneCardOnly(toolBlocks, context);
 
-    // The model occasionally omits `summary` despite the schema — guarantee it here,
+    // The model occasionally omits `summary` despite the schema: guarantee it here,
     // since the app renders it on the confirm card.
     const proposed_actions = toolBlocks.map((b) => {
       const input = (b.input ?? {}) as Record<string, unknown>;

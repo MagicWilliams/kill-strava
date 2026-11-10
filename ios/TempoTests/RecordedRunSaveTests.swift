@@ -6,7 +6,7 @@ import XCTest
 ///
 /// That shortcut is only safe if the row is *the row the sync would have written*. The sync
 /// dedupes on `(user_id, source, external_id)`; a recorder row that differs in any of the three
-/// is a stranger to it, and the run gets inserted twice — the 2026-07-10 week that read 31
+/// is a stranger to it, and the run gets inserted twice. The 2026-07-10 week that read 31
 /// miles instead of 15, except this time Tempo would be doing it to itself, once per run.
 /// And a row that agreed on the key but not the numbers would give one run two different
 /// paces depending on which path happened to write it first. Nothing on screen would say so.
@@ -14,7 +14,7 @@ final class RecordedRunSaveTests: XCTestCase {
 
     private let user = "5F0B1C2D-3E4F-4A5B-8C6D-7E8F9A0B1C2D"
     private let uuid = UUID(uuidString: "A1B2C3D4-E5F6-4789-ABCD-EF0123456789")!
-    /// Sunday 11 Oct 2026, 13:30 UTC — the Chicago start that lost its recording to Strava.
+    /// Sunday 11 Oct 2026, 13:30 UTC. The Chicago start that lost its recording to Strava.
     private let start = Date(timeIntervalSince1970: 1_791_725_400)
 
     /// A 5-mile run: 8,046.72 m, 42 min moving, 45 min on the wall clock, HR 151.5.
@@ -48,7 +48,7 @@ final class RecordedRunSaveTests: XCTestCase {
         return kept.map { WorkoutRow.insert($0, userID: user) }
     }
 
-    /// The row as the archive read hands it back — a database id, the workout uuid as text.
+    /// The row as the archive read hands it back: a database id, the workout uuid as text.
     private func stored(_ row: RunInsert, id: UUID = UUID()) -> RunSummary {
         RunSummary(id: id, start: row.start_time, distanceM: row.distance_m,
                    durationS: row.duration_s, elapsedS: row.elapsed_duration_s, avgHR: row.avg_hr,
@@ -74,7 +74,7 @@ final class RecordedRunSaveTests: XCTestCase {
 
     func testTheRowFieldByField() {
         // Pinned literally as well, so a change to the shared mapping shows up here as a
-        // number on the run that moved — not only as two paths that still agree.
+        // number on the run that moved, not only as two paths that still agree.
         guard case .insert(let row) = RecordedRunSave.decide(workout(), nearby: [], userID: user) else {
             return XCTFail("a new 5-mile run must be written")
         }
@@ -90,7 +90,7 @@ final class RecordedRunSaveTests: XCTestCase {
     }
 
     func testExternalIDIsTheUppercaseUUIDEveryStoredRowUses() {
-        // The unique key compares text. 2,000+ rows carry `uuidString` — uppercase. A
+        // The unique key compares text. 2,000+ rows carry `uuidString`, uppercase. A
         // lowercase id here would not collide with the sync's row; it would sit beside it.
         guard case .insert(let row) = RecordedRunSave.decide(workout(), nearby: [], userID: user) else {
             return XCTFail()
@@ -148,7 +148,7 @@ final class RecordedRunSaveTests: XCTestCase {
     }
 
     func testARunStartingAWindowAwayIsItsOwnRun() {
-        // Two runs five minutes apart are two runs — the window is exclusive at its edge,
+        // Two runs five minutes apart are two runs: the window is exclusive at its edge,
         // same as the sync's.
         let earlier = stored(ingestRows([workout(uuid: UUID(), offset: -RunDedupe.windowSeconds)])[0])
         guard case .insert = RecordedRunSave.decide(workout(), nearby: [earlier], userID: user) else {
@@ -228,7 +228,7 @@ final class RecordedRunSaveTests: XCTestCase {
         XCTAssertEqual(row.avg_pace_sec, 479, "pace from the console: 2400 s / 5.0002 mi, truncated")
         XCTAssertEqual(row.corrected, true)
         XCTAssertEqual(row.correction_note, "Treadmill console: 5.00 mi (phone estimated 4.71 mi)")
-        // `original` is what the phone counted — the snapshot a coach amendment would keep.
+        // `original` is what the phone counted: the snapshot a coach amendment would keep.
         XCTAssertEqual(row.original, RunInsert.Original(distance_m: 7_580, duration_s: 2_400, avg_hr: nil,
                                                         avg_pace_sec: 509))
     }
@@ -317,7 +317,7 @@ final class RecordedRunSaveTests: XCTestCase {
                        RaceFinish.Link(goalID: goal.id, runID: row))
     }
 
-    /// An ordinary run on race morning — the shakeout, or the race run without Race mode — is
+    /// An ordinary run on race morning (the shakeout, or the race run without Race mode) is
     /// never filed as the block's race, queued or not. Only Race mode says "this is the race".
     func testAQueuedOutdoorRunNeverLinks() {
         let goal = raceGoal()
@@ -341,7 +341,7 @@ final class RecordedRunSaveTests: XCTestCase {
     }
 
     /// A run queued by the build before #178 is on someone's disk right now, written without
-    /// `kind` or `goalID`. It must still decode — it may be the only copy of a journal — and
+    /// `kind` or `goalID`. It must still decode (it may be the only copy of a journal) and
     /// still retry. It just never links, which is what that build would have done.
     func testARunQueuedBeforeRaceLinkingStillDecodesAndRetries() throws {
         // What the previous build wrote: `JSONEncoder` defaults, dates as seconds since 2001,
@@ -367,7 +367,7 @@ final class RecordedRunSaveTests: XCTestCase {
     }
 
     func testOnlyANotNowStaysQueued() {
-        // No answer at all is the dead spot at the end of a run — the case the queue is for.
+        // No answer at all is the dead spot at the end of a run: the case the queue is for.
         for status in [nil, 408, 429, 500, 503] as [Int?] {
             XCTAssertTrue(RecordedRunSave.keepsAfterFailure(statusCode: status), "\(String(describing: status))")
         }

@@ -104,7 +104,7 @@ Found in two fresh-account setups from that day: one run correction proposed fou
 - **At most one card can be answered in a conversation, and it must reflect the latest thing the athlete said.** A newer card replaces an older one. When the athlete says something and the coach answers without proposing the card again, it closes. A card also closes after 24 hours.
 - **A card the coach forgets to repeat closes rather than stays up.** Forgetting costs one message. The other way round, a stale Confirm writes the wrong plan. Reversible: `OpenProposal.status` is one function.
 - **Closing is worked out from the transcript, not stored.** No migration, and old conversations are covered as soon as this ships.
-- **An acknowledgement gets no card tools.** A tap reached the model as "Confirmed — X", which it read as agreement to X. It can describe a next step in words and ask.
+- **An acknowledgement gets no card tools.** A tap reached the model as a "Confirmed" turn naming X, which it read as agreement to X. It can describe a next step in words and ask.
 - **The form is where the conversation starts, not where it ends.** Answers changed in chat travel in `create_plan.intake_changes`, and only those outrank the form. The model's echo of the form still doesn't, which is the #184 lesson.
 - **During setup, memories save without a card,** like every other interview answer. Outside setup they are the lowest-ranked card.
 - **A time said in plain speech counts as stated** ("under 20 minutes", "sub-3"). This reverses a #239 choice: reading only colons turned back the time the athlete had just asked for.

@@ -1,13 +1,13 @@
 import SwiftUI
 
-/// The run archive — every run on file, not the trailing two weeks.
+/// The run archive: every run on file, not the trailing two weeks.
 ///
 /// All 2,000+ runs are already in `RunStore.runs` (the Supabase read has no limit), so
 /// this screen is pure presentation: no fetch, no spinner, no pagination. The month
 /// grouping and record set come from `RunHistory`, which is pure and pinned by tests.
 ///
 /// It owns its own `ScrollView` rather than living inside `Screen` because the archive
-/// needs a `LazyVStack` with pinned month headers — 2,000 eagerly-built rows would
+/// needs a `LazyVStack` with pinned month headers, 2,000 eagerly-built rows would
 /// stutter, and a nested scroll view inside `Screen` would fight the outer one.
 struct HistoryView: View {
     @EnvironmentObject private var store: RunStore
@@ -79,7 +79,7 @@ struct HistoryView: View {
         .task(id: filter) { rebuildMonths() }
     }
 
-    /// Records and the wall always describe the whole archive — a "PR" badge that came and
+    /// Records and the wall always describe the whole archive: a "PR" badge that came and
     /// went with the filter would be lying about the run, and a wall that emptied when you
     /// tapped "Half+" would be reporting rest days that were not rest days. Kept off the
     /// filter's task so tapping a chip doesn't recompute five years of calendar cells.
@@ -174,7 +174,7 @@ struct HistoryView: View {
     // MARK: - Best efforts
 
     /// The real PR table: the fastest segment of each distance found *anywhere inside* a
-    /// run (#25). It sits above "Records" on purpose — "fastest 10K+ run" is the weaker
+    /// run (#25). It sits above "Records" on purpose: "fastest 10K+ run" is the weaker
     /// claim of the two, and the strong one should not be the thing you scroll past.
     ///
     /// Absent entirely until migration 0011 is applied. A table that cannot be filled is
@@ -280,7 +280,7 @@ struct HistoryView: View {
         }
     }
 
-    /// A record that points at one run — tapping opens it.
+    /// A record that points at one run: tapping opens it.
     private func recordRow(_ label: String, value: String, run: RunSummary) -> some View {
         Button {
             router.openRun(run)
@@ -300,7 +300,7 @@ struct HistoryView: View {
         .buttonStyle(Pressable())
     }
 
-    /// A record spanning many runs — nothing to open.
+    /// A record spanning many runs: nothing to open.
     private func staticRecordRow(_ label: String, value: String, caption: String) -> some View {
         HStack(spacing: 8) {
             Text(label).font(Tokens.Font.ui(13)).foregroundStyle(Tokens.Palette.textSecondary)
@@ -339,14 +339,14 @@ struct HistoryView: View {
     /// The jump-to-year control: a column of years down the right edge, Photos-style.
     ///
     /// It lives in the overlay rather than in the `LazyVStack` on purpose. The obvious
-    /// alternative — a second chip row under the filters — is unreachable exactly when it is
+    /// alternative (a second chip row under the filters) is unreachable exactly when it is
     /// wanted, because it scrolls away with everything else, and pinning it is not available
     /// here: this stack already pins the month headers, and a second pinned header would just
     /// push the first one off the top. Floating the rail outside the scroll view means it is
     /// on screen at 2021 as much as at the top.
     ///
     /// It costs the outer ~32pt of the row width, which is the page margin plus the card's own
-    /// padding — it stops short of the chevron rather than sitting on top of it.
+    /// padding. It stops short of the chevron rather than sitting on top of it.
     ///
     /// It is a jump list, not a position indicator: nothing here highlights the year you are
     /// currently looking at, because knowing that means watching the scroll offset, which this
@@ -445,7 +445,7 @@ struct HistoryView: View {
     }
 
     /// One run. The bar is scaled to the month's longest run, which gives a long
-    /// scroll its rhythm — you can spot the long run in a week without reading a number.
+    /// scroll its rhythm. You can spot the long run in a week without reading a number.
     private func row(_ run: RunSummary, scale: Double) -> some View {
         Button {
             router.openRun(run)

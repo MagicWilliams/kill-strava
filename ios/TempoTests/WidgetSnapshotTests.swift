@@ -63,7 +63,7 @@ final class WidgetSnapshotTests: XCTestCase {
         let snap = build(now: at(9), runs: [
             run(5, 5.0), run(7, 8.0), run(7, 2.0, hour: 18), run(9, 6.2),
             run(4, 12.0), run(28, 6.0, month: 9),          // last week: Sun 10-04, Mon 09-28
-            run(27, 20.0, month: 9),                        // two weeks back — in neither
+            run(27, 20.0, month: 9),                        // two weeks back, in neither
         ])
         XCTAssertEqual(snap.weekStart, cal.startOfDay(for: at(5)))
         XCTAssertEqual(snap.dayMiles, [5.0, 0, 10.0, 0, 6.2, 0, 0])
@@ -71,7 +71,7 @@ final class WidgetSnapshotTests: XCTestCase {
         XCTAssertEqual(snap.lastWeekMiles, 18.0, accuracy: 0.001)
     }
 
-    /// A run at 23:30 Sunday is Sunday's, not Monday's — the boundary is local midnight.
+    /// A run at 23:30 Sunday is Sunday's, not Monday's. The boundary is local midnight.
     func testALateSundayRunIsStillThisWeek() {
         let snap = build(now: at(11, 23, 45), runs: [.init(start: at(11, 23, 30), miles: 3)])
         XCTAssertEqual(snap.dayMiles[6], 3)
@@ -81,7 +81,7 @@ final class WidgetSnapshotTests: XCTestCase {
 
     /// The headline case. The app synced on Sunday night and wasn't opened again. At Monday
     /// 00:00 the widget's own timeline entry must zero the week and move what was "this week"
-    /// into "last week" — never present 42 miles of last week as this week's total.
+    /// into "last week", never present 42 miles of last week as this week's total.
     func testMondayMidnightZeroesTheWeekWithoutTheApp() throws {
         let sundayNight = at(11, 21)
         let snap = build(now: sundayNight, runs: [run(5, 10), run(8, 12), run(11, 20)],
@@ -150,7 +150,7 @@ final class WidgetSnapshotTests: XCTestCase {
     /// Done, skipped and rest days are not "next". Neither is a session already behind us.
     func testNextSessionSkipsDoneRestSkippedAndPast() {
         let snap = build(now: at(9, 18), sessions: [
-            session(8, "threshold"),                    // yesterday, missed — behind us
+            session(8, "threshold"),                    // yesterday, missed, behind us
             session(9, "easy", status: "done"),         // today, already run
             session(10, "rest", miles: nil),
             session(11, "long", status: "skipped"),
@@ -230,7 +230,7 @@ final class WidgetSnapshotTests: XCTestCase {
     }
 
     /// The stale moment needs its own entry; otherwise the widget keeps the old picture until
-    /// the next midnight — up to another 24 hours of a week that stopped updating.
+    /// the next midnight, up to another 24 hours of a week that stopped updating.
     func testTheTimelineSchedulesTheStaleMoment() {
         let synced = at(7, 7)
         let snap = build(now: synced)

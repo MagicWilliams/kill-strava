@@ -1,14 +1,14 @@
 import XCTest
 @testable import Tempo
 
-/// The Progress header spent the whole beta counting down to a `static let` — 2026-10-11,
+/// The Progress header spent the whole beta counting down to a `static let`, 2026-10-11,
 /// shipped with the comment "fixed race target until Goal Setup is wired" (#36). Goal Setup
 /// got wired, the constant stayed, and the two agreed by coincidence. Nothing on screen
 /// would have looked wrong the day they stopped agreeing: the header would simply have
 /// counted down, in the same confident voice, to a race the athlete was no longer running.
 ///
 /// These pin the replacement. Every case in the first half is one the old code could not
-/// express — no goal, no date, race day itself, a race already run — and each one used to
+/// express (no goal, no date, race day itself, a race already run) and each one used to
 /// render as a plausible number of weeks to Chicago.
 ///
 /// The second half is #230: on 15 Oct 2026 at 12:52, with the race on 27 Nov, Plan said
@@ -81,7 +81,7 @@ final class RaceCountdownTests: XCTestCase {
 
     // MARK: - Race day
 
-    /// Not "0 weeks to Chicago", and not "1 week" either — it's today.
+    /// Not "0 weeks to Chicago", and not "1 week" either. It's today.
     func testRaceDayIsItsOwnState() {
         XCTAssertEqual(state("Chicago", date("2026-08-27")), .raceDay(race: "Chicago"))
         XCTAssertEqual(state("Chicago", date("2026-08-27")).subtitle(), "Race day: Chicago")
@@ -96,8 +96,8 @@ final class RaceCountdownTests: XCTestCase {
     // MARK: - A race already run
 
     /// Product call: past race day, the header stops counting entirely. A countdown that has
-    /// run out is the same defect as the hardcoded date — a number that reads as current
-    /// and isn't — and "0 weeks to Chicago" says the race is *this week*. The header states
+    /// run out is the same defect as the hardcoded date (a number that reads as current
+    /// and isn't) and "0 weeks to Chicago" says the race is *this week*. The header states
     /// the fact and points at the only move left: pick the next race.
     func testARaceAlreadyRunStopsCountingAndAsksForTheNextGoal() {
         XCTAssertEqual(state("Chicago", date("2026-08-26")), .past(race: "Chicago"))
@@ -127,8 +127,8 @@ final class RaceCountdownTests: XCTestCase {
     /// Progress renders before a plan exists. It says so, rather than inventing a race:
     /// the deleted constant was exactly that invention, and it looked authoritative.
     ///
-    /// And it says so neutrally (#101). "No goal yet — the coach proposes one" read as a
-    /// to-do list; between blocks, not training for anything is a choice, not a gap.
+    /// And it says so neutrally (#101). The old "no goal yet, the coach proposes one" line read
+    /// as a to-do list; between blocks, not training for anything is a choice, not a gap.
     func testNoGoalSaysSoRatherThanGuessingARace() {
         XCTAssertEqual(state(nil, nil), .noGoal)
         XCTAssertEqual(state(nil, nil).subtitle(), "No race on the calendar, just running")
@@ -147,7 +147,7 @@ final class RaceCountdownTests: XCTestCase {
 
     /// `race_name` is nullable too. A dated goal with no name still counts down; the
     /// primitive borrows the "Race" placeholder the block review and the recap still use.
-    /// The three countdown headers never reach this path — they name the race first, and
+    /// The three countdown headers never reach this path. They name the race first, and
     /// `raceLabel` always has a distance to fall back on.
     func testUnnamedGoalStillCountsDown() {
         XCTAssertEqual(state(nil, date("2026-10-11")), .ahead(race: "Race", days: 45, weeks: 7))
@@ -186,7 +186,7 @@ final class RaceCountdownTests: XCTestCase {
     }
 
     /// The week count is derived from the day count, not measured again. That is the only
-    /// reason the two can't drift apart the way the three tabs did — so it is checked over a
+    /// reason the two can't drift apart the way the three tabs did, so it is checked over a
     /// run of days rather than at one point.
     func testWeeksAreAlwaysTheDayCountDividedAndRoundedUp() {
         for day in 1...70 {
@@ -273,7 +273,7 @@ final class RaceCountdownTests: XCTestCase {
                        "a goal with no distance at all reads as the marathon, as the projection does")
     }
 
-    /// A custom distance has no name to borrow, so it is spelled out — and in the athlete's
+    /// A custom distance has no name to borrow, so it is spelled out, and in the athlete's
     /// own unit, since nothing else on their screen is in the other one (#109).
     func testACustomDistanceIsSpelledOutInTheAthletesUnit() {
         XCTAssertEqual(label(goal(name: "Comrades", meters: 30_000), units: .km), "Comrades · 30.0 km")
@@ -290,7 +290,7 @@ final class RaceCountdownTests: XCTestCase {
     }
 
     /// The role (#238) is You's line and nobody else's, so it is asked for rather than
-    /// assumed. An ordinary goal race has no role word — "goal" on a goal would be noise.
+    /// assumed. An ordinary goal race has no role word: "goal" on a goal would be noise.
     func testTheRoleRidesOnTheLabelOnlyWhenAskedFor() {
         let tuneUp = goal(name: "Turkey Trot", meters: 5_000, role: "tune_up")
         XCTAssertEqual(label(tuneUp), "Turkey Trot · 5K", "Plan and Progress ask without it")

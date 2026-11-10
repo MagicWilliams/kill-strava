@@ -4,7 +4,7 @@ import SwiftUI
 /// into it from before (#87).
 ///
 /// Pushed from `CoachHomeView`, which owns the list of conversations and the New chat button.
-/// The setup interview presents this screen directly with `onboarding: true` and no thread —
+/// The setup interview presents this screen directly with `onboarding: true` and no thread,
 /// see `threadID`.
 struct CoachView: View {
     var onboarding = false
@@ -190,7 +190,7 @@ struct CoachView: View {
                 thread = (try? await CoachThreadService.threads())?.first { $0.id == id }
             }
         }
-        // An intake sent while this tab was already alive — `load` has run, so hand it over
+        // An intake sent while this tab was already alive: `load` has run, so hand it over
         // here. `sendIntake` ignores one that has already gone.
         .onChange(of: store.intakeHandoff?.id) { _, _ in
             Task { await chat.sendIntake(runStore: store) }
@@ -266,7 +266,7 @@ struct CoachView: View {
         return said == 1 ? "1 message in this conversation" : "\(said) messages in this conversation"
     }
 
-    /// What the coach is carrying into this conversation — the previous one's recap and how
+    /// What the coach is carrying into this conversation: the previous one's recap and how
     /// many durable facts it holds (#87, mockup screen 2).
     ///
     /// The same two values that go to the model in `CoachContext.memory`, deliberately: a
@@ -620,7 +620,7 @@ struct CoachView: View {
     }
 }
 
-/// Staggered pulse — unmistakably "alive" while the coach works.
+/// Staggered pulse: unmistakably "alive" while the coach works.
 struct TypingDots: View {
     @State private var animating = false
 

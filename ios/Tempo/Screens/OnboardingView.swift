@@ -9,7 +9,7 @@ import SwiftUI
 /// The intake answers the structured questions by tap; the interview reflects them back,
 /// proposes the plan, and asks only what the form didn't.
 /// The coach's `complete_onboarding` tool flips `needsOnboarding`, and RootTabView
-/// swaps to the main app reactively — no callbacks needed here.
+/// swaps to the main app reactively. No callbacks needed here.
 ///
 /// The interview is never the only way out (#167). A coach that forgets to call
 /// `complete_onboarding` once shut a just-running athlete out of the app behind a chat with

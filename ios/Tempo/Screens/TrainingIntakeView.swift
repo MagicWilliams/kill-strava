@@ -21,7 +21,7 @@ struct TrainingIntakeView: View {
     @Environment(\.units) private var units
     @State private var answers: IntakeAnswers
     @State private var step: IntakeAnswers.Step = .situation
-    /// Issues are shown only after a Next tap that hit them — not while the athlete is
+    /// Issues are shown only after a Next tap that hit them: not while the athlete is
     /// still filling the step in.
     @State private var showIssues = false
     @State private var pickingDate = false
@@ -425,7 +425,7 @@ struct TrainingIntakeView: View {
         Calendar.current.date(byAdding: .day, value: 1, to: Calendar.current.startOfDay(for: .now)) ?? .now
     }
 
-    /// Where the calendar opens before a date is picked. Only a starting page — nothing is
+    /// Where the calendar opens before a date is picked. Only a starting page. Nothing is
     /// saved until the athlete taps a day.
     private static var defaultPickerDate: Date {
         Calendar.current.date(byAdding: .weekOfYear, value: 12, to: .now) ?? .now

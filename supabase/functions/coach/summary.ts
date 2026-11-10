@@ -3,7 +3,7 @@
 //
 // Pure, for the same reason history.ts is: this decides the SHAPE of what the app stores, and
 // every way it fails is silent. A thread summary is written to `coach_threads` once and then
-// read for months — by the athlete, on the Coach tab, and by the coach itself as the
+// read for months, by the athlete, on the Coach tab, and by the coach itself as the
 // "Picking up from" line of the next conversation. A recap that is actually a fenced code
 // block, or the word "null", or four paragraphs of prose, is not a crash: it is a wrong
 // sentence on a card, carried forward as fact.
@@ -65,7 +65,7 @@ function line(value: unknown, limit: number): string | null {
 ///
 /// Null covers everything that is not both fields present and non-empty: unparseable text, a
 /// missing key, a null, a number, "" or "   ". The thread then stays unsummarized and is
-/// offered to the next pass — which is the honest outcome, because a thread with a made-up
+/// offered to the next pass, which is the honest outcome, because a thread with a made-up
 /// recap looks exactly like one with a real recap.
 export function parseThreadSummary(reply: string | null | undefined): ThreadSummary | null {
   if (!reply) return null;

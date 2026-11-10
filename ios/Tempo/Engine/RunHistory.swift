@@ -1,11 +1,11 @@
 import Foundation
 
-/// Pure aggregation over the whole run archive — grouping, totals, streaks, records.
+/// Pure aggregation over the whole run archive: grouping, totals, streaks, records.
 ///
 /// Deliberately `RunSummary`-only. Every number here comes from the corrected Supabase
 /// rows the app already holds in memory (all 2,000+ of them), so the History screen
-/// renders instantly and never touches HealthKit or the network. Per-run series —
-/// splits, route, zones — stay in `RunDetailLoader`, which loads exactly one run.
+/// renders instantly and never touches HealthKit or the network. Per-run series (
+/// splits, route, zones) stay in `RunDetailLoader`, which loads exactly one run.
 ///
 /// The "fastest" records are *average pace over a whole run of at least N miles*, not a
 /// fastest split within a run. Those two are different numbers and conflating them would
@@ -15,7 +15,7 @@ import Foundation
 enum RunHistory {
 
     /// Training weeks run Mon–Sun. Held here rather than borrowed from `RunStore` so the
-    /// engine stays pure — no actor isolation, no store to construct in a test.
+    /// engine stays pure. No actor isolation, no store to construct in a test.
     static let calendar: Calendar = {
         var c = Calendar(identifier: .iso8601)
         c.firstWeekday = 2
@@ -31,7 +31,7 @@ enum RunHistory {
         let runs: [RunSummary]     // newest first
         let miles: Double
         let durationS: Int
-        /// Longest single run in the month — the bar scale for that month's rows.
+        /// Longest single run in the month: the bar scale for that month's rows.
         let maxMiles: Double
 
         var id: Date { start }
@@ -83,7 +83,7 @@ enum RunHistory {
     /// One year offered as a jump target on the history screen.
     struct YearMark: Identifiable, Equatable {
         let year: Int
-        /// The month to scroll to — the *newest* month of that year that survives whatever
+        /// The month to scroll to: the *newest* month of that year that survives whatever
         /// filter is active. Landing on a year means landing at its top, which is December
         /// in a full year and whatever is left in a sparse one.
         let anchor: Date
@@ -99,7 +99,7 @@ enum RunHistory {
     /// Takes the months the screen is *already showing* rather than the whole archive, and
     /// that is the whole trick: the rail composes with the filter for free. A year appears
     /// only if it has runs under the active filter, and its anchor is by construction a
-    /// section that exists on screen — so a jump can never land on nothing. Offering 2022
+    /// section that exists on screen, so a jump can never land on nothing. Offering 2022
     /// while "Half+" is active and then scrolling into an empty stretch would be worse than
     /// not offering 2022 at all.
     ///
@@ -170,7 +170,7 @@ enum RunHistory {
         var currentStreakDays: Int = 0
         var longestStreakDays: Int = 0
 
-        /// Every run that holds at least one record — the badge set for the history list.
+        /// Every run that holds at least one record: the badge set for the history list.
         var recordRunIDs: Set<UUID> = []
 
         var firstRun: Date?
@@ -189,7 +189,7 @@ enum RunHistory {
         r.totalDurationS = runs.reduce(0) { $0 + $1.durationS }
         r.firstRun = runs.map(\.start).min()
 
-        // Longest. Ties break to the earlier run — the first time you went that far is
+        // Longest. Ties break to the earlier run. The first time you went that far is
         // the one worth remembering.
         r.longestRun = runs.max { a, b in
             a.miles == b.miles ? a.start > b.start : a.miles < b.miles
@@ -221,7 +221,7 @@ enum RunHistory {
     /// Consecutive calendar days carrying at least one run.
     ///
     /// The current streak counts back from today, but a day with no run *yet* doesn't
-    /// break it — an evening runner would otherwise watch the streak read 0 all morning
+    /// break it. An evening runner would otherwise watch the streak read 0 all morning
     /// and then jump back. It only breaks once yesterday is also empty.
     static func streaks(
         _ runs: [RunSummary],
@@ -287,7 +287,7 @@ enum RunHistory {
 
     /// A year of the wall, laid out as week columns of 7 weekday rows (Mon…Sun).
     ///
-    /// `nil` slots are days outside the year — the leading gap before Jan 1 lands on its
+    /// `nil` slots are days outside the year. The leading gap before Jan 1 lands on its
     /// real weekday, and the trailing gap after Dec 31. Without them the grid would shear
     /// by a day or two per year and the weekday rows would stop meaning anything.
     struct YearBlock: Identifiable, Equatable {

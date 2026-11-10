@@ -3,8 +3,8 @@ import WidgetKit
 
 /// Writes the widget snapshot from `RunStore` state and asks WidgetKit to redraw (#76).
 ///
-/// The adapter only: every decision — which runs count toward which week, which session is
-/// "next", what happens to the coach line — is in `WidgetSnapshot.build`, which is pure and
+/// The adapter only: every decision (which runs count toward which week, which session is
+/// "next", what happens to the coach line) is in `WidgetSnapshot.build`, which is pure and
 /// tested. This file just maps app models onto its inputs.
 extension RunStore {
 
@@ -38,7 +38,7 @@ extension RunStore {
         return WidgetSnapshot.CoachLine(text: text, day: session.day)
     }
 
-    /// The plan's weekly mileage target for the plan week containing `date` — the same week
+    /// The plan's weekly mileage target for the plan week containing `date`. The same week
     /// arithmetic as `currentPlanWeek`, so the gauge measures against the number the coach
     /// is given as `week_target_mi`.
     private func planTargetMiles(at date: Date) -> Double? {

@@ -3,7 +3,7 @@ import SwiftUI
 /// Overlapping runs, one pair at a time (#30).
 ///
 /// Two live runs whose clocks overlap, side by side, and the athlete says which one is the
-/// record — or that both are. Nothing is preselected and nothing is highlighted as the
+/// record, or that both are. Nothing is preselected and nothing is highlighted as the
 /// "likely" answer: on 2023-11-19 every plausible rule picks the watch-left-running blob over
 /// the actual marathon, and a highlighted guess is a rule wearing a UI.
 ///
@@ -16,7 +16,7 @@ struct OverlapReviewView: View {
 
     @State private var working = false
     @State private var failed = false
-    /// Count when the screen opened, for "3 of 108" — the queue shrinks as you go.
+    /// Count when the screen opened, for "3 of 108". The queue shrinks as you go.
     @State private var startCount = 0
 
     var body: some View {

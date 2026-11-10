@@ -4,7 +4,7 @@ import SwiftUI
 /// (#87, mockup screen 1).
 ///
 /// The Coach tab used to open straight into one endless transcript. Nothing was findable and
-/// nothing ever ended — and because the coach only ever sees the last 24 messages, the parts
+/// nothing ever ended, and because the coach only ever sees the last 24 messages, the parts
 /// that scrolled away were gone to it as well. This screen is the other half of that fix: a
 /// thread has a title, a recap and the changes it made, so last Tuesday's pacing decision is
 /// one tap away instead of a thousand lines up.
@@ -27,7 +27,7 @@ struct CoachHomeView: View {
     @State private var starting = false
     /// What this screen has already opened a conversation for, so popping back to the list
     /// cannot bounce the athlete straight into a thread again. A focus `CoachView` could not
-    /// find — a message older than the page it loaded — stays set, and without this the pop
+    /// find (a message older than the page it loaded) stays set, and without this the pop
     /// would re-push it forever.
     @State private var routed: Set<UUID> = []
 
@@ -52,14 +52,14 @@ struct CoachHomeView: View {
         // coming back here is the moment that recap can be written and shown.
         .task { await reload() }
         // Coming back from a thread leaves this screen alive underneath the pop, so no
-        // `.task` fires — the same reason the ledger row never refreshed on the old Coach
+        // `.task` fires. The same reason the ledger row never refreshed on the old Coach
         // tab. The recap the thread just earned is the whole point of looking again.
         .onChange(of: router.path.count) { _, count in
             guard count == 0 else { return }
             Task { await reload() }
         }
         .onChange(of: router.coachFocus) { _, _ in openConversationIfNeeded() }
-        // An intake sent while this screen was already up — the form is presented over it.
+        // An intake sent while this screen was already up: the form is presented over it.
         .onChange(of: store.intakeHandoff?.id) { _, _ in openConversationIfNeeded() }
         // Agreeing is what lets a waiting intake go and the owed recaps get written.
         .onChange(of: consent.maySend) { _, maySend in
@@ -91,7 +91,7 @@ struct CoachHomeView: View {
             }
             // The write-ups come last and on their own: each is a model round trip, and the
             // list must be on screen before them. A thread that gains a recap here shows it
-            // on the next appearance — or on a pull to refresh, if the athlete is watching.
+            // on the next appearance, or on a pull to refresh, if the athlete is watching.
             if await CoachThreadService.summarizePending(rows, context: store.coachContext()) {
                 threads = (try? await CoachThreadService.threads()) ?? rows
             }
@@ -110,7 +110,7 @@ struct CoachHomeView: View {
     ///    holds a message, so the live conversation is the honest guess and the transcript
     ///    scrolls to the message if it is in the page it loads.
     ///  - **A just-sent training intake** (#102), whose first turn is the athlete's answers.
-    ///    Those have to reach the coach, and `ChatStore.load` is what sends them — so a
+    ///    Those have to reach the coach, and `ChatStore.load` is what sends them, so a
     ///    conversation has to be open for it to happen at all.
     ///  - **A prefilled draft** (#233), from "Change race or date" on the Projected finish
     ///    page. Unlike the intake, nothing is sent: the composer opens with the sentence in
@@ -139,12 +139,12 @@ struct CoachHomeView: View {
     /// Start a new conversation and open it.
     ///
     /// The thread is created before the push so the transcript it opens on is scoped from
-    /// its first message — a chat that starts unscoped writes rows no thread can see.
+    /// its first message. A chat that starts unscoped writes rows no thread can see.
     ///
     /// The write-up of the conversation being left is awaited here rather than backgrounded,
     /// and the order is the reason: a thread is owed a recap once a *newer* one exists, so
     /// the new thread has to be created first, and the recap has to be written before the
-    /// push because it is what the new conversation opens with — on screen as "Picking up
+    /// push because it is what the new conversation opens with, on screen as "Picking up
     /// from", and in the coach's own context as `memory.picking_up`. Pushing first would
     /// send the opening turn to a coach that had not been told what the last conversation
     /// settled. It is one model round trip, bounded by `Supa`'s 15s request timeout, and the

@@ -410,7 +410,7 @@ final class RecorderStateTests: XCTestCase {
     }
 
     /// Paused at 28:20 to refill a bottle, killed at 30:00. The pause he started is the pause
-    /// that continues — not a second, overlapping one.
+    /// that continues, not a second, overlapping one.
     func testCrashWhilePausedKeepsTheOriginalPause() {
         let recovering = apply(started(), .pause(.manual(.liveScreen), at: t(1700)),
                                .interrupted(.appTerminated, at: t(1800)))
@@ -424,7 +424,7 @@ final class RecorderStateTests: XCTestCase {
     }
 
     /// The session didn't survive. "Save what we have" ends the run at the last instant it
-    /// was recorded — not hours later when he reopened the app.
+    /// was recorded, not hours later when he reopened the app.
     func testSaveWhatWeHaveEndsAtTheLastKnownInstant() {
         let ended = apply(started(), .interrupted(.appTerminated, at: t(1800)),
                           .endRequested(.liveScreen, at: t(9000)))
@@ -451,7 +451,7 @@ final class RecorderStateTests: XCTestCase {
 
     // MARK: - The target
 
-    /// David, #125: today's target on screen, with the option to hide it and run free — and
+    /// David, #125: today's target on screen, with the option to hide it and run free, and
     /// change his mind.
     func testTheTargetHidesAndComesBackMidRun() {
         var s = started()
@@ -478,7 +478,7 @@ final class RecorderStateTests: XCTestCase {
     // MARK: - The crash snapshot (#115)
 
     /// #115 persists this struct every ten seconds and rehydrates it after iOS kills the app.
-    /// Every phase, and a messy mid-run state, must come back exactly — and read the same clocks.
+    /// Every phase, and a messy mid-run state, must come back exactly, and read the same clocks.
     func testEveryStateSurvivesTheSnapshotCodec() throws {
         let messy = apply(started(.race, autoPause: true),
                           .pause(.auto, at: t(600)), .resume(.auto, at: t(640)),

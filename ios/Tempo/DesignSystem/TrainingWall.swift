@@ -1,10 +1,10 @@
 import SwiftUI
 
-/// Every day of training as one small square — five years of running on one screen.
+/// Every day of training as one small square: five years of running on one screen.
 ///
 /// Cells are ~4.5pt so a full 53-week year fits the card width without scrolling, which is
 /// the whole point: you see the shape of a season, the injury gap, the taper. That's far
-/// below a tappable target, so selection is a *scrub* rather than a tap — drag across the
+/// below a tappable target, so selection is a *scrub* rather than a tap, drag across the
 /// wall and the readout above follows your finger. The readout itself is a real 44pt row,
 /// and that's what opens the run.
 struct TrainingWall: View {
@@ -49,7 +49,7 @@ struct TrainingWall: View {
     /// A year is 371 cells; six years of archive would be ~2,200 SwiftUI views in one
     /// scroll section, each with its own identity and layout pass, for something that is
     /// visually one picture. Canvas draws the whole year in a single immediate-mode pass.
-    /// Nothing is lost: hit testing was never per-cell — the scrub already maps a finger
+    /// Nothing is lost: hit testing was never per-cell. The scrub already maps a finger
     /// position onto a cell arithmetically.
     private func grid(_ block: RunHistory.YearBlock) -> some View {
         let width = CGFloat(block.weeks.count) * (cell + gap) - gap
@@ -84,7 +84,7 @@ struct TrainingWall: View {
     /// target would be unusable and shrinking the year to make one wouldn't be a wall.
     ///
     /// One selection tick per cell crossed. At 4.5pt a cell is smaller than the finger
-    /// covering it, so the readout above is the only thing telling you where you are —
+    /// covering it, so the readout above is the only thing telling you where you are,
     /// and looking up to check costs you your place. The haptic is what lets you feel the
     /// grid instead of watching it, which is the difference between scrubbing a year and
     /// hunting for a day.

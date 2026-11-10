@@ -3,7 +3,7 @@ import SwiftUI
 /// "What changed": every write the coach has actually made, newest first (#88).
 ///
 /// The entries come from `Engine/ChangeLedger`; this screen only lays them out and routes the
-/// two links each one carries — to the thing it touched, and back to the chat message that
+/// two links each one carries, to the thing it touched, and back to the chat message that
 /// proposed it.
 struct ChangesView: View {
     @EnvironmentObject private var store: RunStore
@@ -155,7 +155,7 @@ struct ChangesView: View {
             if let run = ChangeLedger.run(for: target, in: store.runs) {
                 linkButton("Open run", symbol: "figure.run") { router.openRun(run) }
             } else {
-                // Superseded as a duplicate, or not loaded yet — say so instead of guessing.
+                // Superseded as a duplicate, or not loaded yet. Say so instead of guessing.
                 Text("Run not in your log")
                     .font(Tokens.Font.ui(12)).foregroundStyle(Tokens.Palette.textTertiary)
             }

@@ -1,18 +1,18 @@
-// Tempo plan engine — /plan
+// Tempo plan engine: /plan
 //
 // Called after the athlete confirms the coach's goal proposal (create_plan card).
 // Pipeline (spec: progress.md "Plan-engine spec"):
 //   1. Read the athlete's real runs + settings via their JWT (RLS-scoped).
 //   2. Deterministic feature extraction (volume, trend, consistency, long run, fitness).
-//   3. Claude proposes the plan SHAPE inside a forced tool schema — phases emerge from
+//   3. Claude proposes the plan SHAPE inside a forced tool schema, phases emerge from
 //      what's missing, never a fixed 4-phase template.
 //   4. Deterministic generator turns the shape into weeks + sessions with real paces.
 //   5. Write goal/plan/weeks/sessions; return a summary.
 //
-// The LLM never writes sessions or paces — it tunes shape within bounds; math is code.
+// The LLM never writes sessions or paces. It tunes shape within bounds; math is code.
 //
 // Since #104 the request may also carry the intake's goal fields (#102): distance /
-// distance_m, course_type, goal_type, started_week, preferences — the same names as the
+// distance_m, course_type, goal_type, started_week, preferences. The same names as the
 // goals columns they land in. All optional for a regeneration of the active goal's race,
 // which carries them over. A NEW race must name its distance: since #184 a request with none
 // gets 400 `distance_required` instead of a marathon plan. Since #238 it may carry
@@ -35,7 +35,7 @@ const MODEL = "claude-sonnet-5";
 
 // Same scar as coach/index.ts (#16): Sonnet 5 thinks by default, and thinking is drawn from
 // the SAME max_tokens budget as the output. The old ceiling of 1500 was sized for a model
-// that didn't think — one deliberation over phase math and there is nothing left to emit the
+// that didn't think. One deliberation over phase math and there is nothing left to emit the
 // tool call with, and this function's failure is a bare 502 "no shape proposed" with no plan
 // built. Rarer than the coach bug only because plans are created rarely, not because it was
 // any less broken.
@@ -128,7 +128,7 @@ Deno.serve(async (req) => {
     const uid = userData.user.id;
 
     const body = JSON.parse(rawBody) as Record<string, unknown>;
-    // Null for a "just finish" goal — checked against goal_type once the goal is resolved.
+    // Null for a "just finish" goal: checked against goal_type once the goal is resolved.
     const goal_time_s = typeof body.goal_time_s === "number" && body.goal_time_s > 0 ? Math.round(body.goal_time_s) : null;
     const race_name = (body.race_name ?? null) as string | null;
     const race_date = body.race_date as string;
@@ -165,7 +165,7 @@ Deno.serve(async (req) => {
     const raceMi = goal.distance.meters / MI;
 
     const since = new Date(Date.now() - 120 * 86400_000).toISOString();
-    // `.is("superseded_by", null)` — duplicates retired by migration 0008 would otherwise
+    // `.is("superseded_by", null)`, duplicates retired by migration 0008 would otherwise
     // inflate every volume feature the plan shape is built from.
     const { data: runs } = await supa.from("runs")
       .select("start_time,distance_m,duration_s,avg_hr")
@@ -174,27 +174,27 @@ Deno.serve(async (req) => {
     const features = extractFeatures((runs ?? []) as RunRow[], raceMi);
 
     // Mid-block (#102): the athlete is in week `started_week` of a block already under way.
-    // Block week 0 is backdated so plan-week coordinates — and "Week 9 of 16" in the app,
-    // which counts from plans.start_date — stay true. The weeks before it are never created.
+    // Block week 0 is backdated so plan-week coordinates (and "Week 9 of 16" in the app,
+    // which counts from plans.start_date) stay true. The weeks before it are never created.
     const firstWeekIndex = goal.started_week ? goal.started_week - 1 : 0;
     const startMonday = mondayOf(now);
     startMonday.setUTCDate(startMonday.getUTCDate() - 7 * firstWeekIndex);
     const raceWeekIndex = racePlacement(startMonday, race_date).weekIndex;
     const weeksToRace = raceWeekIndex - firstWeekIndex;
-    // `none` has no weeks to be too few of — see `raceTooCloseForPlan` (#140).
+    // `none` has no weeks to be too few of: see `raceTooCloseForPlan` (#140).
     if (raceTooCloseForPlan(prefs.planStyle, weeksToRace)) {
       return Response.json({ error: "race is too close for a plan" }, { status: 400 });
     }
-    // TRAINING weeks only — the shape excludes race week by contract, and generate()
+    // TRAINING weeks only: the shape excludes race week by contract, and generate()
     // appends it. Read this as "the plan is one week longer than the shape it came from".
     const planWeeks = weeksToRace;
     const taperWeeks = Math.min(taperWeeksFor(distance, raceWeekIndex), planWeeks - 1);
     const anchorWeeklyMi = firstWeekIndex > 0 ? features.vol_4wk_avg_mi : null;
-    // Paces come from the target time, or — for a finish goal — from current fitness, or a
+    // Paces come from the target time, or (for a finish goal) from current fitness, or a
     // conservative default. The basis is never stored as the goal's time.
     const basis = paceBasis(goal_time_s, raceMi, features.riegel_current_race_s);
     const paces = trainingPaces(basis.seconds, raceMi);
-    // Riegel current fitness at the race distance, or null — never derived from the goal (#205).
+    // Riegel current fitness at the race distance, or null, never derived from the goal (#205).
     const projected = projectedFinishS(features);
     const targetLine = goal_time_s != null
       ? `target ${fmtClock(goal_time_s)}`
@@ -333,7 +333,7 @@ features: ${JSON.stringify(features, null, 1)}
     const { error: sErr } = await supa.from("sessions").insert(sessionRows);
     if (sErr) { await cleanup(plan.id); throw sErr; }
 
-    // New plan fully exists — NOW retire everything that isn't it.
+    // New plan fully exists: NOW retire everything that isn't it.
     await retireOthers(plan.id);
 
     return Response.json({

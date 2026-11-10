@@ -5,7 +5,7 @@ import XCTest
 ///
 /// Until #144, `RunDetailLoader.compute` smoothed route altitudes with a ±5 centred mean and
 /// then summed every upward step of that curve. There was no dead band, so whatever altitude
-/// noise survived the mean was counted as climb — while a run recorded by Tempo itself went
+/// noise survived the mean was counted as climb, while a run recorded by Tempo itself went
 /// through `TrackMath`'s trailing mean and 3 m hysteresis. Same road, two answers, and the
 /// imported one inflated. David chose one method everywhere (decision on #144, 2026-10-12),
 /// knowing the ELEV GAIN on every historical run page goes down.
@@ -18,7 +18,7 @@ final class ImportedElevationTests: XCTestCase {
 
     // MARK: - Fixtures
 
-    /// SplitMix64 — deterministic noise, so a red test reproduces bit for bit.
+    /// SplitMix64: deterministic noise, so a red test reproduces bit for bit.
     private struct SeededRNG: RandomNumberGenerator {
         var state: UInt64
         mutating func next() -> UInt64 {
@@ -77,7 +77,7 @@ final class ImportedElevationTests: XCTestCase {
         XCTAssertGreaterThan(before.gainM, 20, "the inflation being removed is real")
     }
 
-    /// A real hill must survive the dead band in full — the hysteresis is not allowed to
+    /// A real hill must survive the dead band in full: the hysteresis is not allowed to
     /// buy a flat road by shaving real climbs. Both with clean-ish and with ±3 m noise.
     func testARealThirtyMetreHillReadsThirtyMetres() {
         for (noise, seed) in [(1.0, UInt64(30)), (3.0, UInt64(31))] {

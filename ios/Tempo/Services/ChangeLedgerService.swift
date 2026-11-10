@@ -32,12 +32,12 @@ enum ChangeLedgerService {
             return record.action.run_id.flatMap(UUID.init(uuidString:))
         })
         // The snapshots only add a "before" to a run's first amendment. Losing them costs a
-        // number, not the ledger — so a failure here degrades instead of throwing.
+        // number, not the ledger, so a failure here degrades instead of throwing.
         let recorded = (try? await recordedSnapshots(for: Array(runIDs))) ?? [:]
         return ChangeLedger.entries(from: records, recorded: recorded, units: units)
     }
 
-    /// All applied rows, a page at a time — the same 1,000-row PostgREST cap that hid
+    /// All applied rows, a page at a time. The same 1,000-row PostgREST cap that hid
     /// David's oldest runs (#48) would otherwise quietly drop the oldest changes here.
     private static func appliedRecords() async throws -> [ChangeLedger.Record] {
         var rows: [Row] = []

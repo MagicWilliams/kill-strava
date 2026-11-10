@@ -13,7 +13,7 @@ import Foundation
 /// hundredth), so the run is saved exactly as counted and never marked as edited.
 extension PostRun {
 
-    /// 0.00 to 99.99. Zero is "no reading" — the run keeps the step count; nobody's treadmill
+    /// 0.00 to 99.99. Zero is "no reading". The run keeps the step count; nobody's treadmill
     /// run is a hundred miles or km.
     static let consoleHundredths = 0...9_999
 
@@ -29,7 +29,7 @@ extension PostRun {
 
     /// Tap-to-type: what he typed, as hundredths, or nil to keep the value he had.
     ///
-    /// Takes "5", "5.2", "5.25", ".8" and a comma for the decimal point ("5,25") — the decimal
+    /// Takes "5", "5.2", "5.25", ".8" and a comma for the decimal point ("5,25"). The decimal
     /// pad shows whichever his region uses. More decimals than two are rounded; the console
     /// shows two. Blank, not a number, negative or over the range keeps the old value rather
     /// than guessing what he meant.
@@ -59,7 +59,7 @@ extension PostRun {
     }
 
     /// The distance the summary shows while he edits: the console's when it is a correction,
-    /// else the step count — so the screen never shows a number the save would not write.
+    /// else the step count, so the screen never shows a number the save would not write.
     static func shownDistanceM(estimateM: Double, consoleHundredths: Int?, units: Units) -> Double {
         let console = consoleMeters(consoleHundredths, units: units)
         guard let c = TreadmillDistance.correction(consoleM: console, estimateM: estimateM, units: units) else {

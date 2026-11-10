@@ -4,7 +4,7 @@ import SwiftUI
 /// The width probe behind the sideways-scroll tests.
 ///
 /// 2026-10: a `Card` holding a bare `HStack { label; Spacer(); trailing }` can report a width
-/// a float ulp past what it was offered — the HStack hands back the sum of its parts, and
+/// a float ulp past what it was offered. The HStack hands back the sum of its parts, and
 /// third-of-a-point text widths don't add up exactly. Any text-only card in the same column
 /// then rounds that up to a whole device pixel and the page can be dragged sideways (#74).
 ///

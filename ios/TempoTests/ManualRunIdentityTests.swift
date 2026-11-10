@@ -6,8 +6,8 @@ import XCTest
 /// `applyAdd` used to mint a fresh `UUID()` for `external_id` on every call, so the same
 /// coach proposal confirmed twice inserted two rows: the unique constraint saw strangers, and
 /// the athlete's week silently gained a run it never contained. Same failure shape as the
-/// 2026-07-10 Garmin re-export `RunDedupeTests` pins — nothing crashes, a number is just
-/// wrong — which is why the derivation lives in a pure function with these tests under it.
+/// 2026-07-10 Garmin re-export `RunDedupeTests` pins (nothing crashes, a number is just
+/// wrong), which is why the derivation lives in a pure function with these tests under it.
 final class ManualRunIdentityTests: XCTestCase {
 
     func testSameProposalYieldsTheSameID() {
@@ -29,7 +29,7 @@ final class ManualRunIdentityTests: XCTestCase {
 
     func testSurvivesARoundTripThroughStorage() throws {
         // The relaunch path: the card comes back from `coach_messages`, so the UUID has been
-        // through Postgres and back. `uuidString` is canonical, but pin it — the whole fix
+        // through Postgres and back. `uuidString` is canonical, but pin it. The whole fix
         // rests on the restored card deriving the id its first Confirm already wrote.
         let card = UUID()
         let restored = UUID(uuidString: card.uuidString.lowercased())

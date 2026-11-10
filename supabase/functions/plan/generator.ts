@@ -1,4 +1,4 @@
-// Tempo plan generator — the deterministic half of /plan.
+// Tempo plan generator: the deterministic half of /plan.
 //
 // Split out of index.ts (#63) for one reason: it is pure, and pure code can be pinned by a
 // test. The week arithmetic here decides whether the athlete's plan actually reaches the
@@ -6,7 +6,7 @@
 // HTTP handler, the Supabase reads and the Claude call; everything below is arithmetic.
 //
 // #104 widened it from "every plan is a marathon" to every distance from the mile up. What
-// changes with distance — taper, long-run cap, volume band, workout mix — lives in one table
+// changes with distance (taper, long-run cap, volume band, workout mix) lives in one table
 // (DISTANCES) rather than in prompt prose, because prose is a suggestion to the model and
 // the table is a fact the tests can hold.
 
@@ -49,7 +49,7 @@ export function fmtClock(sec: number): string {
 
 // ── Pace basis: what the paces are derived from ───────────────────────────────
 // A "just finish" goal (#102 goal_type `finish`) has no target time, and every pace in the
-// plan used to be derived from one. The answer is NOT to invent a time and store it — the
+// plan used to be derived from one. The answer is NOT to invent a time and store it. The
 // goal row keeps goal_time_seconds null, because a made-up 4:30 on the goal would then be
 // read back as the athlete's ambition by the coach, the projection and the race recap.
 // Instead the paces get a basis of their own, and the rationale says what it was.
@@ -58,12 +58,12 @@ export function fmtClock(sec: number): string {
 /// athlete's fastest of eight weeks, not a typical one. 3% slower keeps a finish block honest.
 export const FITNESS_MARGIN = 1.03;
 /// With no runs to read at all, paces start from roughly a 5-hour-marathon effort (easy
-/// ≈ 12:00/mi) scaled to the race distance — slow enough to be safe for a new runner, and
+/// ≈ 12:00/mi) scaled to the race distance, slow enough to be safe for a new runner, and
 /// replaced the first time the plan is regenerated with real runs on file.
 export const DEFAULT_BASIS_MARATHON_S = 5 * 3600;
 
 export interface PaceBasis {
-  /// The finish time training paces are derived from — never written to the goal.
+  /// The finish time training paces are derived from: never written to the goal.
   seconds: number;
   source: "goal" | "fitness" | "default";
   /// Athlete-facing sentence for the rationale; null when the athlete gave a target.
@@ -142,7 +142,7 @@ export interface DistanceProfile {
   /// The 10K/15K row's single taper week is a light trim (0.85), which is how "~10 days"
   /// fits a plan that only knows whole weeks.
   taperWeeks: number;
-  /// Taper for a block under 10 training weeks — only the marathon shortens (2 → 1), which
+  /// Taper for a block under 10 training weeks: only the marathon shortens (2 → 1), which
   /// is the rule the prompt carried before this table existed.
   shortBlockTaperWeeks: number;
   /// Each taper week's volume as a fraction of peak; the last entry repeats.
@@ -150,7 +150,7 @@ export interface DistanceProfile {
   /// Hard ceiling on any long run, whatever the shape asks for.
   longRunCapMi: number;
   /// Typical peak weekly volume. The top is enforced (never below the athlete's own current
-  /// volume — a 60-mpw runner training for a 5K is not cut to 55); the bottom is guidance to
+  /// volume. A 60-mpw runner training for a 5K is not cut to 55); the bottom is guidance to
   /// the model only, because forcing volume UP over an unsafe ramp is worse than a light block.
   peakBandMi: [number, number];
   /// Quality session distance including warm-up and cool-down.
@@ -229,7 +229,7 @@ export const DISTANCES: Record<DistanceKey, DistanceProfile> = {
   },
   marathon: {
     key: "marathon", meters: 42195,
-    // 2 taper weeks + race week ≈ 21 days on a 10+ week block, 14 on a shorter one — the
+    // 2 taper weeks + race week ≈ 21 days on a 10+ week block, 14 on a shorter one. The
     // same "2 if total ≥ 10, else 1" rule the shape prompt has always given the model.
     taperWeeks: 2, shortBlockTaperWeeks: 1, taperScale: [0.72, 0.55, 0.4],
     longRunCapMi: 22, peakBandMi: [35, 85], qualityMi: 5.5,
@@ -248,7 +248,7 @@ export function taperWeeksFor(profile: DistanceProfile, blockTrainingWeeks: numb
 }
 
 export interface ResolvedDistance {
-  /// The label written to `goals.distance` — one of the table keys, or "custom".
+  /// The label written to `goals.distance`. One of the table keys, or "custom".
   label: DistanceKey | "custom";
   meters: number;
   /// The table row the plan is shaped by. For a custom distance, the nearest row, with the
@@ -318,8 +318,8 @@ const COURSE_ALIASES: Record<string, CourseType> = {
 const slug = (v: unknown) => typeof v === "string" ? v.trim().toLowerCase().replace(/[^a-z0-9]+/g, "_") : "";
 
 /// Read `goals.preferences` without trusting it. Before migration 0013 the column does not
-/// exist (raw is undefined); after it, old goals carry null. Either way — and for any field
-/// that is missing, misspelled or out of range — the answer is today's behavior.
+/// exist (raw is undefined); after it, old goals carry null. Either way (and for any field
+/// that is missing, misspelled or out of range) the answer is today's behavior.
 /// `courseColumn` is `goals.course_type`, which outranks the copy inside the jsonb.
 export function readPreferences(raw: unknown, courseColumn?: unknown): Preferences {
   const p = raw && typeof raw === "object" && !Array.isArray(raw) ? raw as Record<string, unknown> : {};
@@ -401,7 +401,7 @@ export function normalizeShape(shape: Shape, profile: DistanceProfile, ctx: {
 
 /// Which weeks carry the big long runs (20+ mi marathon, 12+ mi half). A hard constraint:
 /// exactly `count` weeks, spread evenly across the peak phase, borrowing the latest build
-/// (then base) weeks only when peak is too short to hold them all — and never a taper week.
+/// (then base) weeks only when peak is too short to hold them all, and never a taper week.
 export function bigLongRunWeeks(weeks: { index: number; phase: string }[], count: number): number[] {
   if (count <= 0) return [];
   const byPhase = (name: string) => weeks.filter((w) => w.phase === name).map((w) => w.index);
@@ -421,7 +421,7 @@ export function bigLongRunWeeks(weeks: { index: number; phase: string }[], count
 
 /// The workout kinds a phase rotates through for this athlete.
 ///
-/// Hills join base and build when the course is rolling or hilly — unless the athlete named
+/// Hills join base and build when the course is rolling or hilly, unless the athlete named
 /// the workouts they will do and hills are not among them (their word outranks the course).
 /// An athlete who picks hills gets them on a flat course too. A pick list that empties a
 /// phase falls back to that phase's flavor of each thing they did pick, never to nothing.
@@ -489,11 +489,11 @@ export function generate(shape: Shape, opts: {
   /// Default: the marathon, i.e. every plan before #104.
   distance?: DistanceProfile;
   prefs?: Preferences;
-  /// Weekly volume of the athlete's last 4 real weeks — the "Today" every plan starts from.
+  /// Weekly volume of the athlete's last 4 real weeks: the "Today" every plan starts from.
   currentWeeklyMi?: number | null;
   /// Mid-block only: the first generated week runs at exactly this volume.
   anchorWeeklyMi?: number | null;
-  /// Appended to the shape's rationale — PaceBasis.note, when paces did not come from a
+  /// Appended to the shape's rationale: PaceBasis.note, when paces did not come from a
   /// target time. The athlete reads the rationale; that is where "why these paces" belongs.
   rationaleNote?: string | null;
 }) {
@@ -522,7 +522,7 @@ export function generate(shape: Shape, opts: {
         const taperIdx = rel - buildWeeks;
         target = norm.peak_weekly_mi * profile.taperScale[Math.min(taperIdx, profile.taperScale.length - 1)];
       } else if (anchored && rel === 0) {
-        target = norm.start_weekly_mi; // "begins there, at real volume" — no step-back either
+        target = norm.start_weekly_mi; // "begins there, at real volume". No step-back either
       } else {
         const f = buildWeeks <= 1 ? 1 : rel / (buildWeeks - 1);
         target = norm.start_weekly_mi + (norm.peak_weekly_mi - norm.start_weekly_mi) * f;
@@ -624,7 +624,7 @@ export function generate(shape: Shape, opts: {
   // ── Race week ───────────────────────────────────────────────────────────────
   // The shape covers TRAINING weeks only. propose_plan_shape says so in as many words
   // ("taper included, race week excluded") and its phase enum has no `race` member, so
-  // appending race week was always the generator's job — and until #63 nothing did it.
+  // appending race week was always the generator's job, and until #63 nothing did it.
   // A 13-week shape became a 13-week plan, which ends on the Sunday BEFORE the race:
   // David's Chicago block tapered to 2026-10-04 for an 11 Oct marathon and contained no
   // race-day session at all. The one week of a block with the least margin for being
@@ -650,7 +650,7 @@ export function generate(shape: Shape, opts: {
 
   return {
     weeks, sessions,
-    /// Block length including race week — and, mid-block, the weeks before the athlete
+    /// Block length including race week: and, mid-block, the weeks before the athlete
     /// joined, so the app reads "Week 9 of 16" rather than "Week 1 of 8".
     totalWeeks: race.weekIndex + 1,
     raceWeekIndex: race.weekIndex,
@@ -665,7 +665,7 @@ export type Generated = ReturnType<typeof generate>;
 /// arithmetic can work with: one taper week and at least one week of actual training.
 export const MIN_PLAN_WEEKS = 2;
 
-/// Whether a race is too close to build a plan for — the gate /plan answers with a 400.
+/// Whether a race is too close to build a plan for: the gate /plan answers with a 400.
 ///
 /// The week count alone used to decide it, which quietly made the two-week floor a floor on
 /// *goals*. "No plan, just coaching" writes no weeks and no sessions at all (`planWrites`),
@@ -680,7 +680,7 @@ export function raceTooCloseForPlan(style: PlanStyle, weeksToRace: number): bool
 
 /// What /plan writes besides the goal, by plan style (#102's "Do you want a plan?").
 ///
-/// - `full`: everything generate() made — today's behavior.
+/// - `full`: everything generate() made, today's behavior.
 /// - `weekly`: every week with its target and focus, but only the sessions that carry intent
 ///   (long runs, quality, the race). Easy days and strength are the athlete's to place.
 /// - `none`: nothing. The goal is the whole commitment; the coach coaches from it.

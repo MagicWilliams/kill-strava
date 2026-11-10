@@ -4,8 +4,8 @@ import XCTest
 
 /// Pins how Core Location's two permission axes collapse into "can this run be recorded
 /// outdoors" (#110). The recorder doesn't exist on a device yet, so these are written against
-/// the failure it is designed around: a run that *looks* recorded — a moving dot, a distance
-/// ticking up — built from approximate fixes that are kilometres off. The athlete finds out at
+/// the failure it is designed around: a run that *looks* recorded (a moving dot, a distance
+/// ticking up) built from approximate fixes that are kilometres off. The athlete finds out at
 /// the finish, when the splits are nonsense and the run can't be redone.
 final class LocationAccessTests: XCTestCase {
 
@@ -39,7 +39,7 @@ final class LocationAccessTests: XCTestCase {
 
     func testPreciseLocationOffBlocksAnOutdoorRunEvenWhenAllowed() {
         // The athlete tapped "Allow While Using App" but switched Precise off in the same
-        // prompt. Location is "authorized" — and useless for pace.
+        // prompt. Location is "authorized", and useless for pace.
         let state = access(.authorizedWhenInUse, .reducedAccuracy)
         XCTAssertFalse(state.canRecordOutdoors)
         XCTAssertFalse(state.canPrompt, "the system prompt won't come back; only Settings fixes this")

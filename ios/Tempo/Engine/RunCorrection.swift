@@ -35,7 +35,7 @@ enum RunCorrection {
     // MARK: - Inputs
 
     /// The run as it sits in `runs` before the correction. Codable because an amend card
-    /// pins it (`ProposedAction.based_on`) the first time it is applied — see `ChatStore`.
+    /// pins it (`ProposedAction.based_on`) the first time it is applied. See `ChatStore`.
     struct Recorded: Codable, Equatable {
         let distance_m: Int
         let duration_s: Int
@@ -242,8 +242,8 @@ enum RunCorrection {
 
     // MARK: - Totals (the coach before #206)
 
-    /// A card from a coach that still sends final totals. Taken as given — there is nothing
-    /// else to compute them from — but validated, and the pace is still code's.
+    /// A card from a coach that still sends final totals. Taken as given (there is nothing
+    /// else to compute them from) but validated, and the pace is still code's.
     static func amend(_ run: Recorded, distanceM: Int?, durationS: Int?, avgHR: Int?) throws -> Outcome {
         guard distanceM != nil || durationS != nil || avgHR != nil else { throw Rejection.nothingStated }
         if let distanceM, distanceM <= 0 { throw Rejection.notPositive("distance") }
