@@ -129,6 +129,61 @@ Full-screen **push** from Today's last-run card AND Progress → Recent runs row
 Later wishlist (explicitly deferred): watch laps, weather, PR detection, share card, HR drift.
 **Queued: onboarding interview** — David wants a full Q&A session before onboarding gets built (zones/max HR live there too).
 
+## Run grading spec (interviewed David 2026-11-10) — not built
+
+**The idea:** every running app leads with pace and distance. Tempo's log should lead with
+*was this the right workout*. Each run gets a colour: green (right), yellow (almost: too hot,
+or cut short), red (missed what it was for). Next to pace it shows the share of time spent in
+the right zone. Planned stage D ("completed runs get a verdict") becomes visible in the log.
+The rules in CLAUDE.md "Verdicts, estimates and missing data" govern all of it.
+
+1. **Intent comes from the data.** When a run has no planned session, the engine infers its
+   type from the run (intervals, tempo, long, easy). If that's inconclusive, the run is graded
+   as **easy**. An easy run only goes yellow or red for running too hard, and that weighs more
+   as a race gets closer.
+2. **Runs re-match.** The matcher currently claims a session by date alone. A run that clearly
+   isn't the planned session (a shakeout on an interval day) re-matches, and the session counts
+   as missed. Missed sessions feed a new **block status**: is this block going well? Missing too
+   many assigned runs means drifting from the block, not only from the goal. That becomes the
+   moment to recalibrate the goal for the race (see #251). The tone encourages: trust the
+   training, rest properly, and run the variety of sessions the plan agreed.
+3. **Cross-training appears in the log, in grey.** It's ungraded.
+4. **An estimated max HR is labelled "EST"** on everything it colours, with a call to action in
+   the app until a tested value replaces it.
+5. **What decides an easy run, in order:** heart rate, then pace inside the easy range, then RPE.
+6. **"Too slow" applies only to speed workouts** whose splits come in slower than assigned. A
+   slow easy or long run is fine in a marathon build.
+7. **The target zone mix depends on the goal and can be set per block.** When a block starts,
+   ask "how much easy running do you want? We recommend 75% of time in zones 1–2." The
+   recommended figure depends on the goal distance.
+8. **Display:** a coloured border on the log row, with the in-zone % next to pace (not
+   replacing it).
+9. **Scope:** only runs logged during an active block or plan get graded.
+10. **Rollup:** a weekly count ("4 green · 1 yellow") on Today and in the weekly brief (#53).
+11. **The athlete's tag re-grades the run as what it actually was.** It doesn't just grey it out.
+12. **A grade can be disputed with the coach.** The outcome is that override tag.
+
+**Constraints already in the code:** zones are calculated from Apple Health only when a run is
+opened (`Services/RunDetail.swift`), so grading the log needs a background scan and stored
+results (the `efforts_scanned_at` pattern, a migration David applies). `matchRunsToSessions()`
+in `Services/PlanData.swift` matches by date only. The journal (migration 0016) already holds
+RPE and feel tags, so it is the home for the override tag.
+
+**Build order** (one `agent-ready` issue each, once the open questions are answered):
+re-match → store zones per run → grade easy runs → grade quality sessions → border + in-zone %
+→ weekly rollup → override tag + coach dispute → block status → zone-mix setting at block start.
+
+**Still open:**
+- Runs outside an active block: no border at all, or the same grey as "ungraded"?
+- Re-match: silent with the one-line why, or a confirm card? Plan-engine rule: small changes
+  adapt automatically; anything that reshapes a week gets a confirm card.
+- Block status: what counts as "too many missed"? Key sessions (quality and long) only, or every
+  session? Over what window?
+- "Pushing too hard with a race coming": from which week does it start to weigh more (taper only,
+  or the last N weeks)?
+- Blocks already running, for David and for testers, never got the zone-mix question. Use the
+  per-distance default, or ask once?
+
 ## Plan-engine spec (interviewed David 2026-07-08, late)
 
 **Goal flow:** engine assesses real history first → coach opens with "here's what I think you should target and why" (maybe 3:15, maybe not) → David confirms via card → plan generates. No plan exists before that confirmation.
