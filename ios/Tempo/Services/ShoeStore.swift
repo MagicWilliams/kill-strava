@@ -5,7 +5,7 @@ import Supabase
 ///
 /// I/O only. Mileage, the retirement nudge, which default survives a retirement, and what a
 /// valid new pair looks like are all decided in `Engine/ShoeMileage.swift` and pinned there.
-/// Mileage is not read from here at all — it is summed from the runs `RunStore` already
+/// Mileage is not read from here at all. It is summed from the runs `RunStore` already
 /// holds, so it moves the moment a run syncs.
 ///
 /// ## Where the default lives
@@ -21,7 +21,7 @@ final class ShoeStore: ObservableObject {
     @Published private(set) var shoes: [Shoe] = []
     @Published private var storedDefaultID: UUID?
 
-    /// Read by the post-run picker too — see `ShoeMileage.resolvedDefault`.
+    /// Read by the post-run picker too: see `ShoeMileage.resolvedDefault`.
     static let defaultShoeKey = "shoes.defaultShoeID"
     /// Miles at which a pair is nudged toward retirement. Clamped by `ShoeMileage`.
     static let retirementMilesKey = "shoes.retirementMiles"

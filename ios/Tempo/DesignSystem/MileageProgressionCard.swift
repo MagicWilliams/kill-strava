@@ -1,7 +1,7 @@
 import SwiftUI
 import Charts
 
-/// Twelve training weeks as one line — the trajectory the weekly counter above it can't show.
+/// Twelve training weeks as one line: the trajectory the weekly counter above it can't show.
 ///
 /// Drag along the chart and the readout follows your finger, week by week; let go and it
 /// returns to this week. Strava's Progress chart is the model, and like the training wall
@@ -73,7 +73,7 @@ struct MileageProgressionCard: View {
         }
     }
 
-    /// Neutral on purpose. A week above average isn't good news and one below isn't bad —
+    /// Neutral on purpose. A week above average isn't good news and one below isn't bad,
     /// that depends on whether it was a build or a cutback, which this card can't know. And
     /// early in the current week the gap is mostly the calendar.
     @ViewBuilder private func versusAverage(_ week: MileageProgression.WeekPoint) -> some View {
@@ -193,7 +193,7 @@ struct MileageProgressionCard: View {
         // The plot area wipes in left to right; the axes are there from the start, so the
         // line reads as being drawn onto a frame rather than the whole card fading up.
         // The mask overhangs the plot because a week of zero sits *on* its bottom edge, and
-        // a mask cut exactly to the plot halves that point — the one week the chart most
+        // a mask cut exactly to the plot halves that point. The one week the chart most
         // needs to show plainly.
         .chartPlotStyle { plot in
             plot.mask(alignment: .leading) {

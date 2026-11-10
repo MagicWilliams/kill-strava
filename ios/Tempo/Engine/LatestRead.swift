@@ -4,7 +4,7 @@ import Foundation
 ///
 /// In training mode Today previews the takeaway for *today's session*, and only once the
 /// matcher has tied a run to it. With no plan there is no session, so that preview could
-/// never appear — the coach's reads were still being written on every opened run, and the
+/// never appear. The coach's reads were still being written on every opened run, and the
 /// home screen had no way to show one. This card shows the newest read there is, the way
 /// the widget carries its coach line forward, and says which run it is about.
 ///

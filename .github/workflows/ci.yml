@@ -93,3 +93,19 @@ jobs:
         run: deno test --allow-all supabase/tests/
       - name: Lint
         run: deno lint supabase/functions/ || true
+
+  # Separate from the iOS job on purpose: this is the one gate that can fail on a docs-only
+  # change, and waiting 20 minutes for a macOS runner to tell you about a comment is how a
+  # lint stops being run. Ubuntu, no toolchain, seconds.
+  voice:
+    name: Plain voice (comments and docs)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      # The scanner itself is tested: what counts as prose, and what the allowlist excuses,
+      # are the parts that decide whether the gate means anything (#267).
+      - name: Test the scanner
+        run: python3 -m unittest discover -s .github/scripts -p 'test_check_plain_voice.py'
+      - name: Check comments and docs
+        run: python3 .github/scripts/check_plain_voice.py

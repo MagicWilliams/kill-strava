@@ -5,7 +5,7 @@ import XCTest
 ///
 /// 2026-10-14, simulator, a fresh staging user: "Where are you right now?" → Just running for
 /// now → the coach interview. The coach opened by presenting 6 days a week and a Sunday long
-/// run as settled — the profile's column defaults, which nobody had said — asked a few
+/// run as settled (the profile's column defaults, which nobody had said) asked a few
 /// questions, said "I'll plan to weave in strength work alongside the running", and stopped.
 /// No `complete_onboarding`, no exit, the rest of the app unreachable, `onboarded_at` null.
 /// These pin the two halves of what the coach is handed: where the athlete started, and
@@ -88,7 +88,7 @@ final class OnboardingFactsTests: XCTestCase {
 
     // MARK: - Known, without defaults
 
-    /// The headline. A profile nobody has filled in reads 6 days, Sunday, "standard" — and
+    /// The headline. A profile nobody has filled in reads 6 days, Sunday, "standard", and
     /// none of that may be handed to the coach as something the athlete said.
     func testAFreshProfileKnowsNothingFromItsDefaults() {
         let known = OnboardingFacts.known(
@@ -111,7 +111,7 @@ final class OnboardingFactsTests: XCTestCase {
         XCTAssertNil(known["risk_tolerance"])
     }
 
-    /// Once the athlete answers — the interview records it, or a card is confirmed — it is
+    /// Once the athlete answers (the interview records it, or a card is confirmed) it is
     /// known, and only what they answered.
     @MainActor
     func testAnAnsweredSettingBecomesKnown() throws {

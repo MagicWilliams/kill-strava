@@ -2,8 +2,8 @@ import XCTest
 @testable import Tempo
 
 /// The projection is the single number on Progress that the athlete reads as a verdict on
-/// whether the block is working. It is also the jumpiest thing in the app — one fast
-/// parkrun moves it by minutes — so a quiet arithmetic drift here would look exactly like
+/// whether the block is working. It is also the jumpiest thing in the app (one fast
+/// parkrun moves it by minutes) so a quiet arithmetic drift here would look exactly like
 /// fitness, and be believed.
 ///
 /// These pin the rule itself, because `recomputeProjection` now reads it from here: if the
@@ -67,7 +67,7 @@ final class ProjectionHistoryTests: XCTestCase {
     func testTheSameRunCountsAgainWhenAskedOneDayEarlier() {
         let fast = run("2026-07-15", miles: 6, paceSec: 360)
         let slow = run("2026-07-16", miles: 6, paceSec: 480)
-        // 2026-08-26 minus 42 days is 2026-07-15 — the fast run is back inside.
+        // 2026-08-26 minus 42 days is 2026-07-15: the fast run is back inside.
         let best = ProjectionHistory.settingRun([slow, fast], asOf: date("2026-08-26"), calendar: cal)
         XCTAssertEqual(best?.id, fast.id)
     }
@@ -112,7 +112,7 @@ final class ProjectionHistoryTests: XCTestCase {
     // MARK: - The walking ceiling (#227)
 
     /// The incident itself: on 15 Oct 2026 the only run of 2.5 mi or more in six weeks was
-    /// 8.1 mi with a 10h24m wall clock — a watch left recording. "Fastest qualifying run"
+    /// 8.1 mi with a 10h24m wall clock. A watch left recording. "Fastest qualifying run"
     /// picked it because it was the only one, and the marathon projection read 36:06:09.
     func testAWatchLeftRunningCannotSetTheProjection() {
         let leftRunning = RunSummary(
@@ -127,7 +127,7 @@ final class ProjectionHistoryTests: XCTestCase {
         )
     }
 
-    /// Both sides of the ceiling. 20:00/mi exactly still counts — a run-walk is a run.
+    /// Both sides of the ceiling. 20:00/mi exactly still counts. A run-walk is a run.
     func testTheCeilingIsInclusiveAtTwentyMinutesAMile() {
         let atCeiling = run("2026-08-24", miles: 3, paceSec: 1_200)
         let justOver = run("2026-08-25", miles: 3, paceSec: 1_201)
@@ -150,8 +150,8 @@ final class ProjectionHistoryTests: XCTestCase {
 
     // MARK: - The extrapolation
 
-    /// A known effort to a known marathon time. Ten miles at 7:00/mi — the shape of a
-    /// solid tempo — Riegels out to just under 3:15, which is why David's goal is 3:15.
+    /// A known effort to a known marathon time. Ten miles at 7:00/mi (the shape of a
+    /// solid tempo) Riegels out to just under 3:15, which is why David's goal is 3:15.
     func testKnownEffortExtrapolatesToKnownMarathonTime() {
         let tempo = run("2026-08-24", miles: 10, paceSec: 420)
         let projected = ProjectionHistory.projection([tempo], asOf: now, raceMeters: marathon, calendar: cal)?.finishS
@@ -172,7 +172,7 @@ final class ProjectionHistoryTests: XCTestCase {
     }
 
     /// `recomputeProjection` picks with `min(by:)` over the newest-first store, which keeps
-    /// the first of equals — the newer run. This screen names that run out loud, so it has
+    /// the first of equals. The newer run. This screen names that run out loud, so it has
     /// to name the same one.
     func testTiesBreakToTheMoreRecentEffort() {
         let older = run("2026-08-01", miles: 5, paceSec: 420)
@@ -286,7 +286,7 @@ final class ProjectionHistoryTests: XCTestCase {
                  distance: distance, distance_m: distanceM)
     }
 
-    /// 15 Oct 2026: with a 5K goal on file, Progress quoted a projected finish of 4:18:04 —
+    /// 15 Oct 2026: with a 5K goal on file, Progress quoted a projected finish of 4:18:04,
     /// the projection was hardcoded to 26.2. Six miles at 9:00/mi is a 4:17:48 marathon and
     /// a 26:52 5K; asked about a 5K, it has to say the 5K.
     func testAFiveKGoalProjectsToFiveKNotToAMarathon() {
@@ -299,7 +299,7 @@ final class ProjectionHistoryTests: XCTestCase {
         XCTAssertEqual(marathonFinish ?? 0, 15_468, accuracy: 2, "4:17:48 — the number #185 was showing against a 5K")
     }
 
-    /// `distance_m` first, the label after, the marathon only with no goal at all — the same
+    /// `distance_m` first, the label after, the marathon only with no goal at all. The same
     /// reading race-day detection uses, so the projection and the recap agree on the race.
     func testTheRaceIsReadOffTheGoalAndOnlyNoGoalMeansMarathon() {
         XCTAssertEqual(ProjectionHistory.raceMeters(goal: goal(distance: "5k")), 5_000)
@@ -335,7 +335,7 @@ final class ProjectionHistoryTests: XCTestCase {
     }
 
     /// The device check on #185: with the stored value still the 4:18:04 marathon number, a
-    /// refresh rewrites it to the 5K — and the next refresh leaves it there instead of
+    /// refresh rewrites it to the 5K, and the next refresh leaves it there instead of
     /// flipping back.
     func testRefreshRewritesAMarathonNumberToTheFiveKAndThenHoldsIt() {
         let planGoal = UUID()

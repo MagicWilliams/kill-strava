@@ -2,14 +2,14 @@ import XCTest
 
 /// Walks the app and photographs it.
 ///
-/// The oldest constraint on this project is that nobody but David can see Tempo run — every
+/// The oldest constraint on this project is that nobody but David can see Tempo run. Every
 /// change ships as "compiles, tests pass, needs device check." A simulator pointed at the
 /// staging backend (see `SupabaseConfig`) removes the backend half of that. This removes the
 /// rest: a scripted tour that opens each screen and attaches a screenshot, so a UI change can
 /// be reviewed by looking at it.
 ///
 /// Deliberately in its own scheme (`TempoUI`). CI runs the `Tempo` scheme, and these need a
-/// booted simulator and a live backend — neither belongs in the gate that guards every PR.
+/// booted simulator and a live backend. Neither belongs in the gate that guards every PR.
 ///
 /// This is a tour, not an assertion suite. It fails only when a screen it expects to reach is
 /// unreachable; it does not police pixels. Screenshots land in the .xcresult bundle:

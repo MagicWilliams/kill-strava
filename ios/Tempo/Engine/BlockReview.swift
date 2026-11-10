@@ -1,6 +1,6 @@
 import Foundation
 
-/// A whole training block, read back — pure, no I/O (#100).
+/// A whole training block, read back, pure, no I/O (#100).
 ///
 /// A block is the plan's `start_date` through race day. Race day itself is **excluded** from
 /// every volume number, for the reason `RaceRecap.block` gives: the race is the result of the
@@ -9,11 +9,11 @@ import Foundation
 ///
 /// Distance-agnostic on purpose. Races run from the mile to the marathon (#102), and nothing
 /// here may assume 42,195 m: the race distance comes in as an argument, read off the goal
-/// (`RaceRecap.raceMeters`). What changes with distance is which tiles mean anything — a
+/// (`RaceRecap.raceMeters`). What changes with distance is which tiles mean anything. A
 /// count of 20-mile runs is the marathon block's signature and noise in a 5K block.
 ///
 /// `RaceRecap.block` (the sixteen weeks shown under a race recap) is built from the same
-/// pieces — `runs(in:)` and `raceMorningProjection` — so the two screens cannot disagree
+/// pieces (`runs(in:)` and `raceMorningProjection`) so the two screens cannot disagree
 /// about which runs a block holds or what the projection said on race morning.
 enum BlockReview {
 
@@ -61,7 +61,7 @@ enum BlockReview {
     struct Adherence: Equatable {
         let done: Int
         let planned: Int
-        /// Nil when nothing of this kind was planned — "0%" would read as a block that
+        /// Nil when nothing of this kind was planned: "0%" would read as a block that
         /// skipped every quality session rather than one that never had any.
         var fraction: Double? { planned > 0 ? Double(done) / Double(planned) : nil }
     }
@@ -90,7 +90,7 @@ enum BlockReview {
         let long: Adherence
         let taper: Taper?
         /// What the finish projection read the morning the block began, and on race morning.
-        /// Projected to the race's own distance — see `projection(_:morningOf:raceMeters:)`.
+        /// Projected to the race's own distance. See `projection(_:morningOf:raceMeters:)`.
         let projectedAtStartS: Int?
         let projectedRaceMorningS: Int?
 
@@ -146,7 +146,7 @@ enum BlockReview {
 
     // MARK: - Shared with RaceRecap.block
 
-    /// Runs from the start of `from`'s day up to — not including — race day.
+    /// Runs from the start of `from`'s day up to (not including) race day.
     static func runs(
         in runs: [RunSummary],
         from: Date,
@@ -191,7 +191,7 @@ enum BlockReview {
         let inBlock = runs(in: allRuns, from: blockStart, raceDay: raceStart, calendar: calendar)
 
         // Weeks: the plan's own seven-day stride from its start date, up to and including the
-        // week race day falls in. Not calendar weeks — the plan's `week_index` is counted from
+        // week race day falls in. Not calendar weeks. The plan's `week_index` is counted from
         // `start_date`, and the planned bars have to line up with it.
         let daysToRace = calendar.dateComponents([.day], from: blockStart, to: raceStart).day ?? -1
         let weekCount = daysToRace >= 0 ? daysToRace / 7 + 1 : 0

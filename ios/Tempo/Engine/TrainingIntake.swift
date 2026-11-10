@@ -1,7 +1,7 @@
 import Foundation
 
 /// "Start training" (#102): what the intake form collects, whether it is complete, and what
-/// it turns into on the way out — the goal + preferences payload `plan` receives, the profile
+/// it turns into on the way out. The goal + preferences payload `plan` receives, the profile
 /// facts written beside it, and the turn the coach reflects back.
 ///
 /// Pure on purpose. The form is ninety seconds of taps that end in a block the athlete trains
@@ -55,7 +55,7 @@ struct IntakeAnswers: Equatable {
             }
         }
 
-        /// The long-run threshold the "how many long runs" question counts against — 20 mi
+        /// The long-run threshold the "how many long runs" question counts against, 20 mi
         /// for the marathon, its distance-appropriate equivalent for the half (matches #104's
         /// generator). Nil means the question doesn't apply: nobody builds a 5K around 20s.
         var longRunThresholdMiles: Int? {
@@ -92,7 +92,7 @@ struct IntakeAnswers: Equatable {
     }
 
     /// Whether a plan for this goal can't be built without a target time. Only a stated time
-    /// goal needs one — and a nil type, which is how every goal before the intake (#102) and
+    /// goal needs one, and a nil type, which is how every goal before the intake (#102) and
     /// every plain chat proposal arrives. "A PR" and "Not sure" ask the coach to *propose* a
     /// target, but right after a race there is often nothing honest to propose; the plan
     /// engine then paces from current fitness exactly as it does for "Just finish".
@@ -162,13 +162,13 @@ struct IntakeAnswers: Equatable {
     var goalTimeSeconds: Int?
     /// Mid-block only: "I'm in week N" (1-based).
     var startedWeek: Int?
-    /// Mid-block only: what a week looks like right now, in miles. Optional — real runs are
+    /// Mid-block only: what a week looks like right now, in miles. Optional, real runs are
     /// the anchor; this is the athlete's word for when the sync hasn't caught up.
     var currentWeeklyMiles: Double?
 
     var planStyle: PlanStyle = .full
     var daysPerWeek = 5
-    /// 0 = Sunday … 6 = Saturday — `profiles.long_run_day`'s convention, not the plan grid's.
+    /// 0 = Sunday … 6 = Saturday: `profiles.long_run_day`'s convention, not the plan grid's.
     var longRunDay = 0
     /// How many long runs at `distance.longRunThresholdMiles` the block should contain.
     var longRunCount = 3
@@ -255,7 +255,7 @@ struct IntakeAnswers: Equatable {
     static let plausiblePace = 180.0...1_800.0
     /// The `plan` function refuses to *build* a race whose week index from this Monday is
     /// under 2 (`raceTooCloseForPlan`). Mirrored here so the form says so up front instead
-    /// of the confirm card failing after the coach has already proposed the plan — and, like
+    /// of the confirm card failing after the coach has already proposed the plan, and, like
     /// the function since #140, only when a plan is being built: "No plan, just coaching"
     /// writes no weeks, so no race is too close for it.
     static let minPlanWeeks = 2
@@ -316,7 +316,7 @@ struct IntakeAnswers: Equatable {
         Step.allCases.flatMap { issues(on: $0, today: today, calendar: calendar) }
     }
 
-    /// Whole Monday-based weeks from this week to race week — `racePlacement`'s `weekIndex`.
+    /// Whole Monday-based weeks from this week to race week: `racePlacement`'s `weekIndex`.
     static func weeksUntil(_ raceDate: Date, from today: Date, calendar: Calendar) -> Int {
         guard let thisWeek = calendar.dateInterval(of: .weekOfYear, for: today)?.start,
               let raceWeek = calendar.dateInterval(of: .weekOfYear, for: raceDate)?.start else { return 0 }
@@ -360,7 +360,7 @@ struct IntakeAnswers: Equatable {
         )
     }
 
-    /// yyyy-MM-dd in the given calendar — what `goals.race_date` holds.
+    /// yyyy-MM-dd in the given calendar: what `goals.race_date` holds.
     static func isoDay(_ date: Date, calendar: Calendar) -> String {
         let c = calendar.dateComponents([.year, .month, .day], from: date)
         return String(format: "%04d-%02d-%02d", c.year ?? 0, c.month ?? 0, c.day ?? 0)
@@ -369,11 +369,11 @@ struct IntakeAnswers: Equatable {
 
 // MARK: - Wire shapes
 
-/// `goals.preferences` — versioned so a later shape can be read beside this one.
+/// `goals.preferences`, versioned so a later shape can be read beside this one.
 ///
 /// Every field is optional and stringly typed on purpose: this decodes out of a jsonb column
 /// that other writers (the `plan` function, a future v2) also touch. An enum here would turn
-/// one unrecognised value into a goal that fails to decode — and a goal that fails to decode
+/// one unrecognised value into a goal that fails to decode, and a goal that fails to decode
 /// reads, everywhere in the app, as no goal at all.
 struct GoalPreferences: Codable, Hashable {
     static let currentVersion = 1
@@ -395,7 +395,7 @@ struct GoalPreferences: Codable, Hashable {
 /// .proposed_action` so the card means the same thing after a relaunch as before it.
 ///
 /// The coach only ever proposes goal time, race name and race date; everything the athlete
-/// tapped rides here, stamped on the card by the app rather than echoed by the model —
+/// tapped rides here, stamped on the card by the app rather than echoed by the model,
 /// a model asked to copy a jsonb blob verbatim will, eventually, not.
 struct IntakeStamp: Codable, Equatable {
     // → the `plan` request (and through it, the goal row)
@@ -417,7 +417,7 @@ struct IntakeStamp: Codable, Equatable {
     let risk_tolerance: String
 
     /// The profile half. Written at confirm time, never at form submit: a dismissed card
-    /// must leave the athlete's settings — and so the plan they are on — untouched.
+    /// must leave the athlete's settings (and so the plan they are on) untouched.
     struct ProfilePatch: Encodable, Equatable {
         let days_per_week: Int
         let long_run_day: Int
@@ -615,7 +615,7 @@ struct PlanRequest: Encodable, Equatable {
     }
 
     /// A create_plan confirmed off the intake: the coach's goal, the athlete's everything else.
-    /// "Just finish" sends no time even if the card carried one — the athlete didn't pick a
+    /// "Just finish" sends no time even if the card carried one. The athlete didn't pick a
     /// target, and the plan shouldn't be built around one.
     static func fromIntake(_ stamp: IntakeStamp, goalTimeS: Int?, raceName: String?, raceDate: String) -> PlanRequest {
         let time = stamp.goal_type == IntakeAnswers.GoalType.finish.rawValue ? nil : goalTimeS
@@ -630,7 +630,7 @@ struct PlanRequest: Encodable, Equatable {
         return r
     }
 
-    /// A regeneration that did not come off the intake — a settings change, or a new goal
+    /// A regeneration that did not come off the intake: a settings change, or a new goal
     /// time agreed in chat.
     ///
     /// `plan` writes a fresh goal row every time it runs (create-then-retire), so whatever the
@@ -671,7 +671,7 @@ struct PlanRequest: Encodable, Equatable {
     /// `carried` is the request `carryingForward` produced. A `goal_type` on the card wins
     /// over the carried one; "finish" drops any time, because a finish goal with a time is a
     /// time goal wearing the wrong label. Nil when there's still no time and the goal isn't
-    /// "just finish" — `plan` would only refuse it.
+    /// "just finish", `plan` would only refuse it.
     ///
     /// The card's `distance` / `distance_m` (#184) replace the carried pair together, never
     /// one of them: a "5k" beside a carried-over 42,195 m would resolve to a marathon, since
@@ -732,7 +732,7 @@ struct PlanRequest: Encodable, Equatable {
 
     /// Whether the active goal can be rebuilt after a settings change: it needs a race date,
     /// and a target time unless it is a "just finish" goal, which has none by design. Before
-    /// this, a time-less goal was simply never regenerated — right when no goal could lack
+    /// this, a time-less goal was simply never regenerated, right when no goal could lack
     /// one, wrong once "just finish" exists.
     static func canRegenerate(_ goal: GoalInfo) -> Bool {
         !goal.raceDate.isEmpty
@@ -781,7 +781,7 @@ extension PlanRequest {
         RaceRole(wire: race_role) ?? RaceRole.of(preferences)
     }
 
-    /// "5K · Turkey Trot 2026 · Nov 5" — the race the card will save, read from the request
+    /// "5K · Turkey Trot 2026 · Nov 5": the race the card will save, read from the request
     /// rather than from the coach's summary. On 2026-10-15 the summary said 5K and the payload
     /// said nothing, and the only place that disagreement could have been seen was the card.
     /// A tune-up says so at the end (#238): "5K · Turkey Trot · Nov 27 · tune-up".
@@ -824,7 +824,7 @@ extension IntakeAnswers {
     /// The athlete's turn in the transcript when the form is sent: the whole intake, readable.
     ///
     /// Visible rather than a hidden kickoff, so the coach's reflect-back answers a message
-    /// that is actually in the history — and so a relaunch, or David scrolling back a month
+    /// that is actually in the history, and so a relaunch, or David scrolling back a month
     /// later, shows what was asked for beside what was proposed.
     ///
     /// Written in the athlete's unit, since it is their turn in the chat. The answers
@@ -877,14 +877,14 @@ extension IntakeAnswers {
         return lines.joined(separator: "\n")
     }
 
-    /// 0 = Sunday — the profile's convention, read with a fixed English list so the coach's
+    /// 0 = Sunday: the profile's convention, read with a fixed English list so the coach's
     /// input doesn't change with the phone's language.
     static func weekday(_ index: Int) -> String {
         let names = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
         return names.indices.contains(index) ? names[index] : "Sunday"
     }
 
-    /// h:mm:ss for an hour or more, m:ss under it — a 5K goal reads "19:30", not "0:19:30".
+    /// h:mm:ss for an hour or more, m:ss under it. A 5K goal reads "19:30", not "0:19:30".
     static func finishTime(_ seconds: Int) -> String {
         let h = seconds / 3600, m = (seconds % 3600) / 60, s = seconds % 60
         return h > 0 ? String(format: "%d:%02d:%02d", h, m, s) : String(format: "%d:%02d", m, s)
@@ -900,7 +900,7 @@ extension IntakeAnswers {
     }
 }
 
-/// `<athlete_context>.intake` — present from the moment the form is sent until the card it
+/// `<athlete_context>.intake`, present from the moment the form is sent until the card it
 /// produces is confirmed. The coach prompt keys its reflect-back turn off this being here.
 struct IntakeCoachContext: Encodable, Equatable {
     let situation: String
@@ -950,7 +950,7 @@ struct IntakeCoachContext: Encodable, Equatable {
     }
 }
 
-/// `<athlete_context>.goal_detail` — what the active goal says about the race and the athlete
+/// `<athlete_context>.goal_detail`. What the active goal says about the race and the athlete
 /// beyond time and date. The coach prompt weights its advice toward `preferences.focus`.
 ///
 /// Absent, not empty, for a goal that predates the intake: an empty focus list would read as
@@ -980,18 +980,18 @@ extension TodayMode {
     /// `CoachContext.mode`, given the goal and where its block stands, as well as the plan.
     ///
     /// "No plan, just coaching" (#102) saves a race and no plan. Today has no sessions to show,
-    /// so it rightly takes the feed — but `coachMode` alone would then tell the coach
+    /// so it rightly takes the feed, but `coachMode` alone would then tell the coach
     /// "just_running", whose prompt rule is *don't ask about a race*, about an athlete who
     /// is training for one. A goal that chose no plan is training.
     ///
     /// Until the race is behind them. That override had no end date, and `TodayMode` could not
     /// supply one: `.racePassed` is only reachable with a plan in hand, so a coaching-only block
     /// never left `.justRunning` and the coach was still told "training" the morning after the
-    /// race — the exact case `race_passed` exists to stop (#100). The phase does know, because
+    /// race. The exact case `race_passed` exists to stop (#100). The phase does know, because
     /// `BlockLifecycle` reads a plan-less goal's race date perfectly well, so ask it (#140).
     ///
     /// - Parameter phase: `RunStore.blockPhase`. Only `.racePassed` changes the answer, which is
-    ///   the same rule `TodayMode.resolve` follows — race week is still training.
+    ///   the same rule `TodayMode.resolve` follows, race week is still training.
     static func coachMode(_ mode: TodayMode, goal: GoalInfo?, phase: BlockLifecycle.Phase? = nil) -> String {
         if mode == .justRunning, goal?.preferences?.plan_style == IntakeAnswers.PlanStyle.none.rawValue {
             return phase == .racePassed ? TodayMode.racePassed.coachMode : TodayMode.training.coachMode
@@ -1005,7 +1005,7 @@ extension TodayMode {
 struct IntakeHandoff: Equatable {
     let id = UUID()
     let answers: IntakeAnswers
-    /// Nil for "just running" — nothing to save, only something for the interview to know.
+    /// Nil for "just running": nothing to save, only something for the interview to know.
     /// Moves as the athlete changes their answers in conversation (`IntakeStamp.revised`), so
     /// the next card and `<athlete_context>.intake` both start from what they last said.
     var stamp: IntakeStamp?

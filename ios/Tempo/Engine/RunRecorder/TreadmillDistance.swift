@@ -4,7 +4,7 @@ import Foundation
 /// console at the end.
 ///
 /// Indoors there is no GPS. The phone estimates distance from his steps, and that estimate is
-/// off by 5–15% — in either direction, depending on stride, pocket and belt. The treadmill's
+/// off by 5–15%, in either direction, depending on stride, pocket and belt. The treadmill's
 /// console is the truth, so the save screen asks for it (#130) and the run is rescaled to it
 /// before it goes anywhere.
 ///
@@ -14,7 +14,7 @@ import Foundation
 /// went into the workout as he ran could be corrected *up* (add the difference) but never
 /// *down*, and the phone over-counts as often as it under-counts. So on a treadmill, as
 /// outdoors, HealthKit's own distance collection is off, Tempo keeps the curve itself (from
-/// Core Motion, `Steps`), and the whole curve is written once, at Save — the console's curve
+/// Core Motion, `Steps`), and the whole curve is written once, at Save. The console's curve
 /// when he gave one, the phone's untouched when he didn't.
 ///
 /// Pure. `WorkoutRecorder` feeds it readings and writes what it returns.
@@ -25,7 +25,7 @@ enum TreadmillDistance {
     /// Core Motion's running step distance, turned into the treadmill curve.
     ///
     /// `CMPedometer` reports a cumulative total since the moment it was started, and keeps
-    /// counting while the run is paused — a walk to the water fountain is steps too. So each
+    /// counting while the run is paused. A walk to the water fountain is steps too. So each
     /// reading is credited as the *difference* from the last one, and only while the run is
     /// running: a paused stretch moves the baseline without moving the curve, the way
     /// HealthKit's collection did when the session was paused.
@@ -39,7 +39,7 @@ enum TreadmillDistance {
         ///
         /// - Parameters:
         ///   - totalM: Core Motion's cumulative distance since the stream started.
-        ///   - t: seconds since the run started, wall clock — the curve's own time axis.
+        ///   - t: seconds since the run started, wall clock. The curve's own time axis.
         ///   - running: whether the run is running now. Paused, the reading only moves the baseline.
         ///   - last: the curve's last point.
         mutating func credit(totalM: Double, t: Double, running: Bool,
@@ -67,7 +67,7 @@ enum TreadmillDistance {
     /// The correction to apply, or nil to leave the run exactly as counted.
     ///
     /// Nil when he skipped it, when the reading is not a distance (zero, negative, not a
-    /// number), and when it reads the same as the estimate at the stepper's resolution — the
+    /// number), and when it reads the same as the estimate at the stepper's resolution. The
     /// stepper is prefilled with the estimate to a hundredth, and Save on an untouched
     /// stepper must not mark a run "corrected" by the rounding of its own prefill.
     static func correction(consoleM: Double?, estimateM: Double, units: Units) -> Correction? {
@@ -90,8 +90,8 @@ enum TreadmillDistance {
     /// splits and paces read back from Health are recomputed from it. Flat stretches (a pause)
     /// stay flat; time is never touched.
     ///
-    /// With no step distance at all — the phone sat on the console, or Motion & Fitness is
-    /// off — there is nothing to scale. The console's distance is then spread evenly over
+    /// With no step distance at all (the phone sat on the console, or Motion & Fitness is
+    /// off) there is nothing to scale. The console's distance is then spread evenly over
     /// the time he was moving (`startedAt` to `endedAt`, less `pauses`), which is what a
     /// treadmill at one speed would have drawn, and far better than a run with no distance.
     static func rescaled(

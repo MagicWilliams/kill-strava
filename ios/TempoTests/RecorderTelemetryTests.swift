@@ -8,7 +8,7 @@ import XCTest
 /// What these tests hold down is the shape of that answer: the names and keys the EM's queries
 /// are written against, that a step the reducer ignored reports nothing, that each stop says who
 /// made it, and that no line can carry where he ran or what he wrote. A key renamed by accident
-/// would not crash anything — it would quietly split a trend line in two across app versions,
+/// would not crash anything. It would quietly split a trend line in two across app versions,
 /// which is the failure this file exists to make loud.
 final class RecorderTelemetryTests: XCTestCase {
 
@@ -129,7 +129,7 @@ final class RecorderTelemetryTests: XCTestCase {
     }
 
     /// Chicago's failure was a recorder that paused on its own. With auto-pause off the reducer
-    /// ignores the request — and a request that changed nothing must not read as a pause.
+    /// ignores the request, and a request that changed nothing must not read as a pause.
     func testWhatTheReducerIgnoredIsNotReported() {
         let off = running(autoPause: false)
         XCTAssertEqual(step(off, .pause(.auto, at: t(100))).1, [])

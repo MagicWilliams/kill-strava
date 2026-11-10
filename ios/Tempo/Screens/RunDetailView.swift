@@ -9,7 +9,7 @@ import UIKit
 /// Spec: progress.md → "Run Detail spec".
 ///
 /// And the journal (#124): his photo as the hero, his title as the heading, effort and
-/// shoes as tiles, feel and notes — all editable after the fact. What shows and what an
+/// shoes as tiles, feel and notes, all editable after the fact. What shows and what an
 /// edit writes is `RunDetailJournal`.
 struct RunDetailView: View {
     let run: RunSummary
@@ -154,7 +154,7 @@ struct RunDetailView: View {
     ///
     /// The hero crops to fill 340 pt, so a tall photo is shown with its top and bottom cut
     /// off. That is the right crop for a page header and the wrong one for looking at the
-    /// photo — hence the expand glyph, bottom-leading, clear of the Route capsule.
+    /// photo, hence the expand glyph, bottom-leading, clear of the Route capsule.
     private func photoHero(routeButton: Bool) -> some View {
         ZStack {
             Tokens.Palette.inset
@@ -255,7 +255,7 @@ struct RunDetailView: View {
             }
             HStack(spacing: 10) {
                 if let photo = model.photo {
-                    // The photo as it is held in memory — the resized JPEG the upload wrote,
+                    // The photo as it is held in memory: the resized JPEG the upload wrote,
                     // not the original off the camera roll, which the app never had.
                     ShareLink(item: Image(uiImage: photo),
                               preview: SharePreview(shareTitle, image: Image(uiImage: photo))) {
@@ -327,7 +327,7 @@ struct RunDetailView: View {
     // MARK: - Journal
 
     /// Effort and shoes as tiles, then feel and notes, with Edit. A run with nothing logged
-    /// gets a single "add" row instead of an empty card — and nothing at all when it can't be
+    /// gets a single "add" row instead of an empty card, and nothing at all when it can't be
     /// edited, which is every run on the offline copy.
     @ViewBuilder private var journalCard: some View {
         let entry = journal
@@ -387,8 +387,8 @@ struct RunDetailView: View {
         }
     }
 
-    /// The door to the race recap. Only on the run that *is* the goal race — see
-    /// `RunStore.raceGoal(for:)`: the linked race run, else `RaceRecap.isRace` — so every other
+    /// The door to the race recap. Only on the run that *is* the goal race (see
+    /// `RunStore.raceGoal(for:)`: the linked race run, else `RaceRecap.isRace`) so every other
     /// run's page is exactly what it was.
     @ViewBuilder private var raceRecapCard: some View {
         if let raceGoal = store.raceGoal(for: run) {
@@ -484,7 +484,7 @@ struct RunDetailView: View {
     ///
     /// The headline time is **moving time**, always, and it is read off the stored run
     /// rather than off HealthKit. Those used to be the same number; since migration 0009
-    /// they are not necessarily — a run whose two clocks arrived as two records now has
+    /// they are not necessarily. A run whose two clocks arrived as two records now has
     /// its moving clock in `duration_s`, and HealthKit's copy may be the elapsed one.
     /// Preferring the workout here would put a slow pace under a fast run.
     private var heroStats: some View {
@@ -493,7 +493,7 @@ struct RunDetailView: View {
         let meters = corrected ? Double(run.distanceM) : (d.map { $0.miles * Units.metersPerMile } ?? Double(run.distanceM))
         let time = run.durationS
         // Derived from the two numbers beside it rather than read off HealthKit, so the
-        // three cannot disagree on screen — distance ÷ time must equal the pace printed
+        // three cannot disagree on screen, distance ÷ time must equal the pace printed
         // between them.
         let pace = units.runPace(movingSeconds: time, meters: meters)
         return RunDistanceHeroRow(distance: units.number(meters: meters, decimals: 2),
@@ -508,8 +508,8 @@ struct RunDetailView: View {
     /// Moving time, elapsed time, and the gap between them.
     ///
     /// Every run has two honest answers to "how long did that take", and until now the app
-    /// picked one without saying which. They only differ when the athlete stopped — a light,
-    /// a water fountain, a conversation — and that difference is worth seeing: a long run
+    /// picked one without saying which. They only differ when the athlete stopped (a light,
+    /// a water fountain, a conversation) and that difference is worth seeing: a long run
     /// with twelve minutes of standing around is a different session from the same distance
     /// run straight through, even though both report the same moving pace.
     ///
@@ -518,7 +518,7 @@ struct RunDetailView: View {
     @ViewBuilder
     private var timeAccounting: some View {
         // The stored run is the record. HealthKit's wall clock only stands in for rows the
-        // backfill hasn't reached, and never for a corrected run — there the athlete's
+        // backfill hasn't reached, and never for a corrected run. There the athlete's
         // numbers are the truth and HealthKit describes a run that no longer matches.
         let fallback = run.corrected ? nil : model.detail?.elapsedS
         let elapsed = run.elapsedS ?? fallback
@@ -565,7 +565,7 @@ struct RunDetailView: View {
 
     private var statsGrid: some View {
         let d = model.detail
-        // A corrected run's DB totals are the truth — raw HealthKit only covers the
+        // A corrected run's DB totals are the truth: raw HealthKit only covers the
         // recorded portion, so its time-accounting tiles are hidden to avoid contradiction.
         let corrected = run.corrected
         // Time accounting moved out of this grid and into `timeAccounting`, which reads the
@@ -816,7 +816,7 @@ struct RunDetailView: View {
 /// A bare `HStack { label; Spacer(); trailing }` hands back the sum of its parts, and text
 /// widths are thirds of a point, so the float sum can land a hair past the offer. The page
 /// column then takes its widest child, the text-only cards round that hair up to a whole
-/// device pixel, and the scroll content comes out wider than the screen — which is enough for
+/// device pixel, and the scroll content comes out wider than the screen, which is enough for
 /// the whole page to drag sideways with nothing visibly off-screen (#74). Whether a row drifts
 /// depends on its exact text widths and the width it's offered, so the shape alone proves
 /// nothing: only a row the probe caught drifting carries the `.frame` fix.
@@ -860,7 +860,7 @@ struct RunDistanceHeroRow: View {
 }
 
 /// The one row of the five the probe caught drifting, and it drifts at widths real phones
-/// hand it — four parts in the sum instead of two, since the legend is two dots of its own.
+/// hand it, four parts in the sum instead of two, since the legend is two dots of its own.
 struct PaceHRHeaderRow: View {
     var body: some View {
         HStack {
@@ -870,7 +870,7 @@ struct PaceHRHeaderRow: View {
             LegendDot(color: Tokens.Zone.z5, label: "HR")
         }
         // Both bounds given, so the frame takes the offered width outright instead of
-        // deferring to the HStack's drifted sum — the same one-liner as #74.
+        // deferring to the HStack's drifted sum. The same one-liner as #74.
         .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
     }
 }
@@ -889,7 +889,7 @@ struct LegendDot: View {
 
 struct ZoneHeaderRow: View {
     let maxHR: Int
-    /// Measured from the archive, or estimated from 220 − age — the estimate says so on screen,
+    /// Measured from the archive, or estimated from 220 − age. The estimate says so on screen,
     /// which makes the trailing text two characters wider and is its own width to measure.
     let measured: Bool
 
@@ -935,9 +935,9 @@ final class RunDetailStore: ObservableObject {
     @Published var takeawayLimit: String?
     @Published var correctionNote: String?
     /// This run's sub-distance efforts (#25). Empty until the archive scan has reached this
-    /// run — and empty is also the right answer for a run too short to hold any.
+    /// run, and empty is also the right answer for a run too short to hold any.
     @Published var efforts: [BestEfforts.Effort] = []
-    /// The run has a `runs` row this page could read — so a journal edit has somewhere to go.
+    /// The run has a `runs` row this page could read: so a journal edit has somewhere to go.
     @Published var rowExists = false
     /// The journal photo (#124), and the object key it is the photo for.
     @Published var photo: UIImage?

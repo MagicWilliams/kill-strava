@@ -4,7 +4,7 @@ import Charts
 // MARK: - Today's prompt
 
 /// The card at the top of Today once race day has passed (`BlockLifecycle.Phase.racePassed`).
-/// It is the only way the app asks the question — nothing closes a block on its own, so this
+/// It is the only way the app asks the question. Nothing closes a block on its own, so this
 /// stays until the athlete taps through and closes it.
 struct BlockReviewPrompt: View {
     @EnvironmentObject private var store: RunStore
@@ -46,7 +46,7 @@ struct BlockReviewPrompt: View {
 
 // MARK: - Past blocks
 
-/// Closed blocks, newest first — on You, and on Plan between blocks. Each opens its review.
+/// Closed blocks, newest first, on You, and on Plan between blocks. Each opens its review.
 /// Renders nothing when there are none, which is also what it shows before migration 0013
 /// is applied (`BlockReviewService.pastBlocks` can't read the columns yet).
 struct PastBlocksCard: View {
@@ -104,7 +104,7 @@ struct BlockReviewView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.units) private var units
 
-    /// Local, because closing changes it here and now — and because once the store reloads
+    /// Local, because closing changes it here and now, and because once the store reloads
     /// after a close, `store.goal` is no longer this block.
     @State private var goal: GoalInfo
     @State private var planSide: BlockReviewService.PlanSide?
@@ -147,7 +147,7 @@ struct BlockReviewView: View {
     }
 
     /// The race as a run: the one the goal links (a Race-mode save, #117, or the close-out),
-    /// or — while the block is open — whatever `RaceRecap.isRace` finds on race day.
+    /// or (while the block is open) whatever `RaceRecap.isRace` finds on race day.
     private var raceRun: RunSummary? {
         RaceRecap.raceRun(in: store.runs, goal: goal, guessing: !isClosed)
     }
@@ -502,7 +502,7 @@ struct BlockReviewView: View {
 
 // MARK: - Close-out sheet
 
-/// How the race went. Typing the official time is the main path — see `BlockCloseout` for
+/// How the race went. Typing the official time is the main path. See `BlockCloseout` for
 /// why the race usually isn't a run we can read it from.
 struct CloseBlockSheet: View {
     let goal: GoalInfo
@@ -525,7 +525,7 @@ struct CloseBlockSheet: View {
         self.planID = planID
         self.raceRun = raceRun
         self.onClosed = onClosed
-        // A watch clock, as a starting point to correct — not as the answer.
+        // A watch clock, as a starting point to correct, not as the answer.
         _timeText = State(initialValue: raceRun.map { PaceModel.formatFinish($0.elapsedS ?? $0.durationS) } ?? "")
         let morning = goal.raceDay.flatMap { Calendar.current.date(bySettingHour: 7, minute: 30, second: 0, of: $0) }
         _startTime = State(initialValue: morning ?? .now)

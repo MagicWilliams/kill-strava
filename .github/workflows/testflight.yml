@@ -5,7 +5,7 @@ name: TestFlight
 # that arrives on David's phone as a notification.
 #
 # Ships only what CI already proved: it runs after the CI workflow succeeds on main, and
-# checks out that exact commit — never a newer one that slipped in behind it.
+# checks out that exact commit: never a newer one that slipped in behind it.
 
 on:
   workflow_run:

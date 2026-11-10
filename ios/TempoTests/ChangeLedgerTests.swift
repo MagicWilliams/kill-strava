@@ -3,7 +3,7 @@ import XCTest
 
 /// "What changed" (#88).
 ///
-/// The coach had been changing real data — September run amendments, a race-week plan edit —
+/// The coach had been changing real data (September run amendments, a race-week plan edit)
 /// and the only record was a confirm card somewhere in the scroll. The ledger is built from
 /// the rows that already exist (`coach_messages.proposed_action`, `action_state = 'applied'`),
 /// so every rule about what an entry says lives here, pinned against the shapes `ChatStore.apply`
@@ -118,7 +118,7 @@ final class ChangeLedgerTests: XCTestCase {
     }
 
     func testCreatePlanIsPlanAndFallsBackToItsRationaleForWhy() throws {
-        // An extra proposal in one reply is stored with its summary as its text — no reasoning
+        // An extra proposal in one reply is stored with its summary as its text. No reasoning
         // there, so the plan's own rationale stands in.
         let entry = try only([record("""
             {"type":"create_plan","summary":"Build a sub-3:15 plan for Chicago","goal_time_s":11700,
@@ -206,7 +206,7 @@ final class ChangeLedgerTests: XCTestCase {
         let a = UUID(), b = UUID()
         let older = try record(#"{"type":"set_risk_tolerance","level":"standard"}"#, at: 0, id: a)
         let newer = try record(#"{"type":"update_plan_settings","days_per_week":6}"#, at: 3_600, id: b)
-        // The same row delivered twice — a page boundary, a retried read.
+        // The same row delivered twice: a page boundary, a retried read.
         let entries = ChangeLedger.entries(from: [older, newer, older])
         XCTAssertEqual(entries.map(\.id), [b, a])
     }

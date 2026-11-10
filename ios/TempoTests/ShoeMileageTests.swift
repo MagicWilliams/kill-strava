@@ -28,7 +28,7 @@ final class ShoeMileageTests: XCTestCase {
         let runs = [
             ShoeMileage.Run(shoeID: pegasus, distanceM: 8_047),   // 5 mi
             ShoeMileage.Run(shoeID: pegasus, distanceM: 16_093),  // 10 mi
-            ShoeMileage.Run(shoeID: nil, distanceM: 30_000),      // untagged — nobody's
+            ShoeMileage.Run(shoeID: nil, distanceM: 30_000),      // untagged, nobody's
         ]
         let tally = ShoeMileage.tallies(shoes, runs: runs)[pegasus]
         XCTAssertEqual(tally, ShoeMileage.Tally(meters: miles(120) + 8_047 + 16_093, runs: 2))

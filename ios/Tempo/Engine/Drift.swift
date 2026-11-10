@@ -21,7 +21,7 @@ struct DriftThresholds: Equatable {
 }
 
 /// How far the runner's current fitness is from where the expected curve says they should
-/// be *this week* — the Drift Detector's core number (PRD-02 §6.1.3, issue #236).
+/// be *this week*. The Drift Detector's core number (PRD-02 §6.1.3, issue #236).
 ///
 /// The comparison is to this week's point on the curve, not to the goal. Today's Progress
 /// card asks "projection ≤ goal?", and that question flags nearly everyone early in a block,
@@ -86,7 +86,7 @@ enum Drift {
     }
 
     /// The tier for a drift percentage. Lower bounds are inclusive, per the PRD table.
-    /// Ahead of the curve is on track — a negative drift is never an alarm.
+    /// Ahead of the curve is on track. A negative drift is never an alarm.
     static func status(forPercent percent: Double, thresholds: DriftThresholds = .standard) -> Status {
         if percent >= thresholds.offTrackAt { return .offTrack }
         if percent >= thresholds.driftingAt { return .drifting }

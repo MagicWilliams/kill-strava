@@ -1,10 +1,10 @@
 import Foundation
 
-/// Moving time vs elapsed time — the two clocks every run is recorded against.
+/// Moving time vs elapsed time: the two clocks every run is recorded against.
 ///
 /// Strava's vocabulary, and the reason one run now carries two numbers:
 ///
-///  - **Moving time** excludes the seconds the athlete was stopped — a light, a shoelace,
+///  - **Moving time** excludes the seconds the athlete was stopped. A light, a shoelace,
 ///    a photo. It is what pace is computed from everywhere in this app, because it is the
 ///    number that describes how fast the *running* was.
 ///  - **Elapsed time** is the wall clock, start to finish. It is the honest answer to "how
@@ -20,7 +20,7 @@ import Foundation
 /// HKWorkout objects*: identical distance to the meter, identical start second, two
 /// different durations. Ingest had no way to know they were one run, so it stored both,
 /// and every all-time total counted that run twice. Migration 0009 folds those pairs back
-/// into a single run carrying both numbers — which is what this type models.
+/// into a single run carrying both numbers, which is what this type models.
 ///
 /// Pure and deterministic: the numbers on the detail page are only as trustworthy as this
 /// file, and a wrong answer here is invisible rather than loud.
@@ -29,7 +29,7 @@ enum TimeAccounting {
     /// Stopped time below this is measurement noise, not a stop.
     ///
     /// When the two clocks arrived as two records, their durations disagree by a second or
-    /// two purely from rounding — the archive is full of pairs differing by 1s, 2s, 3s.
+    /// two purely from rounding. The archive is full of pairs differing by 1s, 2s, 3s.
     /// Reporting "3 seconds stopped" on a 40-minute run is worse than reporting nothing,
     /// so anything under this threshold is treated as a run with no stops.
     static let noiseFloorSeconds = 30
@@ -44,7 +44,7 @@ enum TimeAccounting {
         /// Seconds spent stopped. Zero when the run was continuous or only one clock is known.
         var stoppedS: Int { elapsedS - movingS }
 
-        /// Whether the stop is worth putting on screen — see `noiseFloorSeconds`.
+        /// Whether the stop is worth putting on screen: see `noiseFloorSeconds`.
         var hasMeaningfulStop: Bool { stoppedS >= TimeAccounting.noiseFloorSeconds }
     }
 
@@ -54,7 +54,7 @@ enum TimeAccounting {
     ///  - elapsed is unknown (every run ingested before this shipped),
     ///  - elapsed is *shorter* than moving, which is physically impossible and means the
     ///    two numbers came from records that disagree,
-    ///  - elapsed is absurdly longer — the watch was left running for hours after the run.
+    ///  - elapsed is absurdly longer. The watch was left running for hours after the run.
     ///
     /// The last one is deliberately **not** filtered here. A run with 40 minutes of stopped
     /// time is real data about a real run, and the athlete's own record outranks our
@@ -86,11 +86,11 @@ enum TimeAccounting {
     /// Which note the Time card shows.
     ///
     /// The 15 Oct 2026 run is why this is a decision and not an `if`: stored 8.1 mi over
-    /// 10h24m on both clocks, the card said "Ran continuously — moving and elapsed time are
-    /// the same", and the AVG SPEED tile beside it read 4.8 mph off the samples. The card was
-    /// repeating the record back, and the record was wrong. When the samples disagree by
+    /// 10h24m on both clocks, the card said moving and elapsed time were the same, and the
+    /// AVG SPEED tile beside it read 4.8 mph off the samples. The card was repeating the
+    /// record back, and the record was wrong. When the samples disagree by
     /// enough that ingest would now correct the run (`SampleMovingTime.correctedDurations`),
-    /// the card says so instead. The stored clocks still stand — rewriting an archived run
+    /// the card says so instead. The stored clocks still stand, rewriting an archived run
     /// is the athlete's call, not the page's.
     ///
     /// - Parameter sampleMovingS: moving time by the distance samples, or nil when there are
@@ -106,7 +106,7 @@ enum TimeAccounting {
 
     /// Seconds per mile over a given clock. Nil for distances too short to divide by.
     ///
-    /// The same guard as `RunSummary.paceSecPerMile` — a 0.02 mi GPS blip produces a pace
+    /// The same guard as `RunSummary.paceSecPerMile`. A 0.02 mi GPS blip produces a pace
     /// in the hours and there is nothing useful to say about it.
     static func paceSecPerMile(seconds: Int, miles: Double) -> Int? {
         guard miles > 0.05, seconds > 0 else { return nil }
@@ -118,7 +118,7 @@ enum TimeAccounting {
     /// The signature is exact-distance agreement: two genuinely different runs do not cover
     /// the same number of *meters*, and one activity exported twice always does, because
     /// both exports describe the same GPS trace. Start times are allowed to differ by a few
-    /// seconds — the pair in the archive dated 2026-01-10 is one second apart — but the
+    /// seconds (the pair in the archive dated 2026-01-10 is one second apart) but the
     /// distance test is what carries the decision.
     ///
     /// Deliberately strict. Near-miss distances (within a percent or two) are a *different*

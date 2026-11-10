@@ -13,8 +13,8 @@ final class LoadModelRPETests: XCTestCase {
     // MARK: - Fixture
 
     /// 2026-10-12 07:30 in the test process's own calendar. Every run is a whole number of
-    /// calendar days before it at the same wall-clock time, so the day buckets — and with
-    /// them the numbers — do not depend on the machine's time zone.
+    /// calendar days before it at the same wall-clock time, so the day buckets (and with
+    /// them the numbers) do not depend on the machine's time zone.
     static let now: Date = {
         var c = DateComponents()
         c.year = 2026; c.month = 10; c.day = 12; c.hour = 7; c.minute = 30
@@ -77,8 +77,8 @@ final class LoadModelRPETests: XCTestCase {
     }
 
     func testJournalWithoutRPELeavesFitnessBitIdentical() throws {
-        // Feel tags, notes, a title, a shoe — everything the post-run screen asks except
-        // effort — say nothing about load. A run that has them must score as it always did.
+        // Feel tags, notes, a title, a shoe (everything the post-run screen asks except
+        // effort) say nothing about load. A run that has them must score as it always did.
         let plain = try XCTUnwrap(LoadModel.compute(runs: Self.history(), checkInOK: nil, now: Self.now))
         let journaled = try XCTUnwrap(LoadModel.compute(
             runs: Self.history(journal: { i in

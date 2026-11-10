@@ -5,7 +5,7 @@ import Supabase
 /// start a thread, touch one, and run the summarize round trip that gives a finished thread
 /// its title and recap.
 ///
-/// Every decision lives in `Engine/CoachThreads` — which thread is live, which are owed a
+/// Every decision lives in `Engine/CoachThreads`, which thread is live, which are owed a
 /// summary, what a row with no recap is allowed to say. Nothing here decides anything; it
 /// reads rows, hands them over, and writes back what comes out.
 ///
@@ -78,7 +78,7 @@ enum CoachThreadService {
 
     /// The thread a message sent now belongs to: the live one, or a fresh one.
     ///
-    /// This is what the Coach tab opens into when nothing told it which thread to show —
+    /// This is what the Coach tab opens into when nothing told it which thread to show,
     /// the onboarding interview, a widget tap, a deep link. `CoachThreads.active` decides
     /// whether the newest thread still counts as the current conversation.
     static func ensureThread(now: Date = .now) async throws -> UUID {
@@ -122,7 +122,7 @@ enum CoachThreadService {
     /// Every change the coach has actually made, with its thread.
     ///
     /// The same rows "What changed" is built from (`action_state = 'applied'`, migration
-    /// 0007) — read once here because Coach home needs them twice: as the change tags on
+    /// 0007). Read once here because Coach home needs them twice: as the change tags on
     /// each thread row, and as this week's count on the "What changed" row. Applied cards
     /// are a handful of rows even after a year of coaching, so one page is the whole set;
     /// `ChangeLedgerService` is the one that has to paginate, because it also has to be
@@ -175,7 +175,7 @@ enum CoachThreadService {
 
     /// Write up every thread that is owed a recap, and return whether anything changed.
     ///
-    /// Called when the Coach tab opens and when a new chat starts — the two moments a
+    /// Called when the Coach tab opens and when a new chat starts. The two moments a
     /// thread stops being the current conversation. Oldest first, one at a time: these are
     /// model round trips, and a backlog raced in parallel is how the onboarding interview
     /// once regenerated two plans at once.
@@ -208,7 +208,7 @@ enum CoachThreadService {
     /// what comes back.
     ///
     /// `notWritten` covers an unreachable server, a reply the parser wouldn't stand behind
-    /// (`summary.ts` returns nothing rather than half a summary), and an empty thread — all
+    /// (`summary.ts` returns nothing rather than half a summary), and an empty thread, all
     /// of which leave the row untitled, which the list already knows how to show. Nothing is
     /// invented locally: a made-up recap is indistinguishable from a real one, and it would
     /// be fed to the coach as fact at the top of the next conversation.
@@ -220,7 +220,7 @@ enum CoachThreadService {
 
         // Newest first and flipped back here, never ascending plus a limit: that returns the
         // OLDEST page, and the write-up would describe the opening of the conversation it was
-        // asked to summarize — #93, in a place where the only symptom would be a plausible
+        // asked to summarize, #93, in a place where the only symptom would be a plausible
         // recap of the wrong half. A thread longer than the page is summarized from its
         // recent end, which is where its decisions are.
         let page: [TranscriptRow]
@@ -324,7 +324,7 @@ enum CoachThreadService {
     /// A ceiling, not a target. Memory is sent on every single turn, so it is the one part
     /// of the context that grows without anything pruning it; 60 facts is far more than a
     /// season of coaching produces and still a few hundred tokens. If it is ever reached,
-    /// the newest are kept — and that is the signal to build retirement properly.
+    /// the newest are kept, and that is the signal to build retirement properly.
     static let memoryLimit = 60
 
     /// Record a fact the athlete has confirmed. Throws so the confirm card can fail

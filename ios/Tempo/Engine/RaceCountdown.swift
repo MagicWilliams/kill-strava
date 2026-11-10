@@ -1,13 +1,13 @@
 import Foundation
 
-/// What a tab header says about the race — a pure function of the goal and the moment you
+/// What a tab header says about the race: a pure function of the goal and the moment you
 /// ask. One day count, one week count, one race label, for Plan, Progress and You.
 ///
 /// Extracted from `ProgressScreen`, which until now counted down to a `static let` pinned
 /// to 2026-10-11 with the comment "fixed race target until Goal Setup is wired" (#36).
 /// Goal Setup got wired; the constant did not get deleted. It agreed with the real goal
-/// only by coincidence, and the day the athlete or the coach moved the race — `create_plan`
-/// can do it mid-block — Progress would have gone on counting down to a race nobody was
+/// only by coincidence, and the day the athlete or the coach moved the race (`create_plan`
+/// can do it mid-block) Progress would have gone on counting down to a race nobody was
 /// training for, in the confident voice of a number that had never been wrong before.
 ///
 /// So there is no fallback date here on purpose. Every path that cannot name a real race
@@ -19,7 +19,7 @@ import Foundation
 /// **6 weeks**, Progress said **7 weeks**. Three screens, one date, three answers. Plan and
 /// You each did their own `dateComponents([.day], from: .now)`: counting from the current
 /// *instant* loses a day the moment it is past midnight, and flooring that into weeks loses
-/// another. Only Progress measured start-of-day to start-of-day, which is the rule — a
+/// another. Only Progress measured start-of-day to start-of-day, which is the rule. A
 /// countdown ticks at midnight, not at whatever hour the app was opened.
 ///
 /// The right answer was 43 days, 7 weeks. David's call: show both. So the day count lives
@@ -28,19 +28,19 @@ import Foundation
 ///
 /// And none of the three named the distance, which is why a 5K saved as a marathon (#215)
 /// went two weeks unnoticed: every header read "Race", a word that is true of both.
-/// `raceLabel` is the fix — named off the same metres the projection uses, so a header
+/// `raceLabel` is the fix, named off the same metres the projection uses, so a header
 /// cannot name one race while the number answers for another.
 enum RaceCountdown {
 
     /// Race dates arrive as `yyyy-MM-dd` parsed at local midnight (`PlanDates.day`), so the
-    /// count is over calendar days in the athlete's own time zone — it ticks at midnight,
+    /// count is over calendar days in the athlete's own time zone. It ticks at midnight,
     /// not at whatever time of day the app happened to launch.
     static let calendar = Calendar(identifier: .iso8601)
 
     /// Used where a race has to be named and the goal carries no name: the block review, the
     /// recap header, Run Detail's race banner.
     ///
-    /// The three countdown headers do **not** use it any more — they read `raceLabel`, which
+    /// The three countdown headers do **not** use it any more. They read `raceLabel`, which
     /// always has a distance to fall back on and says "Marathon race" rather than "Race"
     /// (#230 item 3).
     static let unnamedRace = "Race"
@@ -48,7 +48,7 @@ enum RaceCountdown {
     /// How much room the countdown has to say itself in.
     ///
     /// A subtitle is one line under a tab title, and "Turkey Trot · 5K · 43 days · 7 weeks"
-    /// does not fit one on an SE. Truncating it drops the *end* — the numbers — and keeps the
+    /// does not fit one on an SE. Truncating it drops the *end* (the numbers) and keeps the
     /// part the athlete already knows, so instead the line drops to `compact` whole.
     enum Width: Equatable {
         /// "43 days · 7 weeks"
@@ -57,8 +57,8 @@ enum RaceCountdown {
         case compact
     }
 
-    /// The five things a header can be. Split out from the copy so the decision — is the
-    /// race ahead, today, or behind us? — is testable without pinning prose.
+    /// The five things a header can be. Split out from the copy so the decision, is the
+    /// race ahead, today, or behind us? is testable without pinning prose.
     enum State: Equatable {
         /// No goal at all. Progress renders before any plan exists.
         case noGoal
@@ -81,14 +81,14 @@ enum RaceCountdown {
             }
         }
 
-        /// Calendar days to race day. Nil unless the race is still ahead — nothing else here
+        /// Calendar days to race day. Nil unless the race is still ahead. Nothing else here
         /// has a number to count, and a zero would read as a countdown with time left on it.
         var days: Int? {
             guard case .ahead(_, let days, _) = self else { return nil }
             return days
         }
 
-        /// Whole weeks to race day, rounded up — and nil inside the final week, where a week
+        /// Whole weeks to race day, rounded up, and nil inside the final week, where a week
         /// count adds nothing the day count has not already said ("6 days", not
         /// "6 days · 1 week"). Nil too unless the race is ahead.
         ///
@@ -107,8 +107,8 @@ enum RaceCountdown {
             return "\(Self.dayCount(days)) · \(Self.weekCount(weeks))"
         }
 
-        /// The line under a tab title: the race and its countdown, or — for every state with
-        /// nothing to count — what that state is, in words.
+        /// The line under a tab title: the race and its countdown, or (for every state with
+        /// nothing to count) what that state is, in words.
         func subtitle(_ width: Width = .full) -> String {
             switch self {
             case .noGoal:
@@ -125,12 +125,12 @@ enum RaceCountdown {
                 // A countdown past its race is the same defect as the hardcoded date: a
                 // number that reads as current and isn't. "0 weeks to Chicago" says the
                 // race is this week. So the header stops counting and points at the only
-                // thing left to do — pick the next race.
+                // thing left to do. Pick the next race.
                 return "\(race) is behind you. Set the next goal with the coach"
             }
         }
 
-        /// Plan's countdown hero: the big number, and the caption under it — ("43",
+        /// Plan's countdown hero: the big number and the caption under it ("43",
         /// "days to go · 7 weeks"). Nil unless the race is ahead, because the hero's whole
         /// shape is a number being counted down, and Plan prints `subtitle()` instead.
         var hero: (number: String, caption: String)? {
@@ -172,13 +172,13 @@ enum RaceCountdown {
 
     // MARK: - Naming the race
 
-    /// The race distance as a label names it — "5K", "Half", "Marathon" — read off metres.
+    /// The race distance as a label names it ("5K", "Half", "Marathon") read off metres.
     ///
     /// Metres, not `goals.distance`: the label column and `distance_m` can disagree, and when
     /// they did it cost a 5K block (#184). The projection reads the metres, so the header
     /// reads them too. `IntakeAnswers.Distance` already holds this vocabulary keyed by the
     /// metres the coach writes, so this matches against those rather than spelling out a
-    /// fourth list of race distances. A distance that is none of them — a custom 30K — is
+    /// fourth list of race distances. A distance that is none of them (a custom 30K) is
     /// spelled out in the athlete's own unit.
     static func distanceLabel(raceMeters: Double, units: Units) -> String {
         // Within 1%: a half arrives as 21,097 or 21,098 and a mile as 1,609 or 1,609.34,
@@ -190,7 +190,7 @@ enum RaceCountdown {
         return known?.label ?? units.formatDistance(meters: raceMeters, decimals: 1)
     }
 
-    /// "Turkey Trot · 5K" — the race, named once, for every header that names it.
+    /// "Turkey Trot · 5K": the race, named once, for every header that names it.
     ///
     /// Nil only when there is no goal. A goal always has a distance to name
     /// (`RaceRecap.raceMeters` falls back to the marathon), so a goal with no `race_name`
@@ -201,7 +201,7 @@ enum RaceCountdown {
     /// The distance is left off a name that already carries it, so "Chicago Marathon" does
     /// not become "Chicago Marathon · Marathon".
     ///
-    /// `includingRole` appends the race's role (#238) — "Turkey Trot · 5K · tune-up". You is
+    /// `includingRole` appends the race's role (#238), "Turkey Trot · 5K · tune-up". You is
     /// the only header that prints it; Plan and Progress ask without it.
     static func raceLabel(goal: GoalInfo?, units: Units, includingRole: Bool = false) -> String? {
         guard let goal else { return nil }
@@ -220,7 +220,7 @@ enum RaceCountdown {
     // MARK: - The state
 
     /// `raceName` and `raceDay` come straight off `RunStore.goal`; both are optional there,
-    /// and a goal with neither is indistinguishable from no goal — both say "no goal yet".
+    /// and a goal with neither is indistinguishable from no goal. Both say "no goal yet".
     ///
     /// The three countdown headers call `state(goal:now:units:)` instead, which names the race
     /// first. This stays the primitive the tests pin, and the "Race" fallback with it: a

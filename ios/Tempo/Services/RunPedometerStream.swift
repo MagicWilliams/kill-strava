@@ -11,7 +11,7 @@ import Foundation
 /// Started only when auto-pause is on, so outdoors Motion & Fitness is only asked for by
 /// someone who turned it on (`NSMotionUsageDescription`, project.yml); a treadmill run asks
 /// for it regardless, for its distance (`RunStepDistanceStream`). If it is denied or unavailable,
-/// nothing arrives, and auto-pause works from GPS alone outdoors and not at all indoors —
+/// nothing arrives, and auto-pause works from GPS alone outdoors and not at all indoors,
 /// it never pauses on a reading it doesn't have.
 @MainActor
 final class RunPedometerStream: RunMotionStreaming {

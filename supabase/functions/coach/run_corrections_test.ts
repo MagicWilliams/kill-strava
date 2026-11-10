@@ -1,4 +1,4 @@
-// #206 — the coach reports what the athlete said; the app computes the corrected run.
+// #206: the coach reports what the athlete said; the app computes the corrected run.
 //
 // What these pin is the deploy-order contract: the function and the app ship separately, so
 // the build David has installed (which sends no `features` and only understands totals) must

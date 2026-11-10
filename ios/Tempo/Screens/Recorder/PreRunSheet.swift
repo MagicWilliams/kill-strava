@@ -188,7 +188,7 @@ struct PreRunSheet: View {
 
     /// Health's write prompt comes here, the first time, when the reason is obvious (#110):
     /// HealthKit shows a sheet only for types not yet decided, so on every later run this is
-    /// a no-op. A refusal doesn't stop the run — the recorder reports a session it can't
+    /// a no-op. A refusal doesn't stop the run. The recorder reports a session it can't
     /// save as `lastFailure`, which this sheet shows when it comes back.
     private func start() {
         starting = true

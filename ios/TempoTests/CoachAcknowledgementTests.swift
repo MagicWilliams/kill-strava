@@ -1,9 +1,9 @@
 import XCTest
 @testable import Tempo
 
-/// The coach proposed a change, the athlete confirmed it, the card went green — and the
+/// The coach proposed a change, the athlete confirmed it, the card went green, and the
 /// coach said nothing. The last line in the transcript was one the app had written on the
-/// athlete's behalf ("Confirmed — Correct Tue's run: 6.0 → 8.0 mi"), and the conversation
+/// athlete's behalf ("Confirmed: Correct Tue's run: 6.0 → 8.0 mi"), and the conversation
 /// stopped there (#31).
 ///
 /// The fix is one bit: *ask* for a reply. These pin which transitions get to ask, because
@@ -61,7 +61,7 @@ final class CoachAcknowledgementTests: XCTestCase {
 
     /// The ordering constraint, encoded. The write landed but `reloadFromSupabase()` did
     /// not, so `coachContext()` still holds the pre-correction runs. A reply built on that
-    /// would confidently describe the 6.0-mile version of a run the athlete just made 8.0 —
+    /// would confidently describe the 6.0-mile version of a run the athlete just made 8.0,
     /// worse than saying nothing, and the athlete is already told the re-read failed.
     func testStaleContextStaysQuietRatherThanNarratingOldNumbers() {
         XCTAssertFalse(asks(.appliedWithStaleContext, "amend_run"))
@@ -69,7 +69,7 @@ final class CoachAcknowledgementTests: XCTestCase {
         XCTAssertFalse(asks(.appliedWithStaleContext, onboarding: true, "create_plan"))
     }
 
-    /// During the setup interview, small facts apply silently — the athlete's answer was the
+    /// During the setup interview, small facts apply silently. The athlete's answer was the
     /// consent, and the coach's next question is already the acknowledgement. An extra reply
     /// per fact would double every turn of the interview.
     func testOnboardingAutoAppliedFactsStayQuiet() {
@@ -80,7 +80,7 @@ final class CoachAcknowledgementTests: XCTestCase {
 
     /// Second lock on the same door: `handleReply` strips the auto-apply types before they
     /// can become cards, so these should never reach a Confirm during the interview. If one
-    /// ever does — a stale card restored from `coach_messages` after onboarding resumed —
+    /// ever does (a stale card restored from `coach_messages` after onboarding resumed)
     /// it still must not double the turn.
     func testOnboardingAutoApplyTypesStayQuietEvenIfTheyReachAConfirm() {
         for type in CoachAcknowledgement.onboardingAutoApplyTypes {
@@ -112,7 +112,7 @@ final class CoachAcknowledgementTests: XCTestCase {
         )
     }
 
-    /// An unknown tool type — a newer coach deploy talking to an older build — should still
+    /// An unknown tool type (a newer coach deploy talking to an older build) should still
     /// get a reply rather than dead-ending the conversation.
     func testUnknownActionTypeStillReplies() {
         XCTAssertTrue(asks(.applied, "some_tool_shipped_after_this_build"))
@@ -131,7 +131,7 @@ final class CoachAcknowledgementTests: XCTestCase {
 
     /// The incident. 2026-10-15: two `coach.invoke_failed` rows, both plan-confirm
     /// acknowledgements, both "This model does not support assistant message prefill." The
-    /// transcript ended "Confirmed — …" then the "Plan is live" narration — an assistant turn
+    /// transcript ended "Confirmed: …" then the "Plan is live" narration, an assistant turn
     /// last. The wire history must end on the athlete's side.
     func testPlanConfirmHistoryEndsInAUserTurn() {
         let wire = CoachAcknowledgement.wireHistory([coach(goalCard), user(confirmed), coach(planIsLive)])
@@ -197,7 +197,7 @@ final class CoachAcknowledgementTests: XCTestCase {
         XCTAssertEqual(wire, [user(confirmed)])
     }
 
-    /// No athlete turn to fold into — e.g. a 24-turn window that is all coach. Inventing a
+    /// No athlete turn to fold into: e.g. a 24-turn window that is all coach. Inventing a
     /// user turn would put words in the athlete's mouth; leave it, and #194's server-side
     /// drop is the backstop.
     func testHistoryWithNoUserTurnIsLeftAlone() {

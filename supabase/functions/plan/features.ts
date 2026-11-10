@@ -1,4 +1,4 @@
-// Tempo plan features — what /plan reads out of the athlete's runs, and the projection it
+// Tempo plan features: what /plan reads out of the athlete's runs, and the projection it
 // stores from them.
 //
 // Split out of index.ts (#205) so the projection could be pinned by a test. It used to fall
@@ -73,7 +73,7 @@ export function extractFeatures(runs: RunRow[], raceMi: number, now: Date = new 
   const currentMarathonS = bestPace < Infinity
     ? Math.round(equivalentTime(bestPace * bestMiles, bestMiles, 26.2188))
     : null;
-  // Same Riegel, aimed at the race actually being run — a 5K goal projects a 5K time.
+  // Same Riegel, aimed at the race actually being run. A 5K goal projects a 5K time.
   const currentRaceS = bestPace < Infinity
     ? Math.round(equivalentTime(bestPace * bestMiles, bestMiles, raceMi))
     : null;
@@ -99,7 +99,7 @@ export function extractFeatures(runs: RunRow[], raceMi: number, now: Date = new 
 /// race distance, or null.
 ///
 /// Null is the honest answer when no run qualifies, and the goal time is deliberately not an
-/// input. It used to be — `goal_time_s * 1.06`, "a modest miss of goal" — which put a number
+/// input. It used to be (`goal_time_s * 1.06`, "a modest miss of goal"), which put a number
 /// on Progress that came from the athlete's own target rather than from any run. Every reader
 /// of the column already handles null (Progress shows dashes, the detail screen says "No
 /// qualifying effort…", the plan-is-live line drops its projection sentence).

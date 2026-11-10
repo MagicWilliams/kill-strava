@@ -31,7 +31,7 @@ final class RunDedupeTests: XCTestCase {
     }
 
     func testDropsDuplicatesWithinASingleBatch() {
-        // Garmin can emit both copies in the same read — nothing in the DB to compare against.
+        // Garmin can emit both copies in the same read: nothing in the DB to compare against.
         let a = run(600)
         let b = run(602, id: UUID())
         let kept = RunDedupe.newRuns(from: [a, b], existing: [])
@@ -142,7 +142,7 @@ final class RunDedupeTests: XCTestCase {
 
     func testACorrectedRowIsNeverTouched() {
         // The athlete's own edit is the record. A re-export must not amend it, even
-        // additively — the corrected duration is not the same quantity HealthKit measured.
+        // additively. The corrected duration is not the same quantity HealthKit measured.
         var stored = clocked(0, meters: 10461, durationS: 3508)
         stored.corrected = true
         let elapsedCopy = clocked(1, meters: 10461, durationS: 3746)
@@ -184,7 +184,7 @@ final class RunDedupeTests: XCTestCase {
 
     func testAReExportUnderFreshUUIDsIsCountedSeparately() {
         // What the signal is actually for: the same runs arriving with uuids we have never
-        // stored. Dedupe still drops them — but this is the one that is worth an event.
+        // stored. Dedupe still drops them, but this is the one that is worth an event.
         let ids = (0..<3).map { _ in UUID().uuidString }
         let existing = ids.enumerated().map { stored($0.offset * 24 * 60, externalID: $0.element) }
         let reExported = (0..<3).map { candidate($0 * 24 * 60 + 1) }   // new uuids, clock drifted
@@ -225,7 +225,7 @@ final class RunDedupeTests: XCTestCase {
 
     /// The incident: from 2026-10-09 every sync proposed the same 47 runs, all dated
     /// 2021-12-26 → 2025-04-27, and the database took none of them (#94). They were the
-    /// duplicates migrations 0008/0009 retired — timezone re-imports a whole number of hours
+    /// duplicates migrations 0008/0009 retired, timezone re-imports a whole number of hours
     /// from their keepers. Retiring sets `superseded_by` and leaves the row, so each one still
     /// held its `(user_id, source, external_id)` key; but the live archive is all dedupe was
     /// given, and nothing live starts within five minutes of a row that sits hours away.
@@ -273,7 +273,7 @@ final class RunDedupeTests: XCTestCase {
 
     func testARetiredTwinInsideTheWindowIsAlreadyStoredNotAReExport() {
         // The 0009 shape: the retired clock started within a minute of its keeper, so the
-        // window always dropped it — but as an unknown uuid, nudging the re-export signal
+        // window always dropped it, but as an unknown uuid, nudging the re-export signal
         // with a workout we have held since 2021.
         let keeper = clocked(0, meters: 10461, durationS: 3508)
         var retired = clocked(40, meters: 10461, durationS: 3746)
@@ -287,8 +287,8 @@ final class RunDedupeTests: XCTestCase {
     }
 
     func testARetiredWorkoutCannotShadowOrAmendAGenuinelyNewRun() {
-        // A retired workout must not take a new run's place in the batch — HealthKit order
-        // is not ours to choose — nor fold its clock into a run it is not part of.
+        // A retired workout must not take a new run's place in the batch (HealthKit order
+        // is not ours to choose) nor fold its clock into a run it is not part of.
         var retired = clocked(0, meters: 10461, durationS: 3746)
         retired.externalID = "retired"
         var fresh = clocked(30, meters: 10461, durationS: 3508)

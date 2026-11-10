@@ -16,13 +16,13 @@ import UIKit
 /// throws, and retries on its own clock. A dead spot at the end of a run can cost a photo;
 /// it can never cost the run.
 ///
-/// The run row must already exist — the recorder writes it straight after the Health save
+/// The run row must already exist. The recorder writes it straight after the Health save
 /// (#122) and passes its id here.
 ///
 /// ## Before migration 0016
 ///
 /// Every write here fails (no columns, no bucket), is reported to telemetry, and is not
-/// retried — a missing column is a 4xx, and the retry policy only repeats transient
+/// retried. A missing column is a 4xx, and the retry policy only repeats transient
 /// failures. Nothing on screen depends on it yet.
 enum RunJournal {
 
@@ -34,7 +34,7 @@ enum RunJournal {
 
     enum PhotoOutcome: Equatable {
         case none                 // no photo was chosen
-        case attached(String)     // uploaded and `photo_path` set — the object key
+        case attached(String)     // uploaded and `photo_path` set: the object key
         case failed               // upload or path write gave up after retries
     }
 
@@ -157,7 +157,7 @@ enum RunJournal {
     ///
     /// The null write comes first and the object goes afterwards, never the other way round:
     /// deleting first would leave a row naming a missing object if the null write then
-    /// failed. The caller sweeps the object once this returns true — see
+    /// failed. The caller sweeps the object once this returns true. See
     /// `RunDetailJournal.orphanedObjectKey` and `deletePhotoObject` below.
     static func detachPhoto(fromRun runID: UUID) async -> Bool {
         do {
@@ -175,7 +175,7 @@ enum RunJournal {
     }
 
     /// Delete an object nothing names any more (#179): the photo a replace or a remove left
-    /// behind. Which key is safe to delete — and that the row has already moved off it — is
+    /// behind. Which key is safe to delete (and that the row has already moved off it) is
     /// decided in `RunDetailJournal.orphanedObjectKey`; this only carries it out.
     ///
     /// Best effort, and deliberately not retried. By the time this runs the row is already
@@ -192,7 +192,7 @@ enum RunJournal {
             Telemetry.info("journal.photo_orphan_deleted")
             return true
         } catch {
-            // The key is the athlete's own `<uid>/<run>/<photo>.jpg` — no free text in it —
+            // The key is the athlete's own `<uid>/<run>/<photo>.jpg` (no free text in it)
             // but the error could still be a Postgrest one, so report it by code like the
             // rest of this file does rather than by description.
             report("journal.photo_orphan_delete_failed", error, context: [:])
@@ -221,7 +221,7 @@ enum RunJournal {
     // MARK: - Retry
 
     /// Run `operation`, retrying transient failures on `RunJournalPayload.retryDelays`.
-    /// Logs once, with the final error, when it gives up — not once per attempt.
+    /// Logs once, with the final error, when it gives up, not once per attempt.
     private static func withRetry(
         _ event: String,
         context: [String: String] = [:],
@@ -249,7 +249,7 @@ enum RunJournal {
     }
 
     /// `Telemetry.error` logs the error's full description, and a Postgres constraint error's
-    /// `details` can read "Failing row contains (…)" — the athlete's notes, verbatim. Free
+    /// `details` can read "Failing row contains (…)". The athlete's notes, verbatim. Free
     /// text they typed must never reach `app_events`, so a database error is reported by its
     /// code and message alone.
     private static func report(_ event: String, _ error: Error, context: [String: String]) {
@@ -265,8 +265,8 @@ enum RunJournal {
 
     /// The HTTP status a failure carries, or nil when there was no HTTP answer at all.
     ///
-    /// A `PostgrestError` is the database answering — a check constraint, a missing column,
-    /// RLS — so it is a definitive no (reported as 400) even though it carries a Postgres
+    /// A `PostgrestError` is the database answering (a check constraint, a missing column,
+    /// RLS) so it is a definitive no (reported as 400) even though it carries a Postgres
     /// code rather than an HTTP status. Shared with the recorder's row write (#122).
     static func statusCode(of error: Error) -> Int? {
         switch error {

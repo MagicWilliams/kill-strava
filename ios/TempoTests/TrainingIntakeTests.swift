@@ -7,7 +7,7 @@ import XCTest
 /// Before this, every plan Tempo ever built was a marathon: the `plan` function writes
 /// `distance: "marathon"` on every goal it creates, and the schema allowed four races. The
 /// intake is what lets a 5K be a 5K, a mid-block athlete start at week 9, and "no plan, just
-/// coaching" mean no plan. Each of those can fail without anything crashing — the payload
+/// coaching" mean no plan. Each of those can fail without anything crashing. The payload
 /// simply arrives without the field, and the block is built for somebody else. These pin
 /// what the answers become, field by field, and that the goal they produce survives being
 /// read back and regenerated.
@@ -48,7 +48,7 @@ final class TrainingIntakeTests: XCTestCase {
 
     // MARK: - Distance: the label and the number
 
-    /// The headline failure. A 5K intake must leave as a 5K with 5,000 m on it — not as the
+    /// The headline failure. A 5K intake must leave as a 5K with 5,000 m on it, not as the
     /// marathon every goal has been until now.
     func testAFiveKLeavesAsAFiveKWithItsMetres() throws {
         let s = try XCTUnwrap(stamp(fiveK()))
@@ -104,7 +104,7 @@ final class TrainingIntakeTests: XCTestCase {
     }
 
     /// `plan` refuses a race whose week index from this Monday is under 2, with a bare 400
-    /// after the coach has already proposed the plan. The form says so first — and leaves
+    /// after the coach has already proposed the plan. The form says so first, and leaves
     /// the one style that builds nothing ("in 10 days I race a 5K, just coach me") open.
     func testUnderTwoWeeksOutRefusesAPlanButNotCoaching() {
         var a = fiveK()
@@ -276,7 +276,7 @@ final class TrainingIntakeTests: XCTestCase {
     // MARK: - Profile half
 
     /// Days, long-run day, strength and risk are read by `plan` from the profile, so they
-    /// are written there — at Confirm, from the card, never at form submit.
+    /// are written there, at Confirm, from the card, never at form submit.
     func testTheProfilePatchCarriesTheFormsSettings() throws {
         var a = fiveK()
         a.daysPerWeek = 4
@@ -351,8 +351,8 @@ final class TrainingIntakeTests: XCTestCase {
         XCTAssertEqual(prefs["quality"] as? [String], ["race_pace"])
     }
 
-    /// "Just finish" has no target, and `plan` no longer needs one. A time on the card —
-    /// the coach suggesting what the data points to — must not become the goal anyway.
+    /// "Just finish" has no target, and `plan` no longer needs one. A time on the card (
+    /// the coach suggesting what the data points to) must not become the goal anyway.
     func testJustFinishSendsAnExplicitNullTime() throws {
         var a = fiveK()
         a.goalType = .finish
@@ -475,7 +475,7 @@ final class TrainingIntakeTests: XCTestCase {
         )
     }
 
-    /// `plan` writes a fresh goal row on every run. "Drop me to 4 days" regenerates it — and
+    /// `plan` writes a fresh goal row on every run. "Drop me to 4 days" regenerates it, and
     /// without this, the regenerated goal is a marathon with no preferences.
     func testASettingsRegenerationKeepsTheRaceAndAdvancesTheWeek() {
         let body = PlanRequest.carryingForward(
@@ -528,7 +528,7 @@ final class TrainingIntakeTests: XCTestCase {
     // MARK: - Reading the goal back
 
     /// The app ships before 0014 is applied, and the goal query is `select *`. A row with
-    /// none of the new columns must decode exactly as it did — a goal that fails to decode is,
+    /// none of the new columns must decode exactly as it did. A goal that fails to decode is,
     /// on every screen, no goal at all.
     func testAGoalFromBeforeTheMigrationStillDecodes() throws {
         let g = try JSONDecoder().decode(GoalInfo.self, from: Data("""
@@ -542,7 +542,7 @@ final class TrainingIntakeTests: XCTestCase {
     }
 
     /// jsonb has more than one writer. A preferences blob in a shape this build doesn't know
-    /// loses the preferences — not the goal.
+    /// loses the preferences, not the goal.
     func testMalformedPreferencesCostThePreferencesNotTheGoal() throws {
         let g = try JSONDecoder().decode(GoalInfo.self, from: Data("""
         {"id":"2291695A-D680-4A25-A63B-F9E654293288","race_name":"Turkey Trot","race_date":"2026-11-26",
@@ -583,8 +583,8 @@ final class TrainingIntakeTests: XCTestCase {
     }
 
     /// ...and stops being training the morning after the race (#140). Without the phase, the
-    /// override above has no end: a coaching-only block never reaches `.racePassed` — that
-    /// mode needs a plan — so the coach kept being told "training" about a race already run,
+    /// override above has no end: a coaching-only block never reaches `.racePassed` (that
+    /// mode needs a plan) so the coach kept being told "training" about a race already run,
     /// and went on prescribing for it. Race week still is training; only the day after isn't.
     func testACoachingOnlyGoalStopsBeingTrainingOnceTheRaceHasRun() {
         var coachingOnly = goal(startedWeek: nil)

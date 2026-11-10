@@ -5,7 +5,7 @@
 // way it goes wrong is a screen full of plausible buttons rather than a crash.
 //
 // 2026-11-04, two fresh accounts going through setup:
-// - A tap reaches the model as a user turn, "Confirmed — Correct Oct 27 run". With tools on
+// - A tap reaches the model as a user turn, "Confirmed: Correct Oct 27 run". With tools on
 //   offer and no record of the card, the model read that as the athlete agreeing to a change
 //   and proposed it. One run correction went up four times, "that card is up now" each time;
 //   a complete_onboarding card went up five times.

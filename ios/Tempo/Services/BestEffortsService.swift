@@ -15,7 +15,7 @@ import Foundation
 /// `efforts_scanned_at` column. Every read here therefore reports *unavailable* rather than
 /// *empty*, and the pass does nothing at all until the schema answers. That distinction is
 /// the difference between History hiding a card it cannot fill and History showing a
-/// confident, empty PR table — the second is the failure mode this codebase keeps
+/// confident, empty PR table. The second is the failure mode this codebase keeps
 /// relearning.
 ///
 /// It is also why `efforts_scanned_at` is deliberately **not** added to `RunStore`'s main
@@ -37,11 +37,11 @@ final class BestEffortsService {
         /// Runs whose timeline has already been read, whether or not it yielded anything.
         var scanned: Set<UUID> = []
         /// False until migration 0011 is applied. Nothing renders and nothing scans while
-        /// this is false — an absent table is not an empty one.
+        /// this is false. An absent table is not an empty one.
         var available = false
 
         func best(_ key: Int) -> Best? { bests[key] }
-        /// Distances this run currently holds the record for — the badge set on run detail.
+        /// Distances this run currently holds the record for: the badge set on run detail.
         func recordDistances(for runID: UUID) -> [Int] {
             BestEfforts.distances.map(\.key).filter { bests[$0]?.runID == runID }
         }
@@ -90,8 +90,8 @@ final class BestEffortsService {
 
     /// Run ids already scanned, or nil when the schema isn't there yet.
     ///
-    /// Reads the marker column for every run and filters on device. The alternative — a
-    /// `not.is.null` filter — would save a few hundred kilobytes once per launch and cost a
+    /// Reads the marker column for every run and filters on device. The alternative (a
+    /// `not.is.null` filter) would save a few hundred kilobytes once per launch and cost a
     /// PostgREST operator spelling that has to be right the first time; this way the only
     /// thing that can fail is the column not existing, which is precisely the case being
     /// detected.
@@ -111,7 +111,7 @@ final class BestEffortsService {
                     .execute()
                     .value
             } catch {
-                // Expected before the migration lands, so it is not an error event — the
+                // Expected before the migration lands, so it is not an error event. The
                 // feature is simply off. Anything else here reads the same from the app's
                 // point of view: no marker column, no pass.
                 return nil
@@ -124,7 +124,7 @@ final class BestEffortsService {
         return scanned
     }
 
-    /// One run's own efforts — the card on its detail page.
+    /// One run's own efforts: the card on its detail page.
     func efforts(for runID: UUID) async -> [BestEfforts.Effort] {
         let rows: [EffortRow]? = try? await Supa.client
             .from("run_efforts")
@@ -158,7 +158,7 @@ final class BestEffortsService {
     /// Cancellation is honoured between runs rather than fought: a killed pass leaves every
     /// run it finished marked, so the next one resumes instead of restarting. That is the
     /// entire reason the marker is a column on `runs` and not "does this run have any effort
-    /// rows" — a 2-mile shakeout legitimately produces no 5 K row, and under a row-presence
+    /// rows". A 2-mile shakeout legitimately produces no 5 K row, and under a row-presence
     /// rule it would be re-read from HealthKit on every launch forever.
     func scanSlice(_ runs: [RunSummary]) async -> Set<UUID> {
         guard let uid = Supa.userID?.uuidString, !runs.isEmpty else { return [] }

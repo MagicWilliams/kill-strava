@@ -4,7 +4,7 @@ import Supabase
 /// Generates and caches the per-run coach takeaway (`runs.coach_takeaway`).
 ///
 /// Two callers: the Run Detail page (passes its already-loaded detail), and
-/// RunStore right after a run matches today's session — so the coach's read is
+/// RunStore right after a run matches today's session, so the coach's read is
 /// already waiting on Today without the athlete ever opening the run.
 @MainActor
 enum TakeawayService {

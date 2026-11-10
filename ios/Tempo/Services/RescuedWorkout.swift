@@ -6,7 +6,7 @@ import HealthKit
 /// for the kill no workout session survived.
 ///
 /// When iOS kills Tempo and `recoverActiveWorkoutSession` comes back empty, the live builder
-/// went with the session — and with it every distance sample and route point written during
+/// went with the session, and with it every distance sample and route point written during
 /// the run. What is left is the snapshot on disk. This rebuilds the workout from it with a
 /// plain `HKWorkoutBuilder`, which takes dates in the past, so the recorder can adopt it in
 /// the session's place and run its ordinary end-of-run path through it: the distance curve
@@ -17,8 +17,8 @@ import HealthKit
 /// fixes survive, not a map) and heart rate. A run with a hole in its map, saved, beats a run
 /// with a map, lost.
 ///
-/// Pauses go in as workout events at `stop`, so HealthKit's own duration — the moving time
-/// ingest reads off `HKWorkout.duration` — is the moving time he watched, not wall time.
+/// Pauses go in as workout events at `stop`, so HealthKit's own duration (the moving time
+/// ingest reads off `HKWorkout.duration`) is the moving time he watched, not wall time.
 @MainActor
 final class RescuedWorkout: WorkoutSessionDriving {
 
@@ -82,8 +82,8 @@ final class RescuedWorkout: WorkoutSessionDriving {
         builder.discardWorkout()
     }
 
-    /// One pause/resume pair per stop. A pause still open when the run ended — he was
-    /// stopped when Tempo died and the run is being saved from there — runs to the end.
+    /// One pause/resume pair per stop. A pause still open when the run ended (he was
+    /// stopped when Tempo died and the run is being saved from there) runs to the end.
     private static func pauseEvents(_ pauses: [RecorderState.Pause], endingBy end: Date) -> [HKWorkoutEvent] {
         pauses.flatMap { p -> [HKWorkoutEvent] in
             let resumed = min(p.end ?? end, end)

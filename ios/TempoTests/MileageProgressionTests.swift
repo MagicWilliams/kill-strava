@@ -106,7 +106,7 @@ final class MileageProgressionTests: XCTestCase {
     // MARK: - Week boundaries
 
     /// A long run that finishes late on Sunday belongs to the week it closed, not the one
-    /// starting a few minutes later — otherwise a 16-mile week reads as 0 and the next as 16
+    /// starting a few minutes later, otherwise a 16-mile week reads as 0 and the next as 16
     /// before it has begun.
     func testSundayNightRunLandsInTheWeekItCloses() {
         let weeks = MileageProgression.last12Weeks(
@@ -156,8 +156,8 @@ final class MileageProgressionTests: XCTestCase {
 
     // MARK: - Same rules as History
 
-    /// Superseded rows (migration 0008's retired Garmin re-exports) are dropped at the read —
-    /// `RunStore.fetchFromSupabase` selects `superseded_by is null` — and `RunSummary` has no
+    /// Superseded rows (migration 0008's retired Garmin re-exports) are dropped at the read (
+    /// `RunStore.fetchFromSupabase` selects `superseded_by is null`) and `RunSummary` has no
     /// flag left to filter on. What *can* break here is a second, slightly different weekly
     /// total. So this pins the chart to `byWeek`, number for number: if one ever counts a run
     /// the other doesn't, History and Today disagree about the same week, and this fails.
@@ -208,7 +208,7 @@ final class MileageProgressionTests: XCTestCase {
         XCTAssertEqual(p.currentVsAverage, -25, accuracy: 0.01)
     }
 
-    /// An empty week drags the average down. That's correct — a week off is part of what
+    /// An empty week drags the average down. That's correct. A week off is part of what
     /// you have been running.
     func testAverageCountsZeroWeeks() {
         let runs = (2...11).map { back in

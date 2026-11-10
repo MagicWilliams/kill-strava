@@ -29,7 +29,7 @@ struct RecorderState: Codable, Equatable {
         case outdoor, treadmill, race
     }
 
-    /// Today's session as the athlete saw it when he pressed Start — a copy, not a reference.
+    /// Today's session as the athlete saw it when he pressed Start. A copy, not a reference.
     /// The plan can be regenerated mid-run; what the run is judged against must not move with it.
     struct SessionTarget: Codable, Equatable {
         var sessionID: UUID?
@@ -70,7 +70,7 @@ struct RecorderState: Codable, Equatable {
         /// Auto-pause decided he had stopped. Only these may be lifted by auto-resume.
         case auto
         /// The time between a crash and relaunch, when the workout session itself was paused
-        /// (#115). Only he can resume it — we were not there to see him start running again.
+        /// (#115). Only he can resume it. We were not there to see him start running again.
         case recoveryGap
     }
 
@@ -93,7 +93,7 @@ struct RecorderState: Codable, Equatable {
         /// The `HKWorkoutSession` failed underneath us.
         case sessionFailed
         /// iOS killed the app. Dispatched on relaunch against the rehydrated snapshot, stamped
-        /// with the snapshot's last-saved instant — the last moment we know the run was fine.
+        /// with the snapshot's last-saved instant. The last moment we know the run was fine.
         case appTerminated
 
         /// Whether the recorder lost hold of the run and must go through `.recovering`.
@@ -171,7 +171,7 @@ struct RecorderState: Codable, Equatable {
     /// Whether the target strip is on screen right now.
     var showsTarget: Bool { target != nil && targetVisible }
 
-    /// Whether `event` would change anything. The UI asks this to decide what to offer —
+    /// Whether `event` would change anything. The UI asks this to decide what to offer,
     /// hold-to-end is drawn only where `.endRequested(.liveScreen, …)` is accepted.
     func accepts(_ event: RecorderEvent) -> Bool {
         RecorderState.reduce(self, event) != self
@@ -274,7 +274,7 @@ struct RecorderState: Codable, Equatable {
             next.phase = .ending(.failed(reason: reason))
 
         // ── Discard: deliberate, from the live screen, never mid-stride ─────────────────
-        // Not from `.running` — he pauses first (frame 5b) — and not while a save is in
+        // Not from `.running` (he pauses first (frame 5b)) and not while a save is in
         // flight, where it would race the write.
         case (.paused, .discard(.liveScreen)),
              (.ending(.review), .discard(.liveScreen)),

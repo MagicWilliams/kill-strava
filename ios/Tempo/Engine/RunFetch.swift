@@ -3,14 +3,14 @@ import Foundation
 /// What the read path is allowed to put on screen when Supabase doesn't answer.
 ///
 /// Supabase `runs` outranks HealthKit because it carries the corrections the athlete made
-/// through the coach — "that was 8.0, not 7.6". HealthKit still holds the raw numbers those
+/// through the coach ("that was 8.0, not 7.6"). HealthKit still holds the raw numbers those
 /// corrections overwrote. The two copies therefore disagree *by design*, and which one is on
 /// screen is a fact the athlete has to be told.
 ///
 /// Until this file existed the read path used `try?`, so a failed fetch and an empty table
 /// were the same value (`nil`) and the fallback quietly swapped the corrected view for the
 /// raw one. A network blip could revert a corrected 8.0 back to 7.6 with no crash and no
-/// signal — the same shape as the 2026-08-23 splash freeze, where "couldn't ask" and
+/// signal. The same shape as the 2026-08-23 splash freeze, where "couldn't ask" and
 /// "nothing there" were also indistinguishable.
 ///
 /// Two rules are encoded here, both pinned by tests:
@@ -31,7 +31,7 @@ enum RunFetch {
     /// exactly one thing: the end.
     static let pageSize = 500
 
-    /// Upper bound on how many runs a single read will assemble. Not a product limit — a
+    /// Upper bound on how many runs a single read will assemble. Not a product limit. A
     /// leash, so a paging bug cannot spin against the database forever. Roughly twenty years
     /// of running six days a week.
     static let maxRuns = 6_000
@@ -71,7 +71,7 @@ enum RunFetch {
     }
 
     struct Decision: Equatable {
-        /// The set to display, or `nil` to leave what's already on screen alone — the
+        /// The set to display, or `nil` to leave what's already on screen alone. The
         /// difference between "here is the truth" and "I have nothing better than what
         /// you're already looking at".
         let runs: [RunSummary]?
@@ -93,12 +93,12 @@ enum RunFetch {
     ///
     /// - Parameters:
     ///   - response: what Supabase came back with.
-    ///   - ingested: this refresh's HealthKit read — raw, uncorrected.
+    ///   - ingested: this refresh's HealthKit read, raw, uncorrected.
     ///   - onScreen: what the athlete is currently looking at (loaded from Supabase on an
     ///     earlier refresh, so it carries corrections).
     ///   - retiredExternalIDs: HealthKit uuids of rows retired as duplicates
     ///     (`superseded_by is not null`). The graft below needs them for the same reason the
-    ///     sync did (#97) — see that branch.
+    ///     sync did (#97). See that branch.
     static func resolve(
         _ response: Response,
         ingested: [RunSummary],
@@ -116,12 +116,12 @@ enum RunFetch {
         case .incomplete(let rows):
             // We inserted runs and then couldn't read them back. Graft on the HealthKit
             // copies of exactly what's missing rather than hiding runs the athlete just
-            // finished — they're raw, but a brand-new run has nothing to correct yet.
+            // finished, they're raw, but a brand-new run has nothing to correct yet.
             //
             // `rows` is the live archive only, so on its own it has the blind spot #97 fixed
             // for the sync: a retired duplicate's start can sit hours from its keeper (the 47
             // timezone re-imports, 2021-12-26 → 2025-04-27), so HealthKit's copy of it passes
-            // the time window and gets grafted in beside the run it duplicates — double
+            // the time window and gets grafted in beside the run it duplicates, double
             // counted in History, weekly mileage and load until the next clean refresh. The
             // retired uuids are what tells the graft those workouts are already ours.
             let missing = RunDedupe.reconcile(
@@ -170,7 +170,7 @@ extension RunFetch {
     ///
     /// Same conflation, different cost: `try?` here made "no takeaway written yet" and
     /// "couldn't read the column" identical, so every failed read kicked off a fresh
-    /// generation — a Claude call spent to re-derive something that may already exist.
+    /// generation. A Claude call spent to re-derive something that may already exist.
     enum Takeaway: Equatable {
         case cached(String)
         case notGenerated    // read succeeded, the column is empty

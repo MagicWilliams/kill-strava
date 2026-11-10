@@ -23,7 +23,7 @@ struct YouView: View {
 
     /// The same state Plan and Progress read (#230). This header used to count from `.now`
     /// and then floor into weeks, which on 15 Oct made You say "6 weeks out" to Progress's
-    /// "7 weeks" about the same 27 Nov race — two lost days, one from counting off the
+    /// "7 weeks" about the same 27 Nov race, two lost days, one from counting off the
     /// current instant and one from the floor.
     ///
     /// You is the only header that prints the race's role, so it is the only one that asks
@@ -50,7 +50,7 @@ struct YouView: View {
                 }
             }
             // A goal with no target time is still a goal (#231). This used to branch on
-            // `goalTimeSeconds`, so the 27 Nov tune-up — a real goal, deliberately untimed —
+            // `goalTimeSeconds`, so the 27 Nov tune-up (a real goal, deliberately untimed)
             // got the empty state, offering to set a goal the subtitle above it was already
             // naming. `GoalLine.State` keeps "no goal" and "no target time" apart (#44); the
             // card now reads it instead of re-deciding.
@@ -77,7 +77,7 @@ struct YouView: View {
     }
 
     /// The race named once, with its distance (#231). The fallback is unreachable from the
-    /// two cases that use it — `raceLabel` is nil only when there is no goal at all.
+    /// two cases that use it, `raceLabel` is nil only when there is no goal at all.
     private var raceLabel: String {
         GoalLine.raceLabel(goal: store.goal, units: units) ?? GoalLine.unnamedRace
     }

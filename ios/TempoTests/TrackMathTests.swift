@@ -3,14 +3,14 @@ import XCTest
 
 /// Pins the recorder's GPS math (#112).
 ///
-/// Until the recorder, every distance Tempo showed was somebody else's — Garmin's, read back
+/// Until the recorder, every distance Tempo showed was somebody else's. Garmin's, read back
 /// out of HealthKit. This is the first time Tempo turns raw fixes into a number the athlete
 /// races against, live. Raw fixes lie in a handful of well-known ways: the first few before
 /// a lock, the 300 m jump under a building, the stretch where accuracy falls apart, the
 /// altitude that wanders while standing on a track. Each one reads as a plausible wrong
 /// number rather than a crash, so each one has a fixture here.
 ///
-/// Every fixture is synthetic and deterministic — built from arithmetic and a seeded RNG —
+/// Every fixture is synthetic and deterministic (built from arithmetic and a seeded RNG)
 /// so a failure reproduces exactly.
 final class TrackMathTests: XCTestCase {
 
@@ -62,7 +62,7 @@ final class TrackMathTests: XCTestCase {
         }
     }
 
-    /// Laps of a 400 m track (a circle — close enough for distance), one fix a second.
+    /// Laps of a 400 m track (a circle, close enough for distance), one fix a second.
     private func loop(laps: Double, secPerKm: Double) -> [TrackMath.Fix] {
         let r = 400 / (2 * Double.pi)
         let speed = 1000 / secPerKm
@@ -85,7 +85,7 @@ final class TrackMathTests: XCTestCase {
         abs(measured - truth) / truth * 100
     }
 
-    /// SplitMix64 — deterministic noise, so a red test reproduces bit for bit.
+    /// SplitMix64: deterministic noise, so a red test reproduces bit for bit.
     private struct SeededRNG: RandomNumberGenerator {
         var state: UInt64
         mutating func next() -> UInt64 {
@@ -149,7 +149,7 @@ final class TrackMathTests: XCTestCase {
 
     // MARK: - Fixes that lie
 
-    /// One fix thrown 300 m sideways — the underpass, the glass tower. Taking it would add
+    /// One fix thrown 300 m sideways: the underpass, the glass tower. Taking it would add
     /// 600 m to the run (there and back) in one second.
     func testTeleportSpikeIsRejected() {
         var fixes = straightLine(meters: 5000, secPerKm: 300)
@@ -220,7 +220,7 @@ final class TrackMathTests: XCTestCase {
         XCTAssertLessThan(percentError(track.distanceM, 2000), 1)
     }
 
-    /// A fix delivered twice, or late, can only ever be ignored — the curve never runs back.
+    /// A fix delivered twice, or late, can only ever be ignored. The curve never runs back.
     func testDuplicateAndOutOfOrderFixesAreIgnored() {
         let run = straightLine(meters: 500, secPerKm: 300)
         var track = TrackMath.Track(start: start)
@@ -247,7 +247,7 @@ final class TrackMathTests: XCTestCase {
             let d = 2000 + s * (1000.0 / 240)
             return fix(t: hardStartT + s, east: d * sin(bearing), north: d * cos(bearing))
         }
-        // Live — not closed. This is the screen mid-run, where distance trails the athlete
+        // Live: not closed. This is the screen mid-run, where distance trails the athlete
         // by a step; the first version of the window counted that trail as standing still
         // and read this 4:00/km as 4:17.
         var track = TrackMath.Track(start: start)
@@ -259,7 +259,7 @@ final class TrackMathTests: XCTestCase {
         XCTAssertEqual(try XCTUnwrap(summary.averagePaceElapsedS), (720 + 240) / 3, accuracy: 5)
     }
 
-    /// A minute at a red light — standing still, the fix wandering a metre and a half.
+    /// A minute at a red light: standing still, the fix wandering a metre and a half.
     /// Elapsed keeps counting; distance and moving time do not; current pace goes blank
     /// rather than decaying towards an hour a mile.
     func testStandingAtALightAddsNoDistanceAndNoMovingTime() throws {
@@ -276,7 +276,7 @@ final class TrackMathTests: XCTestCase {
         var track = TrackMath.Track(start: start)
         for f in first { track.ingest(f) }
         // The first few seconds of standing let the smoothed position catch up to where the
-        // athlete actually stopped — that is real distance, the tail of the run. The wander
+        // athlete actually stopped. That is real distance, the tail of the run. The wander
         // after it is what must add nothing.
         for f in standing.prefix(5) { track.ingest(f) }
         let beforeStop = track.distanceM
@@ -294,7 +294,7 @@ final class TrackMathTests: XCTestCase {
         XCTAssertGreaterThan(elapsed, moving, "the stop shows in elapsed pace only")
     }
 
-    /// A 400 m rep: live, the distance trails by a step plus the smoothing lag — over 1 % of
+    /// A 400 m rep: live, the distance trails by a step plus the smoothing lag, over 1 % of
     /// something this short. Closing the run credits it, once.
     func testClosingCreditsTheTrailingMetresOnce() {
         var track = TrackMath.Track(start: start)
@@ -364,8 +364,8 @@ final class TrackMathTests: XCTestCase {
     }
 
     /// Kill recovery (#115): iOS killed the app 1.1 km in, he ran on for two minutes with
-    /// nothing listening, and the app came back. The track picks up from the carried curve —
-    /// history intact, splits unchanged — and credits nothing for the straight line between
+    /// nothing listening, and the app came back. The track picks up from the carried curve (
+    /// history intact, splits unchanged) and credits nothing for the straight line between
     /// where it last saw him and where it sees him now. Those metres are the session's to
     /// report (`InProgressRun.gapMeters`), not a guess drawn across the city.
     func testAResumedTrackCarriesOnFromTheSnapshotAndCreditsNothingAcrossTheGap() throws {
@@ -408,7 +408,7 @@ final class TrackMathTests: XCTestCase {
 
     // MARK: - Splits
 
-    /// Splits sit on exact boundaries — a hand-built curve with points right on the mile
+    /// Splits sit on exact boundaries: a hand-built curve with points right on the mile
     /// markers and between them, negative-split.
     func testSplitsLandOnExactBoundaries() {
         let timeline = [
@@ -433,14 +433,14 @@ final class TrackMathTests: XCTestCase {
     }
 
     /// The same recorded run, split by mile and by km, from the same curve. The split length
-    /// is the only input that changes — which is what `Units` (#108) will supply.
+    /// is the only input that changes, which is what `Units` (#108) will supply.
     func testRecordedRunSplitsByMileAndByKilometre() {
         let track = record(straightLine(meters: 6000, secPerKm: 300))
         let byKm = TrackMath.splits(timeline: track.timeline, splitMeters: km)
         let byMile = TrackMath.splits(timeline: track.timeline, splitMeters: mile)
         print("[TrackMath] km splits: \(byKm.map { String(format: "%.1f", $0.durationS) })")
 
-        // 6 km reads as 5 or 6 full kms depending on the last few metres — never a partial
+        // 6 km reads as 5 or 6 full kms depending on the last few metres, never a partial
         // stub. Check the full ones.
         for s in byKm where !s.isPartial { XCTAssertEqual(s.durationS, 300, accuracy: 1.5) }
         XCTAssertGreaterThanOrEqual(byKm.filter { !$0.isPartial }.count, 5)
@@ -459,7 +459,7 @@ final class TrackMathTests: XCTestCase {
     // MARK: - Elevation
 
     /// Thirty minutes on a flat road with altitude bouncing ±3 m every fix. Summing every
-    /// upward wiggle — the naive method — reads a hilly run; the hysteresis reads flat.
+    /// upward wiggle (the naive method) reads a hilly run; the hysteresis reads flat.
     func testFlatRunWithNoisyAltitudeReadsFlat() {
         var rng = SeededRNG(state: 3)
         let altitudes = (0..<1800).map { _ in 180 + Double.random(in: -3...3, using: &rng) }

@@ -3,7 +3,7 @@ import PhotosUI
 import UIKit
 
 /// The post-run save screen (#129): frames 7a (dark) and 7b (light) of the signed-off
-/// "04 · Post-run" page. The run as recorded — map, distance, time, pace, splits — then the
+/// "04 · Post-run" page. The run as recorded (map, distance, time, pace, splits) then the
 /// journal: effort, feel and notes, title, photo, shoes. All of it optional; Save is pinned
 /// below and always one tap. A treadmill run also gets frame 8, "Treadmill said…" (#130):
 /// the console's distance, which the run is rescaled to before it reaches Health.

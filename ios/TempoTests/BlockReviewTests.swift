@@ -2,8 +2,8 @@ import XCTest
 @testable import Tempo
 
 /// The Chicago 2026 block, read back (#100): plan start Monday 22 Jun, race Sunday 11 Oct,
-/// sixteen weeks. There is **no race run** — David ran it with no watch and Strava paused
-/// mid-race — so every number here has to stand up with race day empty.
+/// sixteen weeks. There is **no race run** (David ran it with no watch and Strava paused
+/// mid-race) so every number here has to stand up with race day empty.
 ///
 /// The shape of every past bug in this layer is a plausible number, quietly wrong. The ones
 /// most likely here: a 20-miler that doesn't count because of how metres are stored; a race
@@ -49,7 +49,7 @@ final class BlockReviewTests: XCTestCase {
 
     // MARK: - 20+ mi runs
 
-    /// 20 miles is 32,186.8 m, and ingest truncates to whole metres — so a run Garmin wrote as
+    /// 20 miles is 32,186.8 m, and ingest truncates to whole metres, so a run Garmin wrote as
     /// exactly 20.00 mi is stored as 32,186. A `>= 20.0 mi` test on the stored value misses it
     /// by 0.8 m and the tile says he did one fewer 20-miler than he did. 19.95 mi is not 20.
     func testTwentyPlusCountsTwentyAsStoredAndNotNineteenNinetyFive() {
@@ -80,7 +80,7 @@ final class BlockReviewTests: XCTestCase {
     // MARK: - Missing race run
 
     /// Chicago as it actually is in the database: nothing on race day. The review must still
-    /// produce every number — none of them depends on the race existing as a run.
+    /// produce every number, none of them depends on the race existing as a run.
     func testABlockWithNoRaceRunStillReviews() {
         let runs = [
             run("2026-06-22", miles: 5, hour: 0),     // first minute of the block: in
@@ -103,7 +103,7 @@ final class BlockReviewTests: XCTestCase {
     // MARK: - Weeks
 
     /// Planned bars line up with `plan_weeks.week_index`, counted from the plan's start date.
-    /// A week with no row has no target — not a target of zero.
+    /// A week with no row has no target, not a target of zero.
     func testWeeksCarryPlannedTargetsByIndex() {
         let r = review([run("2026-06-23", miles: 6), run("2026-06-30", miles: 8)],
                        weeks: [week(0, 30), week(1, 34), week(15, 18)])
@@ -118,7 +118,7 @@ final class BlockReviewTests: XCTestCase {
     // MARK: - Taper
 
     /// Peak 50 mi in week 13, race week 20 mi (Mon–Sat; the race excluded): a 60% taper.
-    /// Counting the race would have made it 46.6 mi — a 7% "taper" off a block that cut hard.
+    /// Counting the race would have made it 46.6 mi. A 7% "taper" off a block that cut hard.
     func testTaperIsRaceWeekAgainstTheBuildPeak() {
         let runs = [
             run("2026-09-14", miles: 20), run("2026-09-16", miles: 10), run("2026-09-20", miles: 20),
@@ -166,8 +166,8 @@ final class BlockReviewTests: XCTestCase {
         XCTAssertEqual(r.long.fraction, 1)
     }
 
-    /// No quality planned reads as "—", not 0% — a block that never had intervals didn't
-    /// skip them all.
+    /// No quality planned reads as the empty placeholder, not 0%: a block that never had
+    /// intervals didn't skip them all.
     func testAdherenceWithNothingPlannedHasNoFraction() {
         let r = review([], sessions: [session("2026-06-23", "easy", "done")])
         XCTAssertEqual(r.quality.planned, 0)

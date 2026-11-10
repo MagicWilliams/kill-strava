@@ -2,13 +2,13 @@ import XCTest
 @testable import Tempo
 
 /// Regression suite for #155. On 2026-10-13 at 19:46:28 UTC one cancelled `refresh()` wrote
-/// four never-before-seen error events to `app_events` inside 115 ms —
+/// four never-before-seen error events to `app_events` inside 115 ms (
 /// `sync.runs_unreadable`, `sync.insert_failed`, `takeaway.latest_unreadable`,
-/// `block.past_unreadable` — every one `error_type: CancellationError`. The next refresh
+/// `block.past_unreadable`) every one `error_type: CancellationError`. The next refresh
 /// succeeded; nothing was lost. The pair fired again on 2026-10-15 07:43:26 (`0.1.0+68`).
 ///
 /// The danger was never the app, it was triage: four new named errors at once is what a
-/// real regression looks like. These tests pin both halves of the fix — cancellation is
+/// real regression looks like. These tests pin both halves of the fix, cancellation is
 /// recognised in each spelling it arrives in, and nothing that is a genuine failure is.
 final class CancellationTests: XCTestCase {
 
@@ -25,7 +25,7 @@ final class CancellationTests: XCTestCase {
     }
 
     func testBridgedNSURLErrorCancelledIsACancellation() {
-        // The Objective-C shape of the same thing (NSURLErrorDomain −999) — what an error
+        // The Objective-C shape of the same thing (NSURLErrorDomain −999). What an error
         // that crossed a Foundation boundary looks like by the time it reaches a catch.
         let ns = NSError(domain: NSURLErrorDomain, code: NSURLErrorCancelled)
         XCTAssertTrue(Cancellation.isCancellation(ns))
@@ -65,11 +65,11 @@ final class CancellationTests: XCTestCase {
         XCTAssertFalse(Cancellation.isCancellation(other))
     }
 
-    // MARK: #248 — the coach call site #201 missed
+    // MARK: #248. The coach call site #201 missed
 
     func testTheCoachInvokeCancellationIsACancellation() {
         // 2026-10-29, 16:25:20 and 20:42:15 UTC (0.1.0+87 and +94): two `coach.invoke_failed`
-        // error rows, both this error verbatim — the chat screen going away mid-send, not a
+        // error rows, both this error verbatim. The chat screen going away mid-send, not a
         // coach that failed. `ChatStore.requestReply` was the fifth catch site and still
         // called `Telemetry.error` directly; it now goes through `errorUnlessCancelled`.
         let cancelled = NSError(
@@ -88,7 +88,7 @@ final class CancellationTests: XCTestCase {
     }
 
     func testADecodingFailureIsARealFailure() {
-        // The kind of error a schema drift produces — exactly what `sync.runs_unreadable`
+        // The kind of error a schema drift produces: exactly what `sync.runs_unreadable`
         // exists to catch, and must keep catching.
         let decoding = DecodingError.dataCorrupted(
             .init(codingPath: [], debugDescription: "column missing")

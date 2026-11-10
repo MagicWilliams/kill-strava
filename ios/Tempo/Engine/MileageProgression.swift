@@ -1,6 +1,6 @@
 import Foundation
 
-/// The last N training weeks as a trajectory — pure, no I/O.
+/// The last N training weeks as a trajectory: pure, no I/O.
 ///
 /// Today's weekly counter says how far you've run *this* week; this says whether that is
 /// more or less than you have been running. Strava's Progress chart is the model.
@@ -11,7 +11,7 @@ import Foundation
 ///    zero point, not a missing one. Dropping it would draw a line straight across an
 ///    injury or a holiday and make the gap look like steady training. Gaps are information.
 /// 2. **Weeks are assigned by `RunHistory.weekStart` and totalled by `RunHistory.byWeek`.**
-///    Not a second grouping rule — the History screen, the coach's weekly context and this
+///    Not a second grouping rule. The History screen, the coach's weekly context and this
 ///    chart have to agree on which week a Sunday-night run belongs to.
 /// 3. **The average leaves out the current week.** On a Tuesday the current week holds two
 ///    days of running; averaging it in drags the reference line down every Monday and back
@@ -20,7 +20,7 @@ import Foundation
 /// Superseded rows (Garmin re-exports retired by migration 0008) never reach this function:
 /// `RunStore.fetchFromSupabase` filters `superseded_by is null` at the read, which is what
 /// keeps them out of `byWeek` too. `RunSummary` carries no superseded flag, so there is
-/// nothing here to re-check — and re-checking would be a forked rule.
+/// nothing here to re-check, and re-checking would be a forked rule.
 ///
 /// Takes plain `[RunSummary]` and a `now`, so the widget extension can call it with whatever
 /// runs it holds and get the same numbers Today shows.
@@ -34,14 +34,14 @@ enum MileageProgression {
     struct WeekPoint: Identifiable, Equatable {
         /// Monday, start of day, in the calendar the window was built with.
         let weekStart: Date
-        /// Sunday, start of day — the last *day* of the week, for "Sep 29 – Oct 5" labels.
+        /// Sunday, start of day. The last *day* of the week, for "Sep 29 – Oct 5" labels.
         let weekEnd: Date
         let miles: Double
         let runCount: Int
         /// Longest single run in the week; 0 for an empty week.
         let longestRunMiles: Double
-        /// The week holding `now`. Partial by construction — the days after today are still
-        /// to come — so it's emphasised on the chart and left out of the average.
+        /// The week holding `now`. Partial by construction (the days after today are still
+        /// to come) so it's emphasised on the chart and left out of the average.
         let isCurrent: Bool
 
         var id: Date { weekStart }
@@ -51,7 +51,7 @@ enum MileageProgression {
     struct Progression: Equatable {
         /// Oldest → newest. Exactly the requested count; the current week is always last.
         let weeks: [WeekPoint]
-        /// Mean miles over the *completed* weeks in the window — every week but the current
+        /// Mean miles over the *completed* weeks in the window: every week but the current
         /// one, zero weeks included. 0 when the window has no completed weeks.
         let average: Double
 
@@ -60,7 +60,7 @@ enum MileageProgression {
         /// This week's miles minus the average. Negative early in the week is normal; the
         /// sign is only meaningful by Sunday.
         var currentVsAverage: Double { (current?.miles ?? 0) - average }
-        /// The biggest week in the window — the chart's natural ceiling.
+        /// The biggest week in the window: the chart's natural ceiling.
         var peak: Double { weeks.map(\.miles).max() ?? 0 }
         /// No runs anywhere in the window. The card still draws (a flat zero line is the
         /// truth), but there is nothing to compare.
@@ -76,7 +76,7 @@ enum MileageProgression {
         weeks(defaultWeekCount, runs: runs, now: now, calendar: calendar)
     }
 
-    /// The 12-week window with its average — what the Today card draws.
+    /// The 12-week window with its average: what the Today card draws.
     static func progression(
         runs: [RunSummary],
         now: Date = .now,
@@ -101,7 +101,7 @@ enum MileageProgression {
         let currentStart = RunHistory.weekStart(of: now, calendar: calendar)
 
         // Each Monday re-derived through `weekStart` rather than trusted from date
-        // arithmetic, so it is bit-for-bit the key `byWeek` produced — across a DST change
+        // arithmetic, so it is bit-for-bit the key `byWeek` produced, across a DST change
         // "Monday minus 7 days" and "the Monday of that week" are not guaranteed equal.
         let starts: [Date] = (0..<count).reversed().map { back in
             let shifted = calendar.date(byAdding: .weekOfYear, value: -back, to: currentStart) ?? currentStart

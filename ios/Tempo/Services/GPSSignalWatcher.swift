@@ -5,7 +5,7 @@ import Foundation
 ///
 /// Its own `CLLocationManager`, separate from the recorder's `RunLocationStream`: the
 /// recorder only wakes GPS at the countdown, and the sheet has to say what the signal is
-/// before that. Foreground only — no background updates, no blue pill — and stopped as soon
+/// before that. Foreground only (no background updates, no blue pill) and stopped as soon
 /// as the countdown is over, when the recorder's own stream has taken over. It never asks for
 /// permission; that is `LocationPermission`'s job, after the explainer.
 ///
@@ -28,7 +28,7 @@ final class GPSSignalWatcher: NSObject, ObservableObject {
     }
 
     /// Starts only with permission to use location: started without it, Core Location
-    /// would do nothing, and on some releases asks — which must only happen after the
+    /// would do nothing, and on some releases asks, which must only happen after the
     /// explainer.
     func start(access: LocationAccess) {
         guard access.canRecordOutdoors, !running else { return }

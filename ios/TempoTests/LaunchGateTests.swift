@@ -9,7 +9,7 @@ import XCTest
 /// The two invariants below are the ones that actually matter. Everything else is detail.
 final class LaunchGateTests: XCTestCase {
 
-    // MARK: Invariant 1 — a failure is never indistinguishable from loading
+    // MARK: Invariant 1. A failure is never indistinguishable from loading
 
     func testResolveNeverReturnsLoading() {
         // `.loading` is an initial state only. If resolution could produce it, the freeze
@@ -39,7 +39,7 @@ final class LaunchGateTests: XCTestCase {
         }
     }
 
-    // MARK: Invariant 2 — a failure never demotes an athlete into onboarding
+    // MARK: Invariant 2. A failure never demotes an athlete into onboarding
 
     func testUnreadableProfileNeverRoutesToOnboarding() {
         // Onboarding is a takeover that restarts the setup interview from zero. Reaching it
@@ -61,7 +61,7 @@ final class LaunchGateTests: XCTestCase {
 
     func testNeedsOnboardingBridgeTreatsUnreachableAsUnknown() {
         // RootTabView switches on `launch`, but the legacy tri-state is still read in a few
-        // places. Unreachable must map to nil (unknown) — never to `true`, which would push
+        // places. Unreachable must map to nil (unknown), never to `true`, which would push
         // the onboarding takeover on a connection failure.
         XCTAssertNil(LaunchGate.unreachable(reason: "x").needsOnboardingEquivalent)
         XCTAssertNil(LaunchGate.loading.needsOnboardingEquivalent)
@@ -96,7 +96,7 @@ final class LaunchGateTests: XCTestCase {
             _ = try await Deadline.run(5) { throw Boom() }
             XCTFail("expected the thrown error")
         } catch is Boom {
-            // expected — a real failure must not be reported as a timeout
+            // expected: a real failure must not be reported as a timeout
         } catch {
             XCTFail("expected Boom, got \(error)")
         }

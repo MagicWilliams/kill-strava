@@ -1,6 +1,6 @@
 import Foundation
 
-/// Deterministic pace math — the rules half of the hybrid engine.
+/// Deterministic pace math: the rules half of the hybrid engine.
 ///
 /// From a goal race (distance + finish time) we derive the training paces a plan is built
 /// around. This is a pragmatic first-pass model (Riegel for equivalent efforts + standard

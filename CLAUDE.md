@@ -1,4 +1,4 @@
-# Tempo — agent operating manual
+# Tempo: agent operating manual
 
 Read this before doing anything. `progress.md` is the narrative history; **GitHub Issues is
 the work queue**; this file is the rulebook.
@@ -10,17 +10,17 @@ in **public TestFlight** since 2026-11-05. David is one user among testers, and 
 reviewer. Production holds other people's data and the repo is public. Those two facts drive
 most rules below.
 
-- `ios/` — SwiftUI app. Project is generated from `project.yml` by XcodeGen; `.xcodeproj` is
+- `ios/`: SwiftUI app. Project is generated from `project.yml` by XcodeGen; `.xcodeproj` is
   gitignored. Always `xcodegen generate` after touching `project.yml` or adding files.
-- `supabase/migrations/` — schema, applied in order.
-- `supabase/functions/` — Deno edge functions (`coach`, `plan`) calling Claude.
-- `docs/ARCHITECTURE.md` — the locked stack and build sequence.
+- `supabase/migrations/`: schema, applied in order.
+- `supabase/functions/`: Deno edge functions (`coach`, `plan`) calling Claude.
+- `docs/ARCHITECTURE.md`: the locked stack and build sequence.
 
 ## The three hard limits
 
 **1. You cannot run this app.** It needs a real iPhone, real HealthKit permission, and a
 Garmin account feeding it. There is no path to you observing the UI. "Works" is a claim only
-David can make. Never write "verified working" — write "compiles, tests pass, needs device
+David can make. Never write "verified working". Write "compiles, tests pass, needs device
 check" and say exactly what to tap.
 
 **2. Cloud agents cannot compile Swift.** Linux sandboxes have no Xcode. If you are running
@@ -35,8 +35,8 @@ to production.
 ## Verification contract
 
 Every PR must be green on CI (`.github/workflows/ci.yml`):
-- device-slice build (`generic/platform=iOS`, no signing) — proves the whole app compiles
-- `xcodebuild test` on a simulator — the engine suite in `ios/TempoTests/`
+- device-slice build (`generic/platform=iOS`, no signing): proves the whole app compiles
+- `xcodebuild test` on a simulator: the engine suite in `ios/TempoTests/`
 - `deno check` on the edge functions
 
 Local equivalent, from `ios/`:
@@ -47,10 +47,10 @@ xcodebuild -project Tempo.xcodeproj -scheme Tempo \
 xcodebuild -project Tempo.xcodeproj -scheme Tempo \
   -destination 'platform=iOS Simulator,name=iPhone 17 Pro' test CODE_SIGNING_ALLOWED=NO
 ```
-(Simulator names drift — `xcrun simctl list devices available` if that destination fails.)
+(Simulator names drift; run `xcrun simctl list devices available` if that destination fails.)
 
-**Any change to deterministic logic ships with tests.** The engine — `Engine/LoadModel.swift`,
-`Engine/TrainingPaces.swift`, `Engine/RunDedupe.swift` — is pure by design so it can be
+**Any change to deterministic logic ships with tests.** The engine (`Engine/LoadModel.swift`,
+`Engine/TrainingPaces.swift`, `Engine/RunDedupe.swift`) is pure by design so it can be
 pinned. Every past bug in that layer silently corrupted a number on screen rather than
 crashing; a test is the only thing that would have caught them.
 
@@ -126,11 +126,11 @@ outside Tempo.
 
 Type: `bug` · `feat` · `chore` · `spike`
 
-Routing labels — every issue carries exactly one:
-- `agent-ready` — spec is complete enough to implement unattended. Builders only pick these.
-- `needs-david` — blocked on a product or priority call. EM raises the question with options
+Routing labels. Every issue carries exactly one:
+- `agent-ready`: spec is complete enough to implement unattended. Builders only pick these.
+- `needs-david`: blocked on a product or priority call. EM raises the question with options
   and a recommendation; David answers in a comment; next triage re-labels it.
-- `needs-device` — implementable, but only David can confirm it actually works.
+- `needs-device`: implementable, but only David can confirm it actually works.
 
 Priority: `p0` (broken for David or testers) · `p1` (next) · `p2` (someday).
 
@@ -140,9 +140,29 @@ An `agent-ready` issue must state: the observed problem, where in the code it li
 
 ## Style
 
-Match the surrounding code. This codebase leans on doc comments that explain *why* — the
+Match the surrounding code. This codebase leans on doc comments that explain *why*: the
 Garmin re-export story, the "athlete's word outranks the math" rule. Keep that. Comments that
 restate the code are noise; comments carrying a decision or a scar are the point.
+
+### Plain voice
+
+No em dashes, and no stock AI phrasing, anywhere in this repo. The 2026-11-04 decision
+(`docs/decision-log.md`) covers the coach (#264), the plan function (#265), app copy (#266)
+and, here, comments and docs. Agents match the style around them, so one comment with an em
+dash in it teaches the next agent to write another; that is why the rule is a CI gate and
+not advice.
+
+- Use a period, a comma or a colon. A hyphen or en dash between clauses is the same mistake.
+  Number and date ranges keep the en dash (2–6, Mon–Sun).
+- Do not write: worth noting, worth flagging, worth respecting, aerobic engine, delve,
+  nuance, testament, journey, landscape, leverage, holistic, crucial, niggle, frankly,
+  "to be clear".
+- `.github/workflows/ci.yml` runs `.github/scripts/check_plain_voice.py` on every PR. It
+  reads comments and markdown prose, not string literals, and it prints the file and line.
+  A mark that genuinely has to stay (a test fixture pinning what an older build sends) goes
+  in that file's `ALLOWED`, which is a reviewable line rather than a comment someone drops
+  on their own work.
+- Left as written: `progress.md`, applied migrations, and `supabase/ops/`. They are a record.
 
 Swift: pure logic in `Engine/`, I/O in `Services/`, view code stays declarative. Prefer
 extracting a pure function over mocking a dependency.

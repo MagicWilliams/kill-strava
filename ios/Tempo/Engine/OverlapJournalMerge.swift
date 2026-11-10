@@ -3,7 +3,7 @@ import Foundation
 /// What happens to the journal when overlap review retires one run of a pair (#152).
 ///
 /// Overlap review (#30) settles a pair by setting `superseded_by` on the loser, and every
-/// read filters superseded rows out. Before this, that was all it did — so if the athlete
+/// read filters superseded rows out. Before this, that was all it did, so if the athlete
 /// kept the copy *without* the journal (the Garmin export, say, over the recorder's own row
 /// that carried the shoe, the notes and the photo from #120), the journal stayed on the
 /// retired row. Nothing deleted it; nothing could see it either. The miles left the shoe,
@@ -13,13 +13,13 @@ import Foundation
 ///
 /// 1. **The survivor's word stands.** A field is carried over only where the kept run has
 ///    nothing. If both runs say something, the kept run's value is the one that shows and the
-///    retired run's stays where it is — never overwritten, never blended (feel tags are not
+///    retired run's stays where it is, never overwritten, never blended (feel tags are not
 ///    unioned: two different answers to one question is a conflict, not a list).
-/// 2. **Blank is nothing.** Whitespace-only notes or title, no feel tags, an empty photo key —
+/// 2. **Blank is nothing.** Whitespace-only notes or title, no feel tags, an empty photo key,
 ///    the same "didn't say" `RunJournalPayload` writes as `null`. A blank on the kept run does
 ///    not block a real value from the retired one.
 /// 3. **What points at something moves; what the athlete wrote is copied.** `shoe_id` and
-///    `photo_path` are references — a pair's mileage, an object in the `run-photos` bucket —
+///    `photo_path` are references (a pair's mileage, an object in the `run-photos` bucket)
 ///    and exactly one row should claim each, so they are cleared from the retired run once
 ///    they are on the kept one. RPE, feel, notes and title are copied and left on the retired
 ///    row too: a copy can never lose a word if a later write fails.
@@ -55,7 +55,7 @@ enum OverlapJournalMerge {
         /// Fields cleared from the retired run.
         var moved: [Field] { filled.filter(\.moves) }
 
-        /// Nothing to carry — the case for the 2,000+ runs that predate the journal.
+        /// Nothing to carry: the case for the 2,000+ runs that predate the journal.
         var isEmpty: Bool { filled.isEmpty }
 
         /// The update for the kept row: only the filled columns, so a value the kept run
@@ -87,7 +87,7 @@ enum OverlapJournalMerge {
         /// Put the moved shoe and photo back on the retired run. Written first, so that a
         /// failure part-way leaves a reference on both rows rather than on neither.
         let retiredPatch: Patch
-        /// Clear what was carried onto the kept run — only fields still holding exactly what
+        /// Clear what was carried onto the kept run: only fields still holding exactly what
         /// the transfer put there.
         let keptPatch: Patch
         /// The kept run's journal once `keptPatch` lands.
@@ -97,7 +97,7 @@ enum OverlapJournalMerge {
     /// Undo `transfer`, given what the kept run holds *now*.
     ///
     /// `keptNow` is read fresh at undo time, not taken from the transfer. If the athlete has
-    /// since changed a carried-over field — rewritten the note, picked a different shoe — that
+    /// since changed a carried-over field (rewritten the note, picked a different shoe) that
     /// field is theirs now and stays. Clearing it would delete something they wrote after the
     /// decision.
     static func reversal(of transfer: Transfer, keptNow: RunJournalEntry) -> Reversal {
@@ -119,7 +119,7 @@ enum OverlapJournalMerge {
     /// A partial `runs` update: exactly `fields`, with their values taken from `values`.
     ///
     /// PostgREST leaves an omitted key alone and sets an explicit `null`, which is both
-    /// halves of what is needed — untouched columns stay out of the payload, and a cleared
+    /// halves of what is needed, untouched columns stay out of the payload, and a cleared
     /// one goes in as `null`. Encoded by hand because synthesized `Encodable` drops nil
     /// optionals (see `RunJournalPayload.Fields`).
     struct Patch: Encodable, Equatable {

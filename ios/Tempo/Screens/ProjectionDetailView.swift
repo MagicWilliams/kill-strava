@@ -3,14 +3,14 @@ import Charts
 
 /// Where the projected finish comes from, and how it has moved.
 ///
-/// The chart is not a log of numbers the app recorded — nothing was ever recorded. It is
+/// The chart is not a log of numbers the app recorded. Nothing was ever recorded. It is
 /// `ProjectionHistory` replaying the same rule `recomputeProjection` runs, once a week,
 /// back across the whole archive. Five years of trajectory on day one, and it stays correct
 /// if the formula changes, because there is only one formula.
 ///
 /// The hero number is the *stored* `plan.projected_finish_s`, so this screen and the
 /// Progress card can never quote different figures. That value only rewrites when it moves
-/// by more than 30 seconds, so it can sit a few seconds off the newest chart point —
+/// by more than 30 seconds, so it can sit a few seconds off the newest chart point,
 /// "Recompute now" is what closes that gap.
 struct ProjectionDetailView: View {
     @EnvironmentObject private var store: RunStore
@@ -387,7 +387,7 @@ struct ProjectionDetailView: View {
         .frame(height: 150)
     }
 
-    /// Padded to keep the goal line inside the plot — a reference line you cannot see is
+    /// Padded to keep the goal line inside the plot: a reference line you cannot see is
     /// not a reference.
     private var yDomain: ClosedRange<Double> {
         var values = points.map { Double($0.projectedFinishS) }

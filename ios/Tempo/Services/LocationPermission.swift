@@ -4,7 +4,7 @@ import Foundation
 /// Location permission for the run recorder, as one `LocationAccess` value (#110).
 ///
 /// Exists so the pre-run sheet (#126) can explain *why* before iOS asks: the system prompt
-/// appears once, ever — an athlete who taps "Don't Allow" on a prompt that came out of nowhere
+/// appears once, ever. An athlete who taps "Don't Allow" on a prompt that came out of nowhere
 /// can only undo it in Settings. Nothing here starts location updates; that is the recorder's
 /// job (#114), on its own manager.
 ///
@@ -41,7 +41,7 @@ final class LocationPermission: NSObject, ObservableObject {
 
     private func update(_ next: LocationAccess) {
         access = next
-        // Creating the manager also calls back, with `.notDetermined` — not an answer.
+        // Creating the manager also calls back, with `.notDetermined`, not an answer.
         guard !next.canPrompt, let waiting else { return }
         self.waiting = nil
         waiting.resume(returning: next)
@@ -50,7 +50,7 @@ final class LocationPermission: NSObject, ObservableObject {
 
 extension LocationPermission: CLLocationManagerDelegate {
     /// Fires on creation and on every change, including ones made in Settings while Tempo
-    /// was in the background — so `access` stays current without polling.
+    /// was in the background, so `access` stays current without polling.
     nonisolated func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
         let next = LocationAccess.resolve(status: manager.authorizationStatus,
                                           accuracy: manager.accuracyAuthorization)

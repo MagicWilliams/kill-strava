@@ -46,7 +46,7 @@ enum Route: Hashable {
 final class TabRouter: ObservableObject {
     @Published var selection: Tab = .today
     @Published var path: [Route] = []
-    /// A coach message to scroll to when the Coach tab next shows — set by "See in chat"
+    /// A coach message to scroll to when the Coach tab next shows, set by "See in chat"
     /// on a What changed entry, consumed (cleared) by `CoachView`.
     @Published var coachFocus: UUID?
     /// Text to drop into the Coach composer when the tab next shows, consumed (cleared) by
@@ -91,7 +91,7 @@ final class TabRouter: ObservableObject {
     ///
     /// Since #87 the tab opens on the list of conversations, so this sets the focus and
     /// `CoachHomeView` pushes the live thread; the transcript scrolls to the message if it
-    /// is in the page it loaded. The ledger does not know which thread holds a message —
+    /// is in the page it loaded. The ledger does not know which thread holds a message,
     /// routing to the exact one is follow-up work.
     func showCoachMessage(_ id: UUID) {
         coachFocus = id
@@ -164,7 +164,7 @@ struct RootTabView: View {
     var body: some View {
         switch store.launch {
         case .loading:
-            // Profile still loading — brand splash, no flash of the wrong screen.
+            // Profile still loading: brand splash, no flash of the wrong screen.
             splash
         case .unreachable(let reason):
             // The splash used to cover this case too, which is how a paused backend

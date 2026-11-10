@@ -93,7 +93,7 @@ final class FitnessEstimateTests: XCTestCase {
 
     /// The Daniels–Gilbert equations against the printed VDOT 50 row of *Daniels' Running
     /// Formula*: 19:57 / 41:21 / 1:31:35 / 3:10:49. The equations give 19:56 / 41:20 /
-    /// 1:31:31 / 3:10:40 — the table rounds from a slightly different solve, which is why
+    /// 1:31:31 / 3:10:40. The table rounds from a slightly different solve, which is why
     /// the pin is 0.25% and not one second.
     func testVDOTFiftyMatchesThePublishedRowWithinAQuarterPercent() {
         let row: [(meters: Double, table: Double, formula: Double)] = [
@@ -170,7 +170,7 @@ final class FitnessEstimateTests: XCTestCase {
     // MARK: - 5–7. Slow outliers change nothing
 
     /// A hot day: today's 10K at 47:15, 5% slower than 45:00. Still `quality` against a
-    /// 9:30 baseline, so it is in the pool — and nowhere near the top three.
+    /// 9:30 baseline, so it is in the pool, and nowhere near the top three.
     func testAHeatWaveTenKChangesNothing() {
         let block = steadyBlock()
         let hot = RunSummary(id: UUID(), start: asOf, distanceM: 10_000, durationS: 2_835, avgHR: nil)
@@ -201,7 +201,7 @@ final class FitnessEstimateTests: XCTestCase {
     // MARK: - 8. Missed week
 
     /// Exponential weights keep their ratios when every effort ages by the same amount, so a
-    /// week off changes nothing — provided nothing crosses day 56 (oldest effort here is 43
+    /// week off changes nothing, provided nothing crosses day 56 (oldest effort here is 43
     /// days old, 50 a week later).
     func testAMissedWeekChangesNothingWhenNothingAgesOut() {
         let block = steadyBlock(maxQualityAgo: 43)
@@ -213,7 +213,7 @@ final class FitnessEstimateTests: XCTestCase {
     }
 
     /// When an effort does cross day 56, the step is exactly its weight share times its
-    /// distance from what remains — small, because its weight at day 52 is already 0.18.
+    /// distance from what remains, small, because its weight at day 52 is already 0.18.
     func testAnEffortLeavingTheWindowStepsByNoMoreThanItsWeightShare() {
         let leaving = quality(52, vdot: 45.6)
         let runs = [leaving, quality(5, vdot: 45.0), quality(12, vdot: 44.8)] + easyBase([3, 7, 10, 14, 18, 22, 26])
@@ -244,7 +244,7 @@ final class FitnessEstimateTests: XCTestCase {
 
     /// The documented weakness, pinned so a change to it is deliberate: with only three
     /// efforts the hot one is in the mean, and as the newest it weighs the most. 45 (day 14),
-    /// 45 (day 7) and a hot 42.75 today give 44.08 — the spike's 44.07, about −2.1% VDOT.
+    /// 45 (day 7) and a hot 42.75 today give 44.08. The spike's 44.07, about −2.1% VDOT.
     func testTwoEffortsPlusAHotOneReadTheDocumentedDip() {
         let runs = easyBase() + [quality(14, vdot: 45), quality(7, vdot: 45), quality(0, vdot: 42.75)]
         guard let r = reading(estimate(runs)) else { return }
@@ -294,7 +294,7 @@ final class FitnessEstimateTests: XCTestCase {
     // MARK: - 13–14. Artefacts (#227, #229)
 
     /// The #227 row: 13,047 m over 37,459 s, a watch left recording (77:00/mi). It is not a
-    /// candidate, and the 5:02/mi "5K" inside it — a car, by the look of it — goes with it.
+    /// candidate, and the 5:02/mi "5K" inside it (a car, by the look of it) goes with it.
     /// Without the parent-run rule that segment would read about VDOT 66.
     func testAWatchLeftRecordingAndItsSegmentsAreIgnored() {
         let block = steadyBlock()
@@ -305,7 +305,7 @@ final class FitnessEstimateTests: XCTestCase {
     }
 
     /// The same 938 s 5K inside an otherwise normal easy run is a segment of a plausible
-    /// run, so only the hold-out can catch it — and does.
+    /// run, so only the hold-out can catch it, and does.
     func testACarSegmentInANormalRunIsHeldOut() {
         let block = steadyBlock()
         let normal = easy(3, miles: 8)
@@ -428,7 +428,7 @@ final class FitnessEstimateTests: XCTestCase {
 
     // MARK: - 21. Edges
 
-    /// `distance_m` is whole metres, so 2.5 mi arrives as 4,023 — and qualifies.
+    /// `distance_m` is whole metres, so 2.5 mi arrives as 4,023, and qualifies.
     func testTwoAndAHalfMilesExactlyQualifies() {
         let other = quality(10, vdot: 42)
         func short(_ meters: Int) -> RunSummary {
@@ -500,8 +500,8 @@ final class FitnessEstimateTests: XCTestCase {
 
     /// Added at calibration (#244): four runs in 56 days, one of them a watch left recording.
     /// The artefact can't count toward the baseline, so three plausible runs are all there
-    /// is, and an older archive doesn't rescue it. The answer is a named state, not a number
-    /// — and specifically not one read off the one quality run on file.
+    /// is, and an older archive doesn't rescue it. The answer is a named state, not a number,
+    /// and specifically not one read off the one quality run on file.
     func testASparseRecentBlockWithARecordingArtefactIsInsufficient() {
         let leftRunning = RunSummary(id: UUID(), start: daysAgo(15), distanceM: 13_047, durationS: 37_459, avgHR: nil)
         let recent = [quality(5, vdot: 45), easy(10), easy(20), leftRunning]

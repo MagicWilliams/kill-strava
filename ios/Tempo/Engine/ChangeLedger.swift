@@ -5,7 +5,7 @@ import Foundation
 /// Until this existed, the only record of a change made through chat was its confirm card,
 /// buried wherever in the scroll that conversation happened to sit. The race-week plan edit
 /// and the September run amendments were real writes to real data with no place to see them
-/// together — and a coach that can change your numbers has to be able to show its work.
+/// together, and a coach that can change your numbers has to be able to show its work.
 ///
 /// No new storage. Every applied action already lives on the message that proposed it
 /// (`coach_messages.proposed_action`, `action_state = 'applied'`, migration 0007). This file
@@ -17,8 +17,8 @@ import Foundation
 ///     retry hands it to us.
 ///  2. **Newest first.**
 ///  3. **A "before" is never invented.** The action carries only the new values. A before
-///     comes from the previous ledger entry that set the same field on the same target, or —
-///     for a run's first amendment — from the run's `original` snapshot, which is flagged as
+///     comes from the previous ledger entry that set the same field on the same target, or (
+///     for a run's first amendment) from the run's `original` snapshot, which is flagged as
 ///     "as recorded" because it is the watch's number, not necessarily the value the edit
 ///     replaced (a correction made before 0007 left no ledger row). With neither, the line
 ///     shows the new value alone.
@@ -84,7 +84,7 @@ enum ChangeLedger {
     }
 
     struct Entry: Identifiable, Equatable {
-        /// The proposing message's id — which is also the link back into chat.
+        /// The proposing message's id: which is also the link back into chat.
         let id: UUID
         let date: Date
         let kind: Kind
@@ -246,7 +246,7 @@ enum ChangeLedger {
             set("goal", "Reason", a.reason)
 
         default:
-            // An action type this build doesn't know. It was applied, so it is listed —
+            // An action type this build doesn't know. It was applied, so it is listed,
             // rule 1 says every applied change, not every one we understand.
             kind = .you
             title = "Change"
@@ -274,7 +274,7 @@ enum ChangeLedger {
     ///
     /// A second proposal in one reply is stored with its own summary as its text (see
     /// `ChatStore.handleReply`), which says nothing about why. Then the action's own
-    /// rationale or note stands in — and if that only repeats the summary, there is no why
+    /// rationale or note stands in, and if that only repeats the summary, there is no why
     /// rather than a fake one.
     static func why(text: String, action: ProposedAction) -> String? {
         let summary = action.displaySummary.trimmingCharacters(in: .whitespacesAndNewlines)

@@ -22,7 +22,7 @@ enum BlockReviewService {
 
     // MARK: - Reads
 
-    /// Closed goals, newest first. Nil when the read failed — including before migration 0013,
+    /// Closed goals, newest first. Nil when the read failed, including before migration 0013,
     /// when the columns it filters on don't exist. Nil is "can't say", not "no blocks".
     static func pastBlocks() async -> [GoalInfo]? {
         guard Supa.userID != nil else { return nil }
@@ -41,7 +41,7 @@ enum BlockReviewService {
     }
 
     /// The block's plan: the newest plan written for this goal, its weeks, and **every**
-    /// session — `RunStore.sessions` only holds a −7…+14 day window, and adherence is over
+    /// session, `RunStore.sessions` only holds a −7…+14 day window, and adherence is over
     /// the whole block.
     static func planSide(for goal: GoalInfo) async -> PlanSide? {
         do {
@@ -150,7 +150,7 @@ enum BlockReviewService {
         }
 
         // `.select` so a write that matched no row (RLS, a stale id) is an error rather than a
-        // silent success — the athlete would otherwise see "closed" and come back to it open.
+        // silent success. The athlete would otherwise see "closed" and come back to it open.
         struct Touched: Decodable { let id: UUID }
         do {
             let touched: [Touched] = try await Supa.client.from("goals")

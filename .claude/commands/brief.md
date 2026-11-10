@@ -1,5 +1,5 @@
 ---
-description: Engineering-manager brief — what shipped, what needs review, what needs a decision from David.
+description: Engineering-manager brief. What shipped, what needs review, what needs a decision from David.
 ---
 
 Produce a brief using the `em` agent's rules (`.claude/agents/em.md`).
@@ -13,7 +13,7 @@ Produce a brief using the `em` agent's rules (`.claude/agents/em.md`).
 4. File each decision as its own `needs-david` issue assigned to David, so GitHub notifies him
    and his comment closes the loop.
 
-Keep it phone-length. If the period was thin, say so — do not inflate it.
+Keep it phone-length. If the period was thin, say so. Do not inflate it.
 
 Standing checks to include when they apply: has David actually run the app recently (are we
 merging unverified change?), and is `agent-ready` empty (is the bottleneck specification

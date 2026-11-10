@@ -7,7 +7,7 @@ import Foundation
 /// `HKWorkout.duration` is the recording app's moving time *only if that app writes pause
 /// events*. A source that writes none reports the whole wall-clock span as its duration,
 /// and ingest stored it as moving time. The 15 Oct 2026 run is the scar: 8.1 mi stored over
-/// 10h24m — 77:00/mi, 42 spm — while its own distance samples show about 1h41m of moving.
+/// 10h24m (77:00/mi, 42 spm) while its own distance samples show about 1h41m of moving.
 /// The watch was left recording for the rest of the day. Pace, load, the projection, the
 /// coach's context and `/plan` all read the 10h24m.
 ///
@@ -15,7 +15,7 @@ import Foundation
 /// at ingest, a new workout whose samples say it was standing still for a long, large share
 /// of its duration gets its two clocks put in the right columns: sample moving time in
 /// `duration_s`, the wall clock in `elapsed_duration_s`. That is what the columns already
-/// mean — today ingest just fills both with the same number.
+/// mean, today ingest just fills both with the same number.
 ///
 /// Pure: the caller turns `HKQuantitySample`s into `Sample`s, nothing here touches
 /// HealthKit, and the Run Detail page reads the same function, so the speed tile and the
@@ -38,7 +38,7 @@ enum SampleMovingTime {
     /// recorded in Tempo and one imported from a watch agree about what stopping is.
     static let stoppedSpeedMps = 0.45
 
-    /// Seconds spent moving, by the samples. Nil when there are no samples to judge by —
+    /// Seconds spent moving, by the samples. Nil when there are no samples to judge by,
     /// that is "unknown", and it must never read as "never moved".
     ///
     /// A gap *between* samples (a paused watch, or one that simply wrote nothing) adds no
@@ -70,7 +70,7 @@ enum SampleMovingTime {
     ///
     /// The 3-hour long run with a 12-minute bathroom-and-bottle stop clears the ten-minute bar
     /// but is still overwhelmingly a run; its pace reads a few percent slow, not absurd. The
-    /// failure #229 describes is the opposite shape — most of the stored time was not running
+    /// failure #229 describes is the opposite shape. Most of the stored time was not running
     /// at all. A quarter keeps the correction for that shape and leaves real long runs alone.
     static let minimumUnrecordedStopShare = 0.25
 
@@ -81,12 +81,12 @@ enum SampleMovingTime {
     ///     moving time).
     ///   - sampleMoving: `movingSeconds` for the same workout, rounded; nil when it had no
     ///     distance samples.
-    /// - Returns: `moving` is the sample moving time, `elapsed` the stored duration — which,
+    /// - Returns: `moving` is the sample moving time, `elapsed` the stored duration, which,
     ///   for a source that wrote no pauses, *is* the wall clock. Nil unless the gap is both
     ///   more than `minimumUnrecordedStopS` and more than `minimumUnrecordedStopShare` of
     ///   `stored`. Both comparisons are strict.
     static func correctedDurations(stored: Int, sampleMoving: Int?) -> (moving: Int, elapsed: Int)? {
-        // Zero moving from samples that exist means every sample was slower than a walk —
+        // Zero moving from samples that exist means every sample was slower than a walk,
         // a watch that wrote distance noise, not a run that never moved. That is not a
         // number to put under a run's pace.
         guard let sampleMoving, sampleMoving > 0, stored > sampleMoving else { return nil }
@@ -127,7 +127,7 @@ enum SampleMovingTime {
 
     /// The runs a sync just wrote that are worth one distance-sample read, newest first.
     ///
-    /// Only rows this pass actually wrote — `SyncPass.confirmedWrites` — so the archive is
+    /// Only rows this pass actually wrote (`SyncPass.confirmedWrites`) so the archive is
     /// never re-read: a run already stored is never a candidate again. Runs too short to
     /// clear `minimumUnrecordedStopS` cannot be corrected and cost nothing, and corrected
     /// runs are the athlete's word.

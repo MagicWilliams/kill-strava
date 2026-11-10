@@ -132,7 +132,7 @@ struct TrajectoryCurve: Equatable {
 
     /// Length of the reduced-load window in days, race day included. The generator appends
     /// a race week that holds nothing but the race, so it is itself a week of taper: the
-    /// window is (taper weeks + 1) × 7 — 7, 14 or 21 days (see `DistanceProfile.taperWeeks`).
+    /// window is (taper weeks + 1) × 7–7, 14 or 21 days (see `DistanceProfile.taperWeeks`).
     ///
     /// Block weeks are the generator's own `race.weekIndex` (Monday-based weeks from the
     /// signup week to race week), so the 10-week boundary falls where the plan's does.

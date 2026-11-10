@@ -1,9 +1,9 @@
-// #193 — the coach's messages array must end in a user turn, or Anthropic rejects the whole
+// #193: the coach's messages array must end in a user turn, or Anthropic rejects the whole
 // request: "This model does not support assistant message prefill."
 //
 // The incident: 2026-10-15 07:41 and 07:45 UTC, two `coach.invoke_failed` rows on 0.1.0+68,
 // each a 502 the client could say nothing useful about. The trigger is the plan-confirm
-// acknowledgement — `ChatStore.confirm` appends the athlete's "Confirmed — …" turn and then
+// acknowledgement: `ChatStore.confirm` appends the athlete's "Confirmed" turn and then
 // the plan engine's narration as a coach turn, and the acknowledgement round trip sends that
 // transcript as-is. Pinned here rather than in the function because the shape of the array is
 // a decision, and the only symptom of getting it wrong is an opaque 502.
@@ -53,7 +53,7 @@ Deno.test("#193: several trailing coach turns collapse down to the last thing th
 });
 
 Deno.test("#193: nothing to answer comes back empty, for index.ts to 400 on", () => {
-  // The empty case index.ts has always guarded — it stays guarded.
+  // The empty case index.ts has always guarded. It stays guarded.
   assertEquals(sanitizeHistory([]), []);
   assertEquals(sanitizeHistory(null), []);
   assertEquals(sanitizeHistory(undefined), []);

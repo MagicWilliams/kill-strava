@@ -2,7 +2,7 @@ import Foundation
 
 /// When the Live Activity (#119) starts, updates and ends, decided from the recorder's state.
 ///
-/// `RunLiveActivity` asks this on every recorder refresh — every event and once a second —
+/// `RunLiveActivity` asks this on every recorder refresh (every event and once a second)
 /// and does what it says through ActivityKit. Kept pure for the usual reason: none of it can
 /// be watched without a phone in a pocket, and every rule here is one that, broken, would
 /// leave a number on the Lock Screen that isn't the run's.

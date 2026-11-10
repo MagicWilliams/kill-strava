@@ -2,7 +2,7 @@ import Foundation
 import Supabase
 
 /// The I/O half of the overlapping-runs review (#30): read which pairs have been ruled on,
-/// and write a ruling — retire the losing run and record the decision — or take one back.
+/// and write a ruling (retire the losing run and record the decision) or take one back.
 ///
 /// Which pairs exist, and what a verdict means for each row, are decided in
 /// `Engine/RunDedupe.swift` (`unresolvedOverlaps`, `resolution(for:_:)`) and pinned there.
@@ -12,7 +12,7 @@ import Supabase
 /// ## Why it is allowed to be missing
 ///
 /// Migration 0012 ships with this file and is applied by hand. Until it is, the reviews read
-/// fails, and that is reported as *unavailable* — not as "nothing reviewed yet". The
+/// fails, and that is reported as *unavailable*, not as "nothing reviewed yet". The
 /// difference matters: an empty set would put every pair on screen with buttons that cannot
 /// persist "both are real", and those pairs would come back on the next launch.
 final class OverlapReviewService {
@@ -49,7 +49,7 @@ final class OverlapReviewService {
                     .execute()
                     .value
             } catch {
-                // Expected before 0012 lands, so not an error event — the feature is off.
+                // Expected before 0012 lands, so not an error event. The feature is off.
                 return Snapshot()
             }
             reviewed.formUnion(page.map { RunDedupe.OverlapKey($0.run_a, $0.run_b) })
@@ -64,8 +64,8 @@ final class OverlapReviewService {
 
     private struct Supersede: Encodable { let superseded_by: String? }
 
-    /// Apply a ruling. Returns the journal transfer it made — empty for "both are real" and
-    /// for any pair with no journal to carry — or nil if the ruling did not land.
+    /// Apply a ruling. Returns the journal transfer it made (empty for "both are real" and
+    /// for any pair with no journal to carry) or nil if the ruling did not land.
     ///
     /// The journals are read first, fresh, and nothing is written if that read fails. The
     /// in-memory archive is not good enough to merge from: a value the athlete saved since
@@ -73,13 +73,13 @@ final class OverlapReviewService {
     /// kept run's own values are never overwritten.
     ///
     /// Then the retirement, then the review row. If the review row fails, the retirement is
-    /// rolled back — otherwise a "keep" would half-land: the run gone from every total with no
+    /// rolled back, otherwise a "keep" would half-land: the run gone from every total with no
     /// record of why, and no Undo able to find it.
     ///
     /// Then the journal (#152), kept run first. If the kept run's fill fails, the whole ruling
     /// is rolled back: a decision that strands the shoe and the photo is the bug this exists
     /// to fix, so it must not land quietly. If only the retired run's clear fails, the ruling
-    /// stands — the shoe and photo are on the kept run already, and the duplicate left behind
+    /// stands. The shoe and photo are on the kept run already, and the duplicate left behind
     /// is on a row no read ever shows or counts.
     func record(_ resolution: RunDedupe.OverlapResolution) async -> OverlapJournalMerge.Transfer? {
         guard let uid = Supa.userID?.uuidString else { return nil }
@@ -143,7 +143,7 @@ final class OverlapReviewService {
         } catch {
             reportJournal("overlap.journal_move_failed", error)
         }
-        // Column names only — never the values, which include the athlete's notes.
+        // Column names only: never the values, which include the athlete's notes.
         Telemetry.info("overlap.journal_carried",
                        context: ["fields": transfer.filled.map(\.rawValue).joined(separator: ",")])
         return transfer
@@ -163,16 +163,16 @@ final class OverlapReviewService {
     /// pair is asked about again.
     ///
     /// The review row goes first. If the un-retire then fails, the loser is still retired and
-    /// the pair stays out of the queue — the same state as before Undo, minus the audit row,
+    /// the pair stays out of the queue. The same state as before Undo, minus the audit row,
     /// which is restored. The other order could leave both runs live with the review row
     /// still hiding them: double-counted again, and invisible to the screen that fixes it.
     ///
     /// The un-retire is scoped to `superseded_by = kept`, so Undo can only reverse what this
-    /// decision did — never a retirement 0008/0009 made for its own reasons.
+    /// decision did, never a retirement 0008/0009 made for its own reasons.
     ///
     /// Then the journal transfer is reversed (`OverlapJournalMerge.reversal`): the shoe and
     /// photo go back to the run they came from, and what was copied onto the kept run is
-    /// cleared — unless the athlete has changed it since. That half is best-effort. The ruling
+    /// cleared, unless the athlete has changed it since. That half is best-effort. The ruling
     /// is already undone by then and the pair is back in the queue; a failure leaves a carried
     /// value on the kept run, where the athlete last saw it, and is logged. The retired run's
     /// restore goes first, so a failure between the two writes leaves a reference on both
@@ -284,7 +284,7 @@ final class OverlapReviewService {
     }
 
     /// A journal write's failure, by Postgres code and message only. `Telemetry.error` logs
-    /// the full error, and a constraint error's `details` reads "Failing row contains (…)" —
+    /// the full error, and a constraint error's `details` reads "Failing row contains (…)",
     /// the athlete's notes, verbatim. Same rule as `RunJournal.report`.
     private func reportJournal(_ event: String, _ error: Error) {
         guard let error = error as? PostgrestError else {

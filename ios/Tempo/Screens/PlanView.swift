@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// The adaptive plan: race countdown, phase progress, and the week list —
+/// The adaptive plan: race countdown, phase progress, and the week list,
 /// current + next week in full detail, further weeks as an honest sketch
 /// that crystallizes as it approaches (spec: "2 wks firm, rest sketch").
 struct PlanView: View {
@@ -42,7 +42,7 @@ struct PlanView: View {
     }
 
     /// No plan is a state, not a failure (#101). This used to be a pitch for building one;
-    /// between blocks — or before the first — the athlete is simply running, and the tab
+    /// between blocks (or before the first) the athlete is simply running, and the tab
     /// says so without asking for anything.
     private var betweenBlocks: some View {
         Card(well: .calm) {
@@ -55,7 +55,7 @@ struct PlanView: View {
         }
     }
 
-    /// Closed blocks (#100) — the same list as You, so between blocks the Plan tab shows
+    /// Closed blocks (#100): the same list as You, so between blocks the Plan tab shows
     /// where you've been. Hidden when there are none.
     private var pastBlocks: some View {
         PastBlocksCard()
@@ -63,7 +63,7 @@ struct PlanView: View {
 
     /// The hero. Every word and every number in it comes from `RaceCountdown` (#230): this
     /// card used to run `dateComponents([.day], from: .now)` itself, which on 15 Oct read
-    /// **42** days to the 27 Nov race where Progress read 7 weeks — counting from the current
+    /// **42** days to the 27 Nov race where Progress read 7 weeks, counting from the current
     /// instant rather than from the start of today loses a day every afternoon.
     private var countdown: some View {
         let state = RaceCountdown.state(goal: store.goal, now: .now, units: units)
@@ -84,7 +84,7 @@ struct PlanView: View {
             } else {
                 // Race day, a race already run, or a goal with no date: there is no number
                 // left to count down. The old card printed a clamped `0 days to go` for all
-                // three, which reads as a countdown that still has time on it — the same
+                // three, which reads as a countdown that still has time on it. The same
                 // defect as the hardcoded date (#36). The state says which it is instead.
                 Text(state.subtitle()).font(Tokens.Font.ui(14)).foregroundStyle(Tokens.Palette.textSecondary)
             }
@@ -199,7 +199,7 @@ struct PlanView: View {
         .frame(minHeight: 26)
     }
 
-    /// Sketch week: phase, focus, target — crystallizes as it approaches.
+    /// Sketch week: phase, focus, target, crystallizes as it approaches.
     private func sketchWeek(_ week: PlanWeekInfo, past: Bool) -> some View {
         Card(padding: 14) {
             HStack {

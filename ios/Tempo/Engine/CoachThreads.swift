@@ -3,7 +3,7 @@ import Foundation
 /// Coach conversations as threads, and the decisions a thread list has to make (#87).
 ///
 /// The Coach tab was one endless scroll, and the coach's own window on it is
-/// `messages.suffix(24)` — so a race plan agreed in March was unreachable to the model in
+/// `messages.suffix(24)`, so a race plan agreed in March was unreachable to the model in
 /// April while sitting right there on screen. Threads give a conversation an end, a recap
 /// and a title; `coach_memory` carries the facts that must not end with it.
 ///
@@ -21,7 +21,7 @@ enum CoachThreads {
     ///
     /// Six hours, from the issue, and deliberately generous: summarizing a thread the
     /// athlete is still in the middle of would put "Picking up from" at the top of the
-    /// conversation it is summarizing. The other trigger — starting a new chat — is
+    /// conversation it is summarizing. The other trigger (starting a new chat) is
     /// immediate, because that one *is* the athlete saying the last one is done.
     static let idleWindow: TimeInterval = 6 * 3600
 
@@ -36,7 +36,7 @@ enum CoachThreads {
         /// Touched on every message, so this is "when was this conversation last alive".
         let lastMessageAt: Date
         /// Messages in the thread, when the caller has counted them. Nil means "not
-        /// counted", which is not the same as zero — an empty thread is one the athlete
+        /// counted", which is not the same as zero. An empty thread is one the athlete
         /// opened and never typed in.
         var messageCount: Int? = nil
     }
@@ -53,7 +53,7 @@ enum CoachThreads {
 
     /// The recap a row actually has, or nil.
     ///
-    /// One definition, used by everything that asks "has this been written up yet" — the
+    /// One definition, used by everything that asks "has this been written up yet". The
     /// list, the summary queue, and the thread that picks up from it. A whitespace-only
     /// summary is no summary: `summary.ts` will not return one, but a row that somehow held
     /// one would otherwise be treated as written up by the queue and as blank by the list,
@@ -68,7 +68,7 @@ enum CoachThreads {
     ///
     /// By `lastMessageAt`, not `startedAt`: a thread opened on Monday and replied to on
     /// Thursday belongs at the top on Thursday. Ties fall back to `startedAt` and then to
-    /// the id, so the order is a function of the rows and not of Swift's sort — the same
+    /// the id, so the order is a function of the rows and not of Swift's sort. The same
     /// reason `ChatHistory.inReadingOrder` breaks its ties explicitly (#93).
     static func inListOrder(_ rows: [Row]) -> [Row] {
         rows.sorted { a, b in
@@ -81,7 +81,7 @@ enum CoachThreads {
     /// The thread a message sent right now belongs to: the newest one, if it is still the
     /// conversation the athlete is in.
     ///
-    /// Nil means "start a new one" — there are no threads at all, or the newest has gone
+    /// Nil means "start a new one". There are no threads at all, or the newest has gone
     /// quiet long enough to be summarized, at which point continuing it would reopen a
     /// conversation that has already been written up.
     static func active(in rows: [Row], now: Date) -> Row? {
@@ -97,7 +97,7 @@ enum CoachThreads {
     /// The threads owed a summary round trip, oldest first so the one the athlete just left
     /// is summarized after any older backlog and the list settles in reading order.
     ///
-    /// A thread qualifies when it has no summary yet and is finished — either a newer thread
+    /// A thread qualifies when it has no summary yet and is finished. Either a newer thread
     /// exists (the athlete started a new chat, which ends the previous one) or it has been
     /// idle past `idleWindow`. An empty thread is skipped: a conversation with nothing in it
     /// has nothing to summarize, and asking the model anyway would produce a title for a
@@ -119,7 +119,7 @@ enum CoachThreads {
     /// started.
     ///
     /// Not merely "the newest thread with a summary". Reopening a conversation from the
-    /// archive would then show a note about one that happened after it — a recap of the
+    /// archive would then show a note about one that happened after it. A recap of the
     /// future, presented as what the coach is carrying in. The ordering is by the
     /// predecessor's last message against this thread's start, which is the only pair of
     /// timestamps that says "that one had finished when this one began".
@@ -187,7 +187,7 @@ enum CoachThreads {
 
     /// The note at the top of a thread: what the coach is carrying into it.
     ///
-    /// Nil when there is nothing to carry — a first-ever conversation, with no previous
+    /// Nil when there is nothing to carry. A first-ever conversation, with no previous
     /// recap and no memory. An empty "Picking up from" card would be worse than none: it
     /// would claim continuity the coach does not have.
     ///

@@ -18,6 +18,9 @@ supabase/.temp/
 node_modules/
 package-lock.json
 
+# Byproduct of importing .github/scripts/*.py from their tests
+__pycache__/
+
 .DS_Store
 
 # Obsidian (docs/ is symlinked into the vault)

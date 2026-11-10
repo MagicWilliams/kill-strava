@@ -8,7 +8,7 @@ import Foundation
 
 /// Which fixes become the route on the map in Health.
 ///
-/// The route is the same fixes the distance came from — nothing `TrackMath` rejected, so the
+/// The route is the same fixes the distance came from. Nothing `TrackMath` rejected, so the
 /// map can't show the 300 m spike under a building that the distance correctly ignored. The
 /// one subtlety is the lock: the first `lockFixCount - 1` fixes come back `.awaitingLock`
 /// and are only credited when the next one completes the lock, so they are held here and
@@ -49,8 +49,8 @@ struct RouteGate<Item> {
 
 /// How an outdoor run's distance reaches Health.
 ///
-/// Outdoors, the distance in Health must be the distance the athlete watched tick up — not
-/// a second opinion from the phone's pedometer — so the recorder turns off HealthKit's own
+/// Outdoors, the distance in Health must be the distance the athlete watched tick up (not
+/// a second opinion from the phone's pedometer) so the recorder turns off HealthKit's own
 /// distance collection and writes `TrackMath`'s instead, as one sample per stretch of the
 /// curve. Short stretches, because `RunDetailLoader` builds splits and best efforts back out
 /// of these samples by interpolating inside each one: a ten-second sample puts a mile split
@@ -58,7 +58,7 @@ struct RouteGate<Item> {
 /// the end, so the workout builder already holds them if the app is killed (#115).
 enum DistanceChunks {
     /// Seconds of curve per sample, at least. Ten seconds is about 1,000 samples for a
-    /// marathon — the order of what a watch writes — and fine enough for splits.
+    /// marathon (the order of what a watch writes) and fine enough for splits.
     static let minSpanS = 10.0
 
     struct Chunk: Equatable {
@@ -83,7 +83,7 @@ enum DistanceChunks {
     }
 
     /// Everything from `flushed` to the end of the curve, as samples of at least `minSpanS`
-    /// each, cut at the curve's own points — the same shape `next` produces a tick at a time.
+    /// each, cut at the curve's own points. The same shape `next` produces a tick at a time.
     ///
     /// For the end of a run, and for a stretch that was never written as it was run: a run
     /// rebuilt from its snapshot after a kill (#115) has its whole curve still to write, and
@@ -131,8 +131,8 @@ enum RecordingMetadata {
     static let targetShownKey = "TempoTargetShown"
     /// A treadmill run put right by its console (#116), added at save: the console's
     /// distance, the step estimate it replaced, and the note the `runs` row carries. In the
-    /// workout itself so every path that reads it back — the save, a retry after a relaunch,
-    /// a run found in Health after a kill — writes the same corrected row.
+    /// workout itself so every path that reads it back (the save, a retry after a relaunch,
+    /// a run found in Health after a kill) writes the same corrected row.
     static let consoleDistanceMKey = "TempoTreadmillConsoleM"
     static let stepEstimateMKey = "TempoTreadmillStepEstimateM"
     static let correctionNoteKey = "TempoCorrectionNote"

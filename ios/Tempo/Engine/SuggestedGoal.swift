@@ -1,6 +1,6 @@
 import Foundation
 
-/// The goal time Tempo suggests for a "PR" or "Not sure" goal — pure, no I/O (#239).
+/// The goal time Tempo suggests for a "PR" or "Not sure" goal, pure, no I/O (#239).
 ///
 /// Rule 3 (kept 2026-10-15): numbers come from code, words come from the model. Until this
 /// existed, the intake told the coach to "propose a target from the data", and whatever it
@@ -115,7 +115,7 @@ enum SuggestedGoal {
 
     // MARK: - The coach's copy
 
-    /// `<athlete_context>.suggested_goal`, or nil — and nil means absent, never empty.
+    /// `<athlete_context>.suggested_goal`, or nil, and nil means absent, never empty.
     ///
     /// `distance_m` and `race_date` say which race the numbers are for. The coach can change
     /// the race mid-conversation ("make it the half"), and a range for the marathon would be

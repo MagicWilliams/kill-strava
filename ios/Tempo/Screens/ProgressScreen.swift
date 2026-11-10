@@ -24,7 +24,7 @@ struct ProgressScreen: View {
         .refreshable { await store.refresh() }
     }
 
-    /// The countdown is whatever the athlete's actual goal says — name, distance, date, and
+    /// The countdown is whatever the athlete's actual goal says: name, distance, date, and
     /// the no-goal case included. The rule lives in `Engine/RaceCountdown.swift`; the header
     /// that used to hardcode Chicago is the reason it's pinned there (#36), and Plan and You
     /// read the same state so the three tabs cannot disagree about one date (#230).

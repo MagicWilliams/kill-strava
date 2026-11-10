@@ -3,7 +3,7 @@ import XCTest
 
 /// #93: the Coach tab read `coach_messages` with `.order("created_at").limit(200)`.
 /// PostgREST's `order` defaults to ascending, and ascending plus a limit returns the
-/// *oldest* 200 rows — so once the history passed 200 messages, every relaunch opened on
+/// *oldest* 200 rows, so once the history passed 200 messages, every relaunch opened on
 /// the start of the conversation, and `messages.suffix(24)` briefed the coach on the
 /// opening of a conversation it was supposedly continuing.
 ///
@@ -21,7 +21,7 @@ final class ChatHistoryTests: XCTestCase {
         let at: Date
     }
 
-    /// 201 messages a minute apart — one more than the page, which is the whole trigger.
+    /// 201 messages a minute apart: one more than the page, which is the whole trigger.
     private let archive: [Row] = (0..<201).map {
         Row(index: $0, at: Date(timeIntervalSince1970: 1_760_000_000 + Double($0) * 60))
     }
@@ -82,8 +82,8 @@ final class ChatHistoryTests: XCTestCase {
         XCTAssertEqual(reading(page).map(\.index), [0, 1, 2])
     }
 
-    /// The function sorts rather than reversing, so a page handed back in some other order —
-    /// a rearranged `order` clause, a tie-break that moved — still renders correctly.
+    /// The function sorts rather than reversing, so a page handed back in some other order (
+    /// a rearranged `order` clause, a tie-break that moved) still renders correctly.
     func testAScrambledPageIsStillPutInReadingOrder() {
         let scrambled = [archive[7], archive[2], archive[9], archive[0]]
 

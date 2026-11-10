@@ -2,11 +2,11 @@ import XCTest
 @testable import Tempo
 
 /// Confirming a plan card read backwards: "Plan is live: 16 weeks…" appeared *above* the
-/// "Confirmed — …" turn that caused it, because `invokePlanEngine` appended its own narration
+/// "Confirmed: …" turn that caused it, because `invokePlanEngine` appended its own narration
 /// from inside the switch that runs before the confirmation is recorded (#39).
 ///
-/// The fix is structural — the line is returned now, and only `ChatStore.apply` decides where
-/// it goes — so no unit test can hold the ordering itself; that lives in an `@MainActor` store
+/// The fix is structural (the line is returned now, and only `ChatStore.apply` decides where
+/// it goes) so no unit test can hold the ordering itself; that lives in an `@MainActor` store
 /// wrapped around Supabase. What these hold is the wording that moved during the extraction.
 /// It is the coach's voice announcing a plan the athlete just committed to, and every way it
 /// breaks is quiet: a stray underscore, a volume range with one end missing, "0 weeks"
@@ -71,14 +71,14 @@ final class PlanNarrationTests: XCTestCase {
                        "Plan is live: 16 weeks (base build).")
     }
 
-    /// Mileage is whole numbers in conversation — nobody says "runs 22.4 to 45.6 mi/wk".
+    /// Mileage is whole numbers in conversation: nobody says "runs 22.4 to 45.6 mi/wk".
     func testMileageIsRoundedForSpeech() {
         XCTAssertEqual(PlanNarration.planIsLive(result(startWeeklyMiles: 19.5, peakWeeklyMiles: 50.4)),
                        "Plan is live: 16 weeks (base build). Volume runs 20 → 50 mi/wk.")
     }
 
     /// The projection is the number the athlete actually came for, and it is optional on the
-    /// wire — a plan with no projection still gets announced, just without it.
+    /// wire. A plan with no projection still gets announced, just without it.
     func testProjectionIsIncludedWhenPresentAndSkippedWhenNot() {
         XCTAssertEqual(PlanNarration.planIsLive(result(projectedFinishSeconds: 10_845)),
                        "Plan is live: 16 weeks (base build). Projection today: 3:00:45.")

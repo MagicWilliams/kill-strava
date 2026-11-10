@@ -2,11 +2,11 @@ import XCTest
 @testable import Tempo
 
 /// TrainingPaces.swift claims to be "pure and unit-tested". Until now only half of that
-/// was true. These lock the deterministic half of the hybrid engine — the LLM tunes
+/// was true. These lock the deterministic half of the hybrid engine. The LLM tunes
 /// within these bounds, so if they drift, every generated plan drifts with them.
 final class PaceModelTests: XCTestCase {
 
-    private let sub315: Double = 3 * 3600 + 15 * 60   // 11,700s — David's Chicago goal
+    private let sub315: Double = 3 * 3600 + 15 * 60   // 11,700s. David's Chicago goal
 
     func testRiegelIsIdentityAtSameDistance() {
         XCTAssertEqual(PaceModel.equivalentTime(seconds: 1200, from: 5, to: 5), 1200, accuracy: 0.001)
@@ -15,7 +15,7 @@ final class PaceModelTests: XCTestCase {
     func testRiegelScalesUpWithDistance() {
         let tenK = PaceModel.equivalentTime(seconds: 1200, from: RaceDistance.fiveK.miles,
                                             to: RaceDistance.tenK.miles)
-        // Doubling distance costs more than doubling time is generous — Riegel's 1.06
+        // Doubling distance costs more than doubling time is generous. Riegel's 1.06
         // exponent puts a 20:00 5k at roughly 41:40 for 10k.
         XCTAssertGreaterThan(tenK, 2400)
         XCTAssertLessThan(tenK, 2560)

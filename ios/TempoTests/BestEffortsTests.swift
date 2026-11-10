@@ -4,7 +4,7 @@ import XCTest
 /// Pins the sub-distance PR scan (#25).
 ///
 /// The reason this suite is not optional: `RunHistory.records` has always answered "fastest
-/// 10K+ *run*" — an average over a whole run — and these numbers sit beside it in the same
+/// 10K+ *run*" (an average over a whole run) and these numbers sit beside it in the same
 /// table claiming something stronger. If the rolling window is off by a sample nothing
 /// crashes and nothing logs; a PR table just quietly reads wrong, which is how every engine
 /// bug on this board has presented.
@@ -78,7 +78,7 @@ final class BestEffortsTests: XCTestCase {
         XCTAssertLessThan(try XCTUnwrap(effort(efforts, 5000)), 1500)
     }
 
-    /// A prefix scan — "best time from the start" — would pass the test above only because
+    /// A prefix scan ("best time from the start") would pass the test above only because
     /// the slow block in front is symmetric. Putting the fast block at the very end catches
     /// the other direction.
     func testFindsTheFastBlockAtTheEndOfTheRun() throws {
@@ -90,7 +90,7 @@ final class BestEffortsTests: XCTestCase {
         XCTAssertEqual(try XCTUnwrap(effort(efforts, 1609)), 354, accuracy: 2)
     }
 
-    /// A steady run's best segment is its own pace — no window can beat the average when
+    /// A steady run's best segment is its own pace: no window can beat the average when
     /// every window is the average.
     func testSteadyRunReportsItsOwnPace() throws {
         let efforts = scan(steady(meters: 10_050, secPerKm: 300))
@@ -110,7 +110,7 @@ final class BestEffortsTests: XCTestCase {
         XCTAssertNil(effort(efforts, 42_195))
     }
 
-    /// Exactly on the line counts — and a two-point timeline is the smallest thing the scan
+    /// Exactly on the line counts: and a two-point timeline is the smallest thing the scan
     /// has to survive.
     func testDistanceCoveredExactlyStillCounts() throws {
         let efforts = scan([BestEfforts.Sample(start: 0, end: 1500, meters: 5000)])
@@ -138,7 +138,7 @@ final class BestEffortsTests: XCTestCase {
                        try XCTUnwrap(effort(dense, 5000)), accuracy: 15)
     }
 
-    /// Samples arriving out of order — two sources interleaved over one window — must not
+    /// Samples arriving out of order (two sources interleaved over one window) must not
     /// invert the cumulative curve. A curve that goes backwards reports negative windows.
     func testOutOfOrderSamplesAreSortedBeforeScanning() {
         let ordered = steady(meters: 3000, secPerKm: 300)
@@ -153,14 +153,14 @@ final class BestEffortsTests: XCTestCase {
         XCTAssertEqual(try XCTUnwrap(effort(scan(samples), 1609)), 483, accuracy: 2)
     }
 
-    /// A pause mid-run — a gap in the samples carrying no distance — is a slow window, not a
+    /// A pause mid-run (a gap in the samples carrying no distance) is a slow window, not a
     /// fast one. The kilometre either side of a stop must not be credited with the stop.
     func testAPauseMakesTheWindowSpanningItSlowNotFast() throws {
         var samples = steady(meters: 1000, secPerKm: 240)
         samples += steady(meters: 1000, secPerKm: 240, from: 240 + 600)   // ten minutes standing still
 
         let efforts = scan(samples)
-        // The best 800 is still 3:12 — one of the two halves, not the pair.
+        // The best 800 is still 3:12. One of the two halves, not the pair.
         XCTAssertEqual(try XCTUnwrap(effort(efforts, 800)), 192, accuracy: 2)
         // No mile window can avoid the stop, so the mile reads honestly slow.
         XCTAssertEqual(try XCTUnwrap(effort(efforts, 1609)), 986, accuracy: 3)
@@ -168,7 +168,7 @@ final class BestEffortsTests: XCTestCase {
 
     // MARK: - Idempotency
 
-    /// The pass is re-runnable by design — the unique constraint on `(run_id, distance_m)`
+    /// The pass is re-runnable by design: the unique constraint on `(run_id, distance_m)`
     /// only protects the table if the same input really does yield the same rows.
     func testSameInputTwiceYieldsIdenticalRows() {
         let samples = join([
@@ -184,7 +184,7 @@ final class BestEffortsTests: XCTestCase {
     // MARK: - The catalog
 
     /// These keys are a `check` constraint in migration 0011. If this list changes, that
-    /// migration has to change with it — which is what this test is for.
+    /// migration has to change with it, which is what this test is for.
     func testCatalogMatchesTheMigrationsCheckConstraint() {
         XCTAssertEqual(BestEfforts.distances.map(\.key), [400, 800, 1609, 5000, 10_000, 21_098, 42_195])
         XCTAssertEqual(BestEfforts.distance(forKey: 21_098)?.label, "Half")
@@ -234,7 +234,7 @@ final class BestEffortsTests: XCTestCase {
         XCTAssertTrue(slice.allSatisfy { !done.contains($0.id) })
     }
 
-    /// Manual runs carry a total and nothing else — no timeline to scan — so they are neither
+    /// Manual runs carry a total and nothing else (no timeline to scan) so they are neither
     /// queued nor counted against progress. Counting them would park the percentage below 100
     /// forever.
     func testManualRunsAreNeitherScannedNorCounted() {
@@ -243,7 +243,7 @@ final class BestEffortsTests: XCTestCase {
         XCTAssertEqual(BestEfforts.progress(rows: rows, scanned: []).total, 1)
     }
 
-    /// Progress is a count comparison, not a "the last pass finished" flag — a killed pass
+    /// Progress is a count comparison, not a "the last pass finished" flag. A killed pass
     /// must not be able to report done.
     func testProgressReportsPartialWorkHonestly() {
         let rows = (0..<10).map { run($0) }

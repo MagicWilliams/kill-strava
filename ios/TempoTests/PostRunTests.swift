@@ -31,7 +31,7 @@ final class PostRunTests: XCTestCase {
     // MARK: - Save is always one tap
 
     /// He finishes, taps Save, and has answered nothing. That is a valid journal: no effort,
-    /// no feel, no notes — and a title and shoes, from the defaults, because he left those
+    /// no feel, no notes, and a title and shoes, from the defaults, because he left those
     /// alone rather than clearing them.
     func testSavingWithNothingFilledInIsAValidJournal() {
         let shoe = UUID()
@@ -77,7 +77,7 @@ final class PostRunTests: XCTestCase {
 
     // MARK: - Effort and feel
 
-    /// One tap rates it. A second tap on the same number un-rates it — otherwise a mis-tap
+    /// One tap rates it. A second tap on the same number un-rates it, otherwise a mis-tap
     /// can only be corrected to *another* rating, and that rating then drives his load (#123).
     func testTappingTheRatedNumberAgainClearsIt() {
         XCTAssertEqual(PostRun.tappedRPE(7, current: nil), 7)
@@ -229,7 +229,7 @@ final class PostRunTests: XCTestCase {
                        .review(saving: false, failure: reason))
     }
 
-    /// A race saves itself at the finish (#125, decision 3) and never gets the form — not
+    /// A race saves itself at the finish (#125, decision 3) and never gets the form, not
     /// while saving, and not if that save failed and needs a retry.
     func testARaceNeverGetsTheForm() {
         XCTAssertEqual(PostRun.stage(phase: .ending(.saving), kind: .race, landing: nil),
@@ -238,8 +238,8 @@ final class PostRunTests: XCTestCase {
                        .race(saving: false, failure: "Couldn't save to Apple Health"))
     }
 
-    /// Saved onto Today: close, and he sees it there. Saved anywhere else — too short for the
-    /// log, or queued in a dead spot — and a closing cover onto an unchanged Today reads as a
+    /// Saved onto Today: close, and he sees it there. Saved anywhere else (too short for the
+    /// log, or queued in a dead spot) and a closing cover onto an unchanged Today reads as a
     /// lost run, so the screen says where it went first.
     func testASaveThatIsNotOnTodaySaysWhereItWent() {
         let saved = RecorderState.Phase.saved(workoutID: UUID())

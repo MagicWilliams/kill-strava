@@ -8,7 +8,7 @@ import Foundation
 struct Run: Codable, Identifiable, Hashable {
     let id: UUID
     let startTime: Date
-    /// Moving time — see `TimeAccounting`. Everything that computes on a run uses this.
+    /// Moving time: see `TimeAccounting`. Everything that computes on a run uses this.
     let durationS: Int
     /// Wall clock, when known. Additive: nil for every run ingested before migration 0009.
     let elapsedDurationS: Int?
@@ -43,8 +43,8 @@ struct RunInsert: Encodable, Equatable {
     let avg_pace_sec: Int?
     let avg_hr: Int?
     /// Set only for a treadmill run corrected to its console (#116, `WorkoutRow.corrected`).
-    /// Nil is left out of the JSON entirely, so every other insert — the sync's bulk upsert
-    /// included — sends exactly the keys it always has, and the columns keep their defaults.
+    /// Nil is left out of the JSON entirely, so every other insert (the sync's bulk upsert
+    /// included) sends exactly the keys it always has, and the columns keep their defaults.
     var corrected: Bool? = nil
     var correction_note: String? = nil
     var original: Original? = nil
@@ -60,13 +60,13 @@ struct RunInsert: Encodable, Equatable {
 
 // MARK: - RunSummary (a run as read from HealthKit)
 
-/// A completed run. Read path is Supabase `runs` (source of truth — carries user
+/// A completed run. Read path is Supabase `runs` (source of truth, carries user
 /// corrections); HealthKit-shaped instances exist only for ingest + offline fallback.
 struct RunSummary: Identifiable, Hashable {
     let id: UUID          // Supabase row id (or HKWorkout uuid on the ingest/fallback path)
     let start: Date
     let distanceM: Int
-    /// **Moving time.** The default clock everywhere — labels, pace, load, records.
+    /// **Moving time.** The default clock everywhere, labels, pace, load, records.
     /// See `TimeAccounting` for why a run carries two of these.
     let durationS: Int
     /// Wall clock start→finish, when the source recorded it. `var` for the same reason
@@ -78,7 +78,7 @@ struct RunSummary: Identifiable, Hashable {
     var externalID: String? = nil   // HKWorkout uuid for healthkit rows → detail-series lookup
     /// What the athlete said about it after (#120). Empty for anything read from HealthKit,
     /// for every run that predates the journal, and for every run until migration 0016 is
-    /// applied — see `RunJournalPayload.isMissingColumn`.
+    /// applied. See `RunJournalPayload.isMissingColumn`.
     var journal = RunJournalEntry()
 
     var miles: Double { Double(distanceM) / 1609.34 }
@@ -93,7 +93,7 @@ struct RunSummary: Identifiable, Hashable {
     }
 
     /// "5.1 mi · 9:10 /mi · 138 bpm" / "8.2 km · 5:42 /km · 138 bpm" (drops what's unknown).
-    /// The pace here is deliberately the moving pace — see `paceSecPerMile`.
+    /// The pace here is deliberately the moving pace. See `paceSecPerMile`.
     func metricsLine(_ units: Units) -> String {
         var parts = [units.formatDistance(meters: Double(distanceM), decimals: 1)]
         if let pace = units.runPace(movingSeconds: durationS, meters: distanceM) { parts.append(units.formatPace(pace)) }

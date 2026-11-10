@@ -2,13 +2,13 @@ import Foundation
 
 /// The fastest *segment* of each standard distance inside a single run.
 ///
-/// `RunHistory.records` already answers "fastest 10K+ run" — the best **average** pace over
+/// `RunHistory.records` already answers "fastest 10K+ run". The best **average** pace over
 /// a run of at least that far. That is a different number, and a smaller one: a 20-miler with
 /// a hard finish holds a 10 K best that whole-run averaging can never surface, because the
 /// easy fifteen miles in front of it drag the average down. This file closes that gap (#25).
 ///
-/// Pure by construction, and deliberately so. The input is a cumulative-distance timeline —
-/// the shape `RunDetailLoader` already builds out of HealthKit's distance samples — and the
+/// Pure by construction, and deliberately so. The input is a cumulative-distance timeline (
+/// the shape `RunDetailLoader` already builds out of HealthKit's distance samples) and the
 /// output is seven numbers. No HealthKit, no Supabase, no actor. The pass that drives it over
 /// 1,476 runs lives in `Services/BestEffortsPass.swift`; the arithmetic that decides what a
 /// PR *is* lives here, where a test can pin it.
@@ -20,9 +20,9 @@ enum BestEfforts {
     ///
     /// `meters` is the true distance and drives the arithmetic; `key` is the integer stored
     /// in `run_efforts.distance_m` and must match the `check` constraint in migration 0011
-    /// exactly. They differ for the mile and the half, where the true distance is fractional
-    /// — storing the rounded metre and computing on the exact one keeps the key stable
-    /// without quietly shortening the race.
+    /// exactly. They differ for the mile and the half, where the true distance is fractional.
+    /// Storing the rounded metre and computing on the exact one keeps the key stable without
+    /// quietly shortening the race.
     struct Distance: Identifiable, Equatable {
         let key: Int           // stored in run_efforts.distance_m
         let meters: Double     // what the rolling window actually measures
@@ -31,7 +31,7 @@ enum BestEfforts {
         var id: Int { key }
     }
 
-    /// 400 m through the marathon — the set David asked for, shortest first.
+    /// 400 m through the marathon: the set David asked for, shortest first.
     /// Order is the display order in the PR table and the coach payload.
     static let distances: [Distance] = [
         Distance(key: 400,   meters: 400,      label: "400 m"),
@@ -66,7 +66,7 @@ enum BestEfforts {
 
     /// The cumulative curve, built from raw samples.
     ///
-    /// Garmin writes sparsely and irregularly — a sample can span a second or a minute, and
+    /// Garmin writes sparsely and irregularly. A sample can span a second or a minute, and
     /// the gaps where the watch was paused carry no samples at all. Both are fine here: a
     /// window that spans a pause simply measures as slow, which is what it was. What is *not*
     /// fine is a curve that goes backwards, so samples are sorted and anything with a
@@ -98,7 +98,7 @@ enum BestEfforts {
 
     /// The fastest time this run covered one distance.
     struct Effort: Equatable {
-        /// `Distance.key` — the integer that goes in `run_efforts.distance_m`.
+        /// `Distance.key`. The integer that goes in `run_efforts.distance_m`.
         let distanceM: Int
         /// Whole seconds, rounded. Sub-second precision is noise at Garmin's sample rate,
         /// and the column is an integer.
@@ -112,7 +112,7 @@ enum BestEfforts {
     /// A rolling minimum over the cumulative curve: for each sample, walk the window start
     /// forward until it is at least `D` metres back, then interpolate the exact instant the
     /// athlete crossed `end − D` and take the elapsed time. The window end sits on a real
-    /// sample and only the start is interpolated — that is the resolution HealthKit gives us,
+    /// sample and only the start is interpolated. That is the resolution HealthKit gives us,
     /// and claiming more would be inventing precision.
     ///
     /// **A distance the run did not cover emits nothing.** A 3-mile run holds no half PR, and
@@ -160,7 +160,7 @@ enum BestEfforts {
     ///
     /// Small for the same reason `SyncPass.hrEnrichmentLimit` is small: the number of serial
     /// HealthKit queries any one pass can make must not scale with the size of the archive.
-    /// The whole archive still gets scanned — a slice at a time, resuming where it stopped —
+    /// The whole archive still gets scanned (a slice at a time, resuming where it stopped)
     /// but no single slice can hold the phone.
     static let sliceSize = 40
 
@@ -168,7 +168,7 @@ enum BestEfforts {
     ///
     /// Newest first on purpose: the runs most likely to *hold* a current PR are the recent
     /// ones, so the table on screen converges on the right numbers early instead of spending
-    /// its first thousand reads in 2021. Manual runs are skipped outright — there is no
+    /// its first thousand reads in 2021. Manual runs are skipped outright. There is no
     /// distance timeline behind them, only a total, and a total cannot hold a segment best.
     static func nextSlice(
         rows: [RunSummary],
@@ -184,7 +184,7 @@ enum BestEfforts {
     /// How complete the archive scan is, as the History screen reports it.
     ///
     /// A PR table that is 40 % backfilled must say so rather than show a confident wrong
-    /// number — the same failure mode as every past engine bug on this board. `isComplete`
+    /// number. The same failure mode as every past engine bug on this board. `isComplete`
     /// is what the UI gates the caveat on, and it is a count comparison rather than a
     /// "did the last pass finish" flag so that a killed pass can never report done.
     struct Progress: Equatable {

@@ -3,7 +3,7 @@ import XCTest
 
 /// Closing the Chicago 2026 block (#100). There is no race run: David ran it with no watch and
 /// the Strava app paused itself mid-race. So the official finish time arrives the only way it
-/// can — typed — and that is the path these test first.
+/// can (typed) and that is the path these test first.
 ///
 /// What gets written is the whole contract: the outcome, the time, which run (if any) was the
 /// race, and `is_active = false`. A wrong field here does not crash; it files a block under
@@ -27,7 +27,7 @@ final class BlockCloseoutTests: XCTestCase {
         XCTAssertEqual(BlockCloseout.parseFinish("3:05:09", raceMeters: marathon), 11_109)
     }
 
-    /// "3:28" for a marathon is three hours twenty-eight — nobody types the seconds of a time
+    /// "3:28" for a marathon is three hours twenty-eight, nobody types the seconds of a time
     /// they're rounding. "18:45" for a 5K is eighteen minutes. The distance settles it.
     func testTwoPartTimeIsReadByWhatTheDistanceMakesPossible() {
         XCTAssertEqual(BlockCloseout.parseFinish("3:28", raceMeters: marathon), 12_480, "h:mm for a marathon")
@@ -121,7 +121,7 @@ final class BlockCloseoutTests: XCTestCase {
         XCTAssertEqual(half.distance_m, 21_098)
     }
 
-    /// A retry after a lost response must upsert the same run, not log Chicago twice — the
+    /// A retry after a lost response must upsert the same run, not log Chicago twice. The
     /// identity comes from the goal, as `ManualRunIdentity` does for coach-proposed runs.
     func testRaceRunIdentityIsTheGoal() {
         let a = BlockCloseout.raceRun(userID: "u", goalID: goalID, raceName: "Chicago", start: now, raceMeters: marathon, finishS: 12_495)

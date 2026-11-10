@@ -50,7 +50,7 @@ final class TreadmillDistanceTests: XCTestCase {
         XCTAssertEqual(out.map(\.t), phone.map(\.t), "time is never touched")
     }
 
-    /// The phone over-counted — the direction HealthKit could never have fixed after the fact.
+    /// The phone over-counted: the direction HealthKit could never have fixed after the fact.
     func testAConsoleBelowThePhoneScalesDownToo() {
         let lower = 4.40 * Units.metersPerMile
         let out = rescaled(correction(lower))
@@ -72,7 +72,7 @@ final class TreadmillDistanceTests: XCTestCase {
 
     /// The splits move: a mile is reached sooner on the console's curve than on the phone's,
     /// there are five of them where the phone had four and a bit, and every pace is
-    /// recomputed from the new boundaries — with the moving time unchanged, the average pace
+    /// recomputed from the new boundaries, with the moving time unchanged, the average pace
     /// is the console's.
     func testSplitsMoveAndPaceIsRecomputed() throws {
         let mile = Units.mi.splitMeters
@@ -187,8 +187,8 @@ final class TreadmillDistanceTests: XCTestCase {
     }
 
     /// The correction rides in the workout's own metadata, so every path that reads the
-    /// workout back — the save, a queued retry after a relaunch, a run found in Health after
-    /// a kill — sees the same correction.
+    /// workout back (the save, a queued retry after a relaunch, a run found in Health after
+    /// a kill) sees the same correction.
     func testTheCorrectionRoundTripsThroughWorkoutMetadata() {
         let c = correction(console)
         let metadata = RecordingMetadata.atSave(state: RecorderState(), correction: c, units: .mi)

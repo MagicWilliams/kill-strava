@@ -1,6 +1,6 @@
 import Foundation
 
-/// Where a training block is in its life — a pure function of the goal, its plan and the
+/// Where a training block is in its life: a pure function of the goal, its plan and the
 /// moment you ask (#100).
 ///
 /// Until this existed Tempo had no idea a block could *end*. Chicago was 11 Oct 2026; on the
@@ -10,7 +10,7 @@ import Foundation
 ///
 /// The phase is what lets Today ask the question at the right moment. Deliberately, nothing
 /// here *closes* a block: `.racePassed` lasts until the athlete says the block is over. A race
-/// date passing is evidence, not a decision — he may want to log the result first, or a race
+/// date passing is evidence, not a decision. He may want to log the result first, or a race
 /// may have been postponed and the date not yet moved.
 enum BlockLifecycle {
 
@@ -30,7 +30,7 @@ enum BlockLifecycle {
 
     /// - Parameters:
     ///   - goal: the block's goal. `completed_at` or `outcome` on it means closed.
-    ///   - plan: its plan, when known. `status == "done"` also means closed — a plan stood
+    ///   - plan: its plan, when known. `status == "done"` also means closed. A plan stood
     ///     down without the goal being closed (a regeneration, 0010) is not a block to review.
     ///   - now: the moment asked about. Compared by **local calendar day**: `race_date` is a
     ///     date with no time, parsed at local midnight (`PlanDates.day`), so the race passes

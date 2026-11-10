@@ -3,7 +3,7 @@ import Supabase
 
 /// App-wide source of truth for real training data.
 ///
-/// Read path: Supabase `runs` — it carries user corrections made via the coach,
+/// Read path: Supabase `runs`. It carries user corrections made via the coach,
 /// so it wins over raw HealthKit. HealthKit is ingest-only (insert-only sync on
 /// every refresh) and the offline display fallback.
 @MainActor
@@ -28,7 +28,7 @@ final class RunStore: ObservableObject {
     /// and miles if it can't be. Screens move onto it in #109.
     @Published private(set) var units: Units = .fallback
 
-    // Launch gate: what RootTabView shows before the app proper. See LaunchGate.swift —
+    // Launch gate: what RootTabView shows before the app proper. See LaunchGate.swift,
     // .unreachable exists so a dead backend can never masquerade as "still loading".
     @Published private(set) var launch: LaunchGate = .loading
     var needsOnboarding: Bool? {
@@ -43,11 +43,11 @@ final class RunStore: ObservableObject {
     // Load model output (recomputed each refresh) + today's cached coach read
     @Published private(set) var fitness: FitnessMetrics?
     @Published private(set) var todayTakeaway: String?
-    /// The newest coach read on any run — what the just-running Today shows in place of
+    /// The newest coach read on any run: what the just-running Today shows in place of
     /// `todayTakeaway`, which needs a planned session to exist (#101).
     @Published private(set) var latestRead: LatestRead.Read?
 
-    /// Non-nil when what's on screen is not the corrected record — see RunFetch. Rendered
+    /// Non-nil when what's on screen is not the corrected record. See RunFetch. Rendered
     /// as a banner on Today, because numbers the athlete already fixed silently reverting
     /// is a bug he can only catch if we say something.
     @Published private(set) var dataWarning: String?
@@ -73,18 +73,18 @@ final class RunStore: ObservableObject {
     /// `loadProfile` reads back for a profile nobody has filled in (#167).
     private var settingsGiven: Set<OnboardingFacts.Setting> = []
 
-    /// Closed blocks, newest first (#100) — what You lists under "Past blocks". Empty, and the
+    /// Closed blocks, newest first (#100). What You lists under "Past blocks". Empty, and the
     /// list hidden, until migration 0013 is applied: `BlockReviewService.pastBlocks` reports
     /// an unreadable column as nil rather than as "no blocks".
     @Published var pastBlocks: [GoalInfo] = []
 
-    /// Sub-distance PRs (#25) — the fastest 5K *inside* a run, not the fastest 5K+ run.
+    /// Sub-distance PRs (#25): the fastest 5K *inside* a run, not the fastest 5K+ run.
     /// Empty and `available == false` until migration 0011 is applied; see
     /// `BestEffortsService` for why an absent table is reported rather than shown as zero.
     @Published private(set) var bestEfforts = BestEffortsService.Snapshot()
 
-    /// Overlapping pairs still waiting for the athlete's ruling (#30), newest first. Empty —
-    /// and the review row hidden — until migration 0012 is applied.
+    /// Overlapping pairs still waiting for the athlete's ruling (#30), newest first. Empty (
+    /// and the review row hidden) until migration 0012 is applied.
     @Published private(set) var overlaps: [RunDedupe.OverlapPair] = []
     @Published private(set) var overlapReview = OverlapReviewService.Snapshot()
     /// The last ruling made on the review screen, for its Undo. One deep on purpose.
@@ -107,7 +107,7 @@ final class RunStore: ObservableObject {
         await runLaunchSequence()
     }
 
-    /// Retry after `.unreachable`. Resets the `phase` latch that `start()` guards on —
+    /// Retry after `.unreachable`. Resets the `phase` latch that `start()` guards on,
     /// without this the first failure would be permanent for the life of the process.
     func retryLaunch() async {
         guard launch.isUnreachable else { return }
@@ -135,7 +135,7 @@ final class RunStore: ObservableObject {
 
         await loadUnits()
         await loadPlan()
-        // During onboarding, the Connect step owns the HealthKit moment — don't
+        // During onboarding, the Connect step owns the HealthKit moment. Don't
         // fire the permission sheet from under the Welcome screen.
         if launch == .ready {
             await refresh()
@@ -148,7 +148,7 @@ final class RunStore: ObservableObject {
             try await health.requestAuthorization()
             ingested = try await health.fetchSummaries()
         } catch {
-            // No Health access — Supabase may still hold previously synced/manual runs.
+            // No Health access: Supabase may still hold previously synced/manual runs.
             Telemetry.error("sync.healthkit_unavailable", error)
         }
         // DB first: ingest dedupes against what's already recorded (Garmin re-exports
@@ -177,7 +177,7 @@ final class RunStore: ObservableObject {
                     response = .rows(rows)
                 case .incomplete, .unreachable:
                     // We wrote runs and then couldn't read them back. Whatever we held
-                    // before the insert is real but short of the truth — say so instead of
+                    // before the insert is real but short of the truth. Say so instead of
                     // letting the new runs go missing until the next refresh.
                     Telemetry.warn("sync.reread_failed", "runs inserted but the re-read failed")
                     response = .incomplete(response.knownRows ?? [])
@@ -185,7 +185,7 @@ final class RunStore: ObservableObject {
             }
         }
 
-        // The display rule is pure and lives in RunFetch — a failed read must never look
+        // The display rule is pure and lives in RunFetch: a failed read must never look
         // like data, and a fallback must never look like the corrected record.
         let decision = RunFetch.resolve(response, ingested: ingested, onScreen: runs,
                                         retiredExternalIDs: retired)
@@ -223,11 +223,11 @@ final class RunStore: ObservableObject {
         fitness = LoadModel.compute(runs: runs, checkInOK: checkInForToday?.feelsOk)
         await loadTodayTakeaway()
         await loadLatestRead()
-        publishWidgetSnapshot()   // #76 — the widgets show exactly what this refresh produced
+        publishWidgetSnapshot()   // #76: the widgets show exactly what this refresh produced
         await refreshOverlapReview()
         await refreshPastBlocks()
         await refreshBestEfforts()
-        // Last, so a queued run lands against fully loaded state — and usually finds the row
+        // Last, so a queued run lands against fully loaded state, and usually finds the row
         // this refresh's sync just wrote for it, leaving only its journal to attach (#122).
         await RecordedRunSaver.retryPending(store: self)
     }
@@ -236,13 +236,13 @@ final class RunStore: ObservableObject {
 
     /// Runs the recorder just wrote to `runs`: put them on screen now, not at the next refresh.
     ///
-    /// The slice of `refresh()` a new run changes — re-read, plan matching, load, the coach's
-    /// read, widgets — without the part that makes a refresh slow, re-reading all of HealthKit.
+    /// The slice of `refresh()` a new run changes (re-read, plan matching, load, the coach's
+    /// read, widgets) without the part that makes a refresh slow, re-reading all of HealthKit.
     /// The matcher is what turns today's session card to Done; it takes the newest run on the
     /// session's date, which is the one just recorded.
     func absorbRecordedRuns(_ runIDs: [UUID]) async {
         // A failed re-read changes nothing on screen: the row is written, and the next
-        // refresh shows it. No banner — nothing the athlete corrected is at stake here.
+        // refresh shows it. No banner. Nothing the athlete corrected is at stake here.
         guard case .rows(let rows) = await readRuns() else { return }
         runs = rows
         phase = rows.isEmpty ? .empty : .ready
@@ -255,8 +255,8 @@ final class RunStore: ObservableObject {
         await loadTodayTakeaway()
         publishWidgetSnapshot()
 
-        // Any recorded run that isn't today's session — a just-running day, an unplanned
-        // second run, a queued run from earlier — still gets the coach's read, which
+        // Any recorded run that isn't today's session (a just-running day, an unplanned
+        // second run, a queued run from earlier) still gets the coach's read, which
         // `noteTakeaway` puts on the just-running Today.
         let todayRunID = todaySession?.run_id
         for run in runs where runIDs.contains(run.id) && run.id != todayRunID {
@@ -276,7 +276,7 @@ final class RunStore: ObservableObject {
     var journalAvailable: Bool { !journalColumnsMissing }
 
     /// A journal edit that landed: show it now rather than at the next refresh. Load is
-    /// recomputed because RPE feeds it (#161) — rating a run after the fact moves the numbers
+    /// recomputed because RPE feeds it (#161), rating a run after the fact moves the numbers
     /// on Today, and they should move when he taps Save, not when he next pulls to refresh.
     func applyJournal(_ entry: RunJournalEntry, toRun runID: UUID) {
         guard let i = runs.firstIndex(where: { $0.id == runID }), runs[i].journal != entry else { return }
@@ -287,7 +287,7 @@ final class RunStore: ObservableObject {
 
     // MARK: - Training blocks (#100)
 
-    /// Where the active block is — nil with no goal. Today's "review your block" card keys
+    /// Where the active block is: nil with no goal. Today's "review your block" card keys
     /// off `.racePassed`; see `BlockLifecycle` for why nothing closes a block on its own.
     var blockPhase: BlockLifecycle.Phase? {
         goal.map { BlockLifecycle.phase(goal: $0, plan: plan, now: .now) }
@@ -299,7 +299,7 @@ final class RunStore: ObservableObject {
     }
 
     /// The goal a run was the race for: a closed block that recorded it as its race run, or
-    /// else the active goal — its linked race run (#117) if it has one, the date-and-distance
+    /// else the active goal. Its linked race run (#117) if it has one, the date-and-distance
     /// guess if not (`RaceRecap.isGoalRace`). Without the first half, closing a block would
     /// quietly take the "Race recap" door off its own race's page.
     func raceGoal(for run: RunSummary) -> GoalInfo? {
@@ -333,7 +333,7 @@ final class RunStore: ObservableObject {
     }
 
     /// Rule on one pair. Returns false if the write did not land, in which case nothing on
-    /// screen changes — a decision that only *looks* saved comes back next launch.
+    /// screen changes. A decision that only *looks* saved comes back next launch.
     ///
     /// On success the retired run leaves `runs` here and now, exactly as the next read would
     /// drop it (`superseded_by is not null`), so History's totals and records recompute
@@ -390,7 +390,7 @@ final class RunStore: ObservableObject {
     /// in front of something that does.
     private func refreshBestEfforts() async {
         let pending = !BestEfforts.nextSlice(rows: runs, scanned: bestEfforts.scanned, limit: 1).isEmpty
-        // Nothing unscanned and the table already loaded — don't re-read the whole marker
+        // Nothing unscanned and the table already loaded: don't re-read the whole marker
         // column on every refresh for an answer that cannot have changed.
         if bestEfforts.available && !pending { return }
 
@@ -404,7 +404,7 @@ final class RunStore: ObservableObject {
 
     /// Walk the unscanned archive a slice at a time until there is nothing left.
     ///
-    /// One pass at a time — re-entering `refresh` while a scan is running must not start a
+    /// One pass at a time, re-entering `refresh` while a scan is running must not start a
     /// second one racing the first over the same runs. The task is cancelled on teardown
     /// and resumes from the marker column next launch.
     private func startEffortsBackfill() {
@@ -419,7 +419,7 @@ final class RunStore: ObservableObject {
                 let covered = await self.effortsService.scanSlice(slice)
                 // Nothing written means the writes are failing, not that the work is done.
                 // Spinning on the same slice would read the whole archive out of HealthKit
-                // over and over for no result — stop and let the next refresh try again.
+                // over and over for no result. Stop and let the next refresh try again.
                 guard !covered.isEmpty else {
                     Telemetry.warn("efforts.backfill_stalled",
                                    "slice wrote nothing", context: ["slice": "\(slice.count)"])
@@ -430,7 +430,7 @@ final class RunStore: ObservableObject {
             }
 
             if scannedThisPass > 0 {
-                // Records may have moved under us — re-read the standing bests so History
+                // Records may have moved under us: re-read the standing bests so History
                 // and the coach see the same numbers.
                 let snapshot = await self.effortsService.snapshot()
                 if snapshot.available {
@@ -450,7 +450,7 @@ final class RunStore: ObservableObject {
         }
     }
 
-    /// How much of the archive the scan has covered — what History reports while it runs.
+    /// How much of the archive the scan has covered: what History reports while it runs.
     var effortsProgress: BestEfforts.Progress {
         BestEfforts.progress(rows: runs, scanned: bestEfforts.scanned)
     }
@@ -472,7 +472,7 @@ final class RunStore: ObservableObject {
         // A failed read is not an absent takeaway: generating on failure spends a Claude
         // call re-deriving something the row may already hold.
         guard cached.shouldGenerate else { return }
-        // Not generated yet — do it in the background so refresh stays fast; the
+        // Not generated yet: do it in the background so refresh stays fast; the
         // preview appears on Today the moment it lands.
         Task { [weak self] in
             guard let self else { return }
@@ -483,7 +483,7 @@ final class RunStore: ObservableObject {
         }
     }
 
-    /// Read the newest cached coach read. A failed read keeps what's on screen — an
+    /// Read the newest cached coach read. A failed read keeps what's on screen. An
     /// unreachable table is not a coach who has never said anything.
     private func loadLatestRead() async {
         do {
@@ -500,7 +500,7 @@ final class RunStore: ObservableObject {
         latestRead = read
     }
 
-    /// Which Today applies. The rule — and why the plan, not the goal, decides — is in
+    /// Which Today applies. The rule (and why the plan, not the goal, decides) is in
     /// `Engine/TodayMode.swift`; the phase is `BlockLifecycle`'s (#100).
     var todayMode: TodayMode {
         TodayMode.resolve(goal: goal, plan: plan, phase: blockPhase)
@@ -589,7 +589,7 @@ final class RunStore: ObservableObject {
     /// Read every run, a page at a time.
     ///
     /// PostgREST caps an unbounded select at 1,000 rows. This read is newest-first, so the
-    /// cap silently discarded the *oldest* runs — which is why it survived so long: weekly
+    /// cap silently discarded the *oldest* runs, which is why it survived so long: weekly
     /// mileage, readiness, and the coach's 21-day context were all correct, and until the
     /// History screen shipped there was no surface that could show the far end of the
     /// archive. David's earliest ~474 runs, all of 2021 among them, had never been displayed
@@ -612,7 +612,7 @@ final class RunStore: ObservableObject {
     }
 
     private func fetchFromSupabase(columns: String) async throws -> [RunSummary] {
-        // `superseded_by` marks a row as a duplicate of another run (migration 0008 —
+        // `superseded_by` marks a row as a duplicate of another run (migration 0008,
         // Garmin re-exports that predate the ingest dedupe). Retired rows are kept for
         // reversibility but must never reach a total, a record, or the coach's context.
         var rows: [RunRow] = []
@@ -628,7 +628,7 @@ final class RunStore: ObservableObject {
                 .value
             rows.append(contentsOf: page)
             // A short page is the last page. An exactly-full final page costs one extra
-            // round trip that comes back empty — cheaper than guessing at a total.
+            // round trip that comes back empty, cheaper than guessing at a total.
             if page.count < RunFetch.pageSize { break }
             offset += RunFetch.pageSize
             if offset >= RunFetch.maxRuns { break }   // a leash, so a bad cursor cannot spin forever
@@ -656,7 +656,7 @@ final class RunStore: ObservableObject {
         }
     }
 
-    /// HealthKit uuids of retired rows — `superseded_by is not null` — for ingest dedupe only.
+    /// HealthKit uuids of retired rows (`superseded_by is not null`) for ingest dedupe only.
     ///
     /// A retired duplicate is soft-deleted, so its uuid still holds the unique key, but the
     /// archive read above never returns it. Without this, HealthKit's copy of every retired
@@ -708,7 +708,7 @@ final class RunStore: ObservableObject {
     /// Read the profile row and report which of the three launch outcomes it is.
     ///
     /// The old version wrapped this in `try?` and simply left `needsOnboarding` nil when the
-    /// read failed — the exact line that turned a paused project into an infinite splash.
+    /// read failed. The exact line that turned a paused project into an infinite splash.
     /// A thrown error and an absent row now mean different things, because they are.
     private func loadProfile() async -> LaunchGate.Profile {
         struct Row: Decodable, Sendable {
@@ -725,7 +725,7 @@ final class RunStore: ObservableObject {
         do {
             // Decoded as an array rather than `.single()`: PostgREST turns a zero-row
             // `.single()` into a thrown error, which would collapse "no profile yet" back
-            // into "couldn't read the profile" — the exact conflation being fixed here.
+            // into "couldn't read the profile". The exact conflation being fixed here.
             rows = try await Deadline.run {
                 try await Supa.client
                     .from("profiles")
@@ -740,7 +740,7 @@ final class RunStore: ObservableObject {
             return .unreadable
         }
 
-        guard let row = rows.first else { return .new }   // no row yet — a genuinely new athlete
+        guard let row = rows.first else { return .new }   // no row yet. A genuinely new athlete
 
         riskTolerance = row.risk_tolerance
         maxHR = row.max_hr
@@ -792,7 +792,7 @@ final class RunStore: ObservableObject {
         if let iso { birthdate = iso }
     }
 
-    /// Interview finished (coach called complete_onboarding) — drop the gate and
+    /// Interview finished (coach called complete_onboarding): drop the gate and
     /// finish the normal launch sequence.
     func markOnboarded() async {
         guard let uid = Supa.userID?.uuidString else { return }
@@ -918,17 +918,17 @@ struct CoachContext: Encodable {
         let id: String
         let date: String
         let miles: Double
-        /// Over moving time — the same pace the athlete sees on the run's label.
+        /// Over moving time: the same pace the athlete sees on the run's label.
         let pace_per_mile: String?
         /// Minutes spent stopped mid-run, present only when there were any worth naming.
         /// A long run broken up by ten minutes of standing around is a different session
         /// from the same distance run straight through, and the coach can only say so if
-        /// it is told. Absent means "no stops recorded", not "ran continuously" — runs
+        /// it is told. Absent means "no stops recorded", not "ran continuously", runs
         /// ingested before elapsed time was stored simply don't know.
         let stopped_min: Int?
         let avg_hr: Int?
         let corrected: Bool
-        /// What the athlete said after the run (#123), each absent when he didn't say it —
+        /// What the athlete said after the run (#123), each absent when he didn't say it,
         /// see `CoachJournal`. Notes are his free text: they go here and never to telemetry.
         let rpe: Int?
         let feel_tags: [String]?
@@ -955,7 +955,7 @@ struct CoachContext: Encodable {
         let weeks_total: Int
         let phase: String
         let week_target_mi: Double?
-        let today_session: String?     // "Threshold repeats — 3×1 mi @ 7:05 (planned)"
+        let today_session: String?     // "Threshold repeats, 3×1 mi @ 7:05 (planned)"
         let projected_finish: String?
         let sessions_window: [SessCtx] // −7d…+14d, for adapting specific sessions
     }
@@ -966,12 +966,12 @@ struct CoachContext: Encodable {
     struct OnboardingCtx: Encodable {
         let active: Bool
         let runs_found: Int
-        /// `racing_now` | `want_to_train` | `just_running` — see `OnboardingFacts.StartingPoint`.
+        /// `racing_now` | `want_to_train` | `just_running`: see `OnboardingFacts.StartingPoint`.
         let starting_point: String?
-        let known: [String: String]   // facts already on file — confirm, don't re-ask
+        let known: [String: String]   // facts already on file, confirm, don't re-ask
     }
 
-    /// The athlete's standing sub-distance PRs — the fastest 5 K *inside* a run, not the
+    /// The athlete's standing sub-distance PRs: the fastest 5 K *inside* a run, not the
     /// fastest 5 K+ run (#25). Seven rows at most, so the payload grows by a few hundred
     /// tokens and not by a list per distance.
     struct BestEffortsCtx: Encodable {
@@ -996,7 +996,7 @@ struct CoachContext: Encodable {
     /// `target_pace_sec` are per mile), and a coach doing arithmetic in two systems is how
     /// an amended run ends up a kilometre short.
     let units: String
-    /// `"training"`, `"just_running"` or `"race_passed"` — see `TodayMode.coachMode`. Explicit rather than
+    /// `"training"`, `"just_running"` or `"race_passed"`. See `TodayMode.coachMode`. Explicit rather than
     /// left for the model to infer from a missing `plan`, because the coach's default with
     /// no plan was to go looking for a race (#101).
     let mode: String
@@ -1021,7 +1021,7 @@ struct CoachContext: Encodable {
     let best_efforts: BestEffortsCtx?   // nil until migration 0011 is applied
     /// The active goal's intake columns (#102); nil for a goal that predates them.
     let goal_detail: GoalDetailCoachContext?
-    /// A sent intake not yet turned into a plan (#102) — the coach's cue to reflect it back.
+    /// A sent intake not yet turned into a plan (#102): the coach's cue to reflect it back.
     let intake: IntakeCoachContext?
     /// The goal time code suggests for the intake's race, or the active goal's (#239). The
     /// coach offers this, a value in its range, or the athlete's own time, and nothing else.
@@ -1033,7 +1033,7 @@ struct CoachContext: Encodable {
     /// A `var`, and the only one here, because it is the one part of the context the store
     /// cannot build: `RunStore` holds the training data, while the facts in `coach_memory`
     /// and the previous thread's recap belong to the chat. `ChatStore` stamps it on at the
-    /// moment of the request — see `ChatStore.requestReply`.
+    /// moment of the request. See `ChatStore.requestReply`.
     var memory: MemoryCtx?
     /// The card on screen, unanswered, and what has already been applied in this conversation.
     /// `ChatStore` stamps these on too, for the same reason. See `OpenProposal`.
@@ -1051,8 +1051,8 @@ struct CoachContext: Encodable {
 }
 
 extension RunStore {
-    /// What the goal is, for anything that has to describe it. The decision — including
-    /// every case where there is nothing to describe — lives in `Engine/GoalLine.swift`;
+    /// What the goal is, for anything that has to describe it. The decision (including
+    /// every case where there is nothing to describe) lives in `Engine/GoalLine.swift`;
     /// the `static let goalDescription` that used to assert sub-3:15 at Chicago to the
     /// coach before the athlete had any goal is the reason it's pinned there (#44).
     var goalLine: GoalLine.State {
@@ -1131,7 +1131,7 @@ extension RunStore {
     ///
     /// Nothing at all in two cases, and they are different: the schema isn't there yet, or
     /// no run has been scanned into a record. Either way the key is absent rather than
-    /// empty — an empty list reads as "this athlete has no PRs", which would be a claim
+    /// empty. An empty list reads as "this athlete has no PRs", which would be a claim
     /// about his training rather than about our backfill.
     private func bestEffortsContext() -> CoachContext.BestEffortsCtx? {
         guard bestEfforts.available else { return nil }
@@ -1162,7 +1162,7 @@ extension RunStore {
         )
     }
 
-    /// Facts the athlete has given, so the interview confirms instead of re-asking — and
+    /// Facts the athlete has given, so the interview confirms instead of re-asking, and
     /// nothing they haven't. See `OnboardingFacts.known`.
     private func onboardingContext() -> CoachContext.OnboardingCtx {
         let known = OnboardingFacts.known(

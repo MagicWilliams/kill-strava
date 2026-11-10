@@ -4,7 +4,7 @@ import XCTest
 /// Chicago was 11 Oct 2026. Closing that block (#100) leaves the athlete with no active
 /// plan, and until #101 every screen read that as "hasn't started": Today said "No plan
 /// yet", Plan pitched a plan, Progress said the coach would propose a goal, and the coach
-/// itself — handed a context with no `plan` key — went looking for a race to train for.
+/// itself (handed a context with no `plan` key) went looking for a race to train for.
 ///
 /// These pin which Today applies, and that the coach is told in words rather than left to
 /// infer it from a missing key.
@@ -29,7 +29,7 @@ final class TodayModeTests: XCTestCase {
     }
 
     /// The headline case: after a block is closed, and before the first one. Not an empty
-    /// state with a button — its own layout.
+    /// state with a button. Its own layout.
     func testNoGoalAndNoPlanIsJustRunning() {
         let mode = TodayMode.resolve(goal: nil, plan: nil)
         XCTAssertEqual(mode, .justRunning)
@@ -100,7 +100,7 @@ final class TodayModeTests: XCTestCase {
         XCTAssertEqual(try wireMode(store.coachContext()), "just_running")
 
         // `RunStore` asks `BlockLifecycle` about *now*, so the training case needs a race that
-        // is still ahead whenever this runs — and Chicago, which is behind us for good, is
+        // is still ahead whenever this runs, and Chicago, which is behind us for good, is
         // the passed case.
         let ahead = GoalInfo(id: UUID(), race_name: "Someday", race_date: "2099-10-11",
                              goal_time_seconds: 11_700, distance: "marathon")

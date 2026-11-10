@@ -2,8 +2,8 @@ import XCTest
 @testable import Tempo
 
 /// A takeaway is cached in `runs.coach_takeaway` once and never regenerated. When a
-/// completion came back empty twice, the coach answered with its fallback line — in takeaway
-/// mode too — and the app cached it, so "Lost my train of thought there — ask me that again."
+/// completion came back empty twice, the coach answered with its fallback line (in takeaway
+/// mode too) and the app cached it, so "Lost my train of thought there. Ask me that again."
 /// became that run's permanent read on Today and Run Detail (#137). These pin what the app
 /// will and won't write into the column.
 final class TakeawayReplyTests: XCTestCase {

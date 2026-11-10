@@ -2,7 +2,7 @@ import XCTest
 @testable import Tempo
 
 /// The just-running Today replaces the readiness ring with a Freshness card (#101).
-/// Readiness's words are instructions — "Primed", "Run easy" — and with no plan there is
+/// Readiness's words are instructions ("Primed", "Run easy") and with no plan there is
 /// nothing to instruct, so this card says where the athlete *is*.
 ///
 /// Both words come off the same load model, on the same screen-adjacent surfaces (the card

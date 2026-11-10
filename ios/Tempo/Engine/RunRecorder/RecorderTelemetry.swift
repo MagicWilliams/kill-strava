@@ -5,7 +5,7 @@ import Foundation
 ///
 /// "Works" is a claim only David can make, and he makes it with the phone in a pocket and his
 /// mind on the run. When a recording goes wrong the first question is the one Chicago left
-/// unanswered — Strava paused itself mid-marathon, and nobody could say when, or why. These
+/// unanswered. Strava paused itself mid-marathon, and nobody could say when, or why. These
 /// lines are how the EM answers it from `app_events` the morning after, without asking him to
 /// remember: when the run started, every stop and who made it, every interruption and whether
 /// it cost the recording, and what the save did.
@@ -21,7 +21,7 @@ import Foundation
 /// **No coordinates, no notes.** Nothing here takes a `TrackMath.Fix` or a journal entry, so
 /// neither can reach a line by accident: the fix verdict counts are tallies, the target is its
 /// session type and never its title. Distance and duration go on `recorder.saved` only, as
-/// whole numbers — the same shape `recorder.run_too_short` already reports.
+/// whole numbers. The same shape `recorder.run_too_short` already reports.
 enum RecorderTelemetry {
 
     // MARK: - Vocabulary
@@ -114,8 +114,8 @@ enum RecorderTelemetry {
 
     // MARK: - Transitions
 
-    /// What one reducer step is worth reporting. Empty when the event changed nothing — an
-    /// auto-pause with auto-pause off, a Lock Screen "end", a late tap on a finished run — so
+    /// What one reducer step is worth reporting. Empty when the event changed nothing (an
+    /// auto-pause with auto-pause off, a Lock Screen "end", a late tap on a finished run) so
     /// the table carries what the recorder *did*, not everything it was asked.
     ///
     /// An `AutoPause.Decision` arrives here as its `event`, so auto pauses are reported exactly
@@ -188,7 +188,7 @@ enum RecorderTelemetry {
             return [Line(event: .discarded, level: .info, context: context)]
 
         case .start, .endRequested, .endConfirmed, .saveSucceeded, .recovered, .setTargetVisible:
-            // `.saveSucceeded` is reported by `saved(…)` once the Tempo row has answered too —
+            // `.saveSucceeded` is reported by `saved(…)` once the Tempo row has answered too,
             // one line per save, carrying both halves of it.
             return []
         }
@@ -202,7 +202,7 @@ enum RecorderTelemetry {
     /// - Parameters:
     ///   - distanceM: the distance the workout was saved with. `TrackMath.Track.distanceM`
     ///     outdoors; whatever the session measured on a treadmill.
-    ///   - fixes: `TrackMath.Track.verdicts` — empty on a treadmill.
+    ///   - fixes: `TrackMath.Track.verdicts`, empty on a treadmill.
     ///   - saveLatency: seconds from Save to both answers.
     static func saved(
         _ state: RecorderState,
@@ -230,7 +230,7 @@ enum RecorderTelemetry {
 
     /// Fix tallies and the filtered share, from `TrackMath.Track.verdicts`.
     ///
-    /// "Filtered" is every verdict but `accepted` — the fixes that moved nothing. Lock
+    /// "Filtered" is every verdict but `accepted`. The fixes that moved nothing. Lock
     /// candidates count: a run that spent its first minute waiting for a lock is exactly the
     /// kind of run this number is here to flag.
     static func fixContext(_ verdicts: [TrackMath.Verdict: Int]) -> [String: String] {

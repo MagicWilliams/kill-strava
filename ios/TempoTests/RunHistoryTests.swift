@@ -2,7 +2,7 @@ import XCTest
 @testable import Tempo
 
 /// The history layer is pure arithmetic over 2,000+ real runs, and every number it
-/// produces is one the athlete will read as a fact about his own training — a wrong
+/// produces is one the athlete will read as a fact about his own training. A wrong
 /// "longest run" or a streak that silently resets is the kind of bug that looks like
 /// a design choice rather than a defect. Hence: pinned.
 final class RunHistoryTests: XCTestCase {
@@ -113,7 +113,7 @@ final class RunHistoryTests: XCTestCase {
     }
 
     /// Jumping to a year while "Half+" is active must land on that year's half-plus runs, so
-    /// a year whose runs the filter removed cannot still be offered — an affordance that
+    /// a year whose runs the filter removed cannot still be offered. An affordance that
     /// scrolls you into nothing is worse than one that isn't there.
     func testYearRailFollowsTheActiveFilter() {
         let runs = [run("2026-08-02", miles: 14), run("2024-05-05", miles: 4), run("2021-06-01", miles: 20)]

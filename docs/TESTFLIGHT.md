@@ -1,4 +1,4 @@
-# TestFlight — how builds reach the phone
+# TestFlight: how builds reach the phone
 
 Decided in #59 (option B). Every green `main` → `.github/workflows/testflight.yml` → a
 TestFlight build → a notification on David's phone. No Xcode, no cable, no remembering.

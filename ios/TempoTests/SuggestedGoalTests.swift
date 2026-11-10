@@ -114,7 +114,7 @@ final class SuggestedGoalTests: XCTestCase {
         }
     }
 
-    /// ±2% of the target. On 3:23:42 that is 3:19:38 to 3:27:46 — wide enough for a round
+    /// ±2% of the target. On 3:23:42 that is 3:19:38 to 3:27:46, wide enough for a round
     /// number either way, narrow enough that nothing in it is a different goal.
     func testTheRangeIsTwoPercentEitherSide() throws {
         let s = try XCTUnwrap(suggest(weeks: 12))

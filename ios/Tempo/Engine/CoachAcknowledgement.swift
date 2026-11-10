@@ -3,7 +3,7 @@ import Foundation
 /// Whether resolving a coach proposal should ask the coach to say something back.
 ///
 /// The coach used to propose a change, watch it land, and go silent. The last line in the
-/// transcript was one the *app* wrote — "Confirmed — Correct Tue's run: 6.0 → 8.0 mi" — and
+/// transcript was one the *app* wrote, the "Confirmed" turn naming the correction, and
 /// then nothing. It read like the other side of the conversation walking off mid-sentence
 /// (#31). Nothing new needs to be sent to fix that: `confirm`/`dismiss` already append that
 /// turn, so it is already in the history the coach sees. The reply was simply never asked for.
@@ -21,8 +21,8 @@ enum CoachAcknowledgement {
 
         /// The write landed, but the re-read that follows it failed. Asking here is worse
         /// than silence: the coach would describe the pre-correction numbers as if the
-        /// correction had not happened — the exact confusion the amend was meant to end.
-        /// The athlete already gets "Saved — but your runs couldn't be re-read just now."
+        /// correction had not happened. The exact confusion the amend was meant to end.
+        /// The athlete already gets "Saved, but your runs couldn't be re-read just now."
         case appliedWithStaleContext
 
         /// The write threw. `errorText` says so and the card comes back as Retry; a coach
@@ -30,7 +30,7 @@ enum CoachAcknowledgement {
         /// app itself could not establish.
         case failed
 
-        /// The athlete said no. Worth a short acknowledgement — silence after a Dismiss is
+        /// The athlete said no. Worth a short acknowledgement, silence after a Dismiss is
         /// what made the proposal feel like it was pushed rather than offered.
         case dismissed
 
@@ -41,7 +41,7 @@ enum CoachAcknowledgement {
 
     /// Tool types the setup interview applies without a card. `ChatStore.handleReply` strips
     /// these from the proposals it turns into cards, so during onboarding they never reach a
-    /// Confirm — the guard below is the second lock on that door, not the first.
+    /// Confirm. The guard below is the second lock on that door, not the first.
     ///
     /// `remember` joined on 2026-11-04. It was the only fact the interview still asked about,
     /// and it was the one most likely to come in threes: an answer during setup is exactly
@@ -50,7 +50,7 @@ enum CoachAcknowledgement {
         ["update_athlete", "update_plan_settings", "set_risk_tolerance", "complete_onboarding", "remember"]
 
     /// The one turn of acknowledgement, or nothing. Whatever comes back is handed to
-    /// `handleReply`, which may attach another card but never asks for a further reply — that
+    /// `handleReply`, which may attach another card but never asks for a further reply. That
     /// is what keeps this from becoming a coach talking to itself.
     static func shouldRequestReply(
         after transition: Transition,
@@ -82,15 +82,15 @@ enum CoachAcknowledgement {
 
     /// The wire history for an acknowledgement, given the transcript as it reads on screen.
     ///
-    /// After a plan confirm the transcript is "Confirmed — …" (the athlete) and then "Plan is
-    /// live: 16 weeks…" (the app, in the coach's bubble), in that order on purpose — the tap,
+    /// After a plan confirm the transcript is "Confirmed: …" (the athlete) and then "Plan is
+    /// live: 16 weeks…" (the app, in the coach's bubble), in that order on purpose: the tap,
     /// then what it did (#39). Sent as-is, that history ends in an `assistant` turn and the
     /// model rejects it as prefill: every `create_plan` / `update_plan_settings`
     /// acknowledgement 502'd (#193). The server now drops a trailing assistant turn (#194),
     /// but dropping it means the coach acknowledges a plan change without ever seeing the
     /// sentence that says what was built (#195).
     ///
-    /// So the trailing coach turns are folded into the user turn before them — on the wire
+    /// So the trailing coach turns are folded into the user turn before them, on the wire
     /// only. The transcript keeps its two bubbles; the coach gets one user turn carrying both
     /// the tap and its result, and the history ends where the model needs it to.
     ///

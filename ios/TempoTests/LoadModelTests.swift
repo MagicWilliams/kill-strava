@@ -2,7 +2,7 @@ import XCTest
 @testable import Tempo
 
 /// The readiness number on the Today screen. Every input is deterministic, so every
-/// claim it makes is testable — including the one product rule that outranks the math.
+/// claim it makes is testable, including the one product rule that outranks the math.
 final class LoadModelTests: XCTestCase {
 
     /// `count` runs, one per day, ending today.

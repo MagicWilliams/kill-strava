@@ -1,5 +1,5 @@
 ---
-title: "Tempo — Drift Detector PRD"
+title: "Tempo: Drift Detector PRD"
 project: Tempo
 type: prd
 status: draft
@@ -8,7 +8,7 @@ source: claude.ai planning session (explored-with-Claude; decisions are Magic's)
 tags: [tempo, prd, side-projects, drift-detector]
 ---
 
-# Tempo — Drift Detector PRD
+# Tempo: Drift Detector PRD
 
 Project: [[Tempo]] · Decisions: [[decision-log]] · Related: [[prd-01-intake-v2]] · Repo audit: [§14](#14-repo-audit-2026-10-15)
 
@@ -23,13 +23,13 @@ Project: [[Tempo]] · Decisions: [[decision-log]] · Related: [[prd-01-intake-v2
 You are picking this up in a session with access to the Tempo repo and project status (Linear). Do these in order, and **stop at each gate for Magic's explicit "go."**
 
 1. **Log this PRD to Obsidian.**
-   - Find Magic's Obsidian vault. If you can't locate it with certainty, ask for the path — don't guess.
-   - Save this file into the vault's Tempo area (e.g. `Projects/Tempo/PRDs/2026-10-15 Tempo Drift Detector PRD.md`, or wherever existing Tempo notes live — match the vault's conventions).
+   - Find Magic's Obsidian vault. If you can't locate it with certainty, ask for the path. Don't guess.
+   - Save this file into the vault's Tempo area (e.g. `Projects/Tempo/PRDs/2026-10-15 Tempo Drift Detector PRD.md`, or wherever existing Tempo notes live. Match the vault's conventions).
    - Keep the frontmatter. Add `[[Tempo]]` and any existing Tempo index/MOC note as wikilinks at the top, and add a link back to this PRD from that index note.
    - If the `obsidian-notes` skill is available, run its lint afterwards and fix broken links.
 2. **Audit the repo against this PRD.** For each issue in §9, report: already exists / partially exists / not started, with file paths. Flag anything in the repo that conflicts with decisions here (e.g. Strava API usage, injury language, an LLM computing metrics).
-3. **GATE — propose issues.** Show the issue list (adjusted for what already exists) as a preview. Wait for "go" before creating anything. *(Revised: Tempo's work queue is GitHub Issues with the repo's `agent-ready` / `needs-david` / `needs-device` labels, not Linear.)*
-4. **GATE — before UI work (#6),** ask Magic for the Figma design system link and build from it. Do not invent a new design system.
+3. **GATE: propose issues.** Show the issue list (adjusted for what already exists) as a preview. Wait for "go" before creating anything. *(Revised: Tempo's work queue is GitHub Issues with the repo's `agent-ready` / `needs-david` / `needs-device` labels, not Linear.)*
+4. **GATE: before UI work (#6),** ask Magic for the Figma design system link and build from it. Do not invent a new design system.
 5. **Propose the rules in §11** as additions to the repo's `CLAUDE.md`. Wait for sign-off before writing.
 
 Working loop (Magic's Side Projects OS): one issue = one agent session = one branch = one PR = one review. Keep the ready queue ~1 week deep. Magic is the bottleneck at spec and review time, not the agents.
@@ -42,7 +42,7 @@ Working loop (Magic's Side Projects OS): one issue = one agent session = one bra
 
 **Positioning:** Tempo is the private layer that sits on top of everything a runner already uses (Garmin, Strava, Runna, Apple Watch, a coach), reads across all of it, and answers one question: **"Am I on track?"**
 
-**The core feature — the Drift Detector:** Tempo builds its own model of where a runner *should* be this week to hit their goal race time, compares that to where their fitness actually is, and tells them, calmly, when they've drifted far enough off course to need an adjustment — how far off they are, and what to change.
+**The core feature, the Drift Detector:** Tempo builds its own model of where a runner *should* be this week to hit their goal race time, compares that to where their fitness actually is, and tells them, calmly, when they've drifted far enough off course to need an adjustment: how far off they are, and what to change.
 
 **The war line (vs. incumbents):**
 > Runna checks whether you did the workouts. Tempo checks whether the workouts are working.
@@ -77,7 +77,7 @@ Source: https://www.techrepublic.com/article/news-strava-api-scraping-crackdown
 
 ## 4. Privacy claim
 
-**Removed for now (2026-10-15).** The drafted line, "We never store or sell your data — it's processed only to answer you", isn't true of today's architecture. Supabase stores runs, the full coach chat, free-text notes, photos and injury notes, and there's no delete or export. Chat, notes and run detail also go to Anthropic. No privacy claim ships in copy until one is written to match a mapped data flow (rule 5 in §11).
+**Removed for now (2026-10-15).** The drafted line, which claimed Tempo never stores or sells your data and processes it only to answer you, isn't true of today's architecture. Supabase stores runs, the full coach chat, free-text notes, photos and injury notes, and there's no delete or export. Chat, notes and run detail also go to Anthropic. No privacy claim ships in copy until one is written to match a mapped data flow (rule 5 in §11).
 
 ---
 
@@ -85,16 +85,16 @@ Source: https://www.techrepublic.com/article/news-strava-api-scraping-crackdown
 
 A runner **with some experience, signing up for another race**, with a goal finish time, at least **8 weeks** out from race day. They likely use some mix of Strava, Garmin, Runna, and/or a coach.
 
-**The moment they'd pay:** a missed week, or the anxiety of not knowing where they stand in training — the feeling that you have to study charts and stats just to get a sense of the big picture.
+**The moment they'd pay:** a missed week, or the anxiety of not knowing where they stand in training. The feeling that you have to study charts and stats just to get a sense of the big picture.
 
 ---
 
-## 6. The Drift Detector — feature spec
+## 6. The Drift Detector: feature spec
 
 ### 6.1 Core model (all computed in code)
 1. **Current fitness estimate.** Estimate the runner's race-equivalent fitness from recent qualifying efforts. **Exclude easy/recovery runs** as a fitness signal. **Smooth** the estimate so one bad run (heat, hills) doesn't swing it.
 2. **Expected trajectory curve.** A curve from the runner's fitness at signup to their goal time on race day, including taper. This is "Tempo's model of where they should be."
-3. **Drift.** The gap between current fitness and where the curve says they should be **this week** — not the gap to the goal itself.
+3. **Drift.** The gap between current fitness and where the curve says they should be **this week**, not the gap to the goal itself.
    - ⚠️ Comparing to the goal directly would flag nearly everyone early in a block, because fitness hasn't been built yet.
 
 ### 6.2 Status tiers (vs. the expected curve)
@@ -112,15 +112,15 @@ Thresholds are starting values; the beta tunes them. (For scale: 5% on a 3:30 ma
 - **The Drift Detector doesn't rewrite plans in v1.** It judges progress; it doesn't prescribe workouts. *(Revised: Tempo keeps its existing plan engine, which David trains on. A drift alert never triggers a plan rewrite on its own; changing the plan stays an explicit, confirmed action the athlete takes.)*
 
 ### 6.4 Experience & feel
-- **Hero visualization:** one line — projected fitness/finish vs. the expected curve. It *is* the answer to "Am I on track?" Opening the app shows it, and it's different every time because runs move it. This is the "fresh" reason to return whether a runner is thriving or struggling.
+- **Hero visualization:** one line, projected fitness/finish vs. the expected curve. It *is* the answer to "Am I on track?" Opening the app shows it, and it's different every time because runs move it. This is the "fresh" reason to return whether a runner is thriving or struggling.
 - **Updates after every synced run**, with a smoothed headline that moves slowly.
 - **Weekly tab** as an alternative view.
-- **Tone: calm.** Example: "Some catching up to do — here's a doable path." Not alarmist.
+- **Tone: calm.** Example: "Some catching up to do. Here's a doable path." Not alarmist.
 - **No injury or medical claims.** Frame everything as training load and deviation from the trajectory. Runners draw their own conclusions about burnout.
 
 ### 6.5 Notifications
 - Default: news waits for the runner to open the app.
-- Pushes are allowed after a workout syncs or a period of inactivity, but **must state direction** — no vague teasers ("Coach wants to talk"), which read as bad news to anxious runners, and no guilt.
+- Pushes are allowed after a workout syncs or a period of inactivity, but **must state direction**. No vague teasers ("Coach wants to talk"), which read as bad news to anxious runners, and no guilt.
   - ✅ "Long run synced. Your projection held at 3:31."
   - ✅ "Quiet week. Here's an easy way back in."
   - ❌ "Your coach wants to talk."
@@ -159,9 +159,9 @@ Drift Detector end to end: onboarding + Health backfill, fitness estimator, expe
 
 ## 9. Milestones & issues
 
-Each issue = one PR. Definition of Ready: context, testable acceptance criteria, out-of-scope line, technical notes, sized to one PR, no open product questions. **Audit the repo first — some of these (especially #5) may already partly exist.**
+Each issue = one PR. Definition of Ready: context, testable acceptance criteria, out-of-scope line, technical notes, sized to one PR, no open product questions. **Audit the repo first. Some of these (especially #5) may already partly exist.**
 
-### Milestone 1 — The Engine
+### Milestone 1: The Engine
 All code, all unit-tested, no UI. Goal: numbers Magic trusts before anything is shown to testers.
 
 #### #1 Spike: choose the fitness formula `spike`
@@ -197,7 +197,7 @@ All code, all unit-tested, no UI. Goal: numbers Magic trusts before anything is 
   - Insufficient data → no status, not a false alarm.
 - **Out of scope:** Copy, notifications.
 
-### Milestone 2 — The Surface
+### Milestone 2: The Surface
 **Gate:** get the Figma design system link from Magic before #6.
 
 #### #5 Onboarding + Health backfill `feature`
@@ -224,7 +224,7 @@ All code, all unit-tested, no UI. Goal: numbers Magic trusts before anything is 
   - Tone: calm.
 - **Out of scope:** Plan generation, chat.
 
-### Milestone 3 — The Loop
+### Milestone 3: The Loop
 
 #### #8 Notifications `feature`
 - **Do:** Push after a workout syncs and after inactivity, per §6.5.
@@ -241,7 +241,7 @@ All code, all unit-tested, no UI. Goal: numbers Magic trusts before anything is 
 ## 10. Beta rollout
 
 - **TestFlight is already live.**
-- **Wave 1 (now): 10–20 testers** for basic feedback. **Hold the rest of the ~100** until the Drift Detector ships — testers who arrive before it exists will judge Tempo without its best feature, and each DM is one first impression.
+- **Wave 1 (now): 10–20 testers** for basic feedback. **Hold the rest of the ~100** until the Drift Detector ships. Testers who arrive before it exists will judge Tempo without its best feature, and each DM is one first impression.
 - **Parallel concierge test (optional, recommended):** for 5 runners, hand-run the weekly "am I on track?" readout (pull their data, have Claude draft it, send it). Ask if they'd pay ~$8/month. If they forward it or notice when it's late, the product is real.
 - **End of beta:** test willingness to pay.
 

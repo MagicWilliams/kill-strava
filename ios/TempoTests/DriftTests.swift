@@ -5,7 +5,7 @@ import XCTest
 /// off track ≥ 5%, measured against this week's point on the expected curve.
 ///
 /// The thing this replaces is the Progress card's yes/no "projection ≤ goal". That compares
-/// to the goal itself, so every runner early in a block reads as behind — the false alarm
+/// to the goal itself, so every runner early in a block reads as behind. The false alarm
 /// the PRD calls out by name. The week-2 test below is that case.
 final class DriftTests: XCTestCase {
 
@@ -61,7 +61,7 @@ final class DriftTests: XCTestCase {
 
     // MARK: - Ahead of the curve
 
-    /// Faster than expected is good news, not an alarm — but the number keeps its sign, so
+    /// Faster than expected is good news, not an alarm, but the number keeps its sign, so
     /// whatever explains it can say "ahead by 3%".
     func testAheadOfTheCurveIsOnTrackWithTheSignKept() {
         let r = reading(9_700, expected)
@@ -83,7 +83,7 @@ final class DriftTests: XCTestCase {
 
     // MARK: - Insufficient data
 
-    /// No estimate means no status — never a default tier that reads as a verdict.
+    /// No estimate means no status: never a default tier that reads as a verdict.
     func testMissingCurrentIsInsufficientData() {
         XCTAssertEqual(Drift.measure(current: nil, expected: expected), .insufficientData)
     }
@@ -128,7 +128,7 @@ final class DriftTests: XCTestCase {
     ///
     /// A runner signs up with 3:45 fitness aiming at 3:30, sixteen weeks out. The real curve
     /// is #3's job; a straight line from signup to goal is enough to stand in for it here.
-    /// Two weeks in they've improved a little, but less than the line — normal early-block
+    /// Two weeks in they've improved a little, but less than the line, normal early-block
     /// noise. Against the curve that is well under 2%. Against the goal, which is what the
     /// Progress card measures today, the same runner is ~6.7% "behind": off track, in week 2,
     /// for doing exactly what a block's first fortnight looks like.

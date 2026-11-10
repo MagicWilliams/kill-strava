@@ -5,7 +5,7 @@ import XCTest
 ///
 /// Every failure these pin is silent by design. The journal never blocks the run save, so a
 /// photo refused by RLS, a note that would not clear, or a whole row rejected over one bad
-/// slider value would surface as nothing at all — the run saves, the journal just isn't
+/// slider value would surface as nothing at all. The run saves, the journal just isn't
 /// there. Same shape as every engine bug before it: no crash, a screen quietly wrong.
 final class RunJournalPayloadTests: XCTestCase {
 
@@ -95,7 +95,7 @@ final class RunJournalPayloadTests: XCTestCase {
 
     func testAnOutOfRangeRPEIsDroppedNotSent() {
         // `rpe between 1 and 10` is a check constraint. A rejected update loses the whole
-        // row — the notes would go down with a bad slider value.
+        // row. The notes would go down with a bad slider value.
         for bad in [0, -1, 11, 100] {
             let fields = RunJournalPayload.fields(for: RunJournalEntry(rpe: bad, notes: "keep me"))
             XCTAssertNil(fields.rpe, "RPE \(bad) must not reach the check constraint")

@@ -25,7 +25,7 @@ final class HealthService {
     /// What the run recorder writes (#110). Workout + route is Apple's stated minimum for
     /// saving a route ("read and share both HKWorkout and HKWorkoutRoute"); distance and
     /// active energy are the samples a run's totals are built from. Heart rate is read-only
-    /// on purpose: an iPhone has no sensor, so Tempo never authors HR — a paired Watch or
+    /// on purpose: an iPhone has no sensor, so Tempo never authors HR. A paired Watch or
     /// strap does.
     private static let recorderShareTypes: Set<HKSampleType> = [
         HKObjectType.workoutType(),
@@ -41,9 +41,9 @@ final class HealthService {
         try await store.requestAuthorization(toShare: [], read: Self.readTypes)
     }
 
-    /// The recorder's one Health prompt, from the pre-run sheet (#126) — not at launch.
+    /// The recorder's one Health prompt, from the pre-run sheet (#126), not at launch.
     /// HealthKit only shows a sheet for types not yet decided, so after the first run this
-    /// returns without UI. Returning normally does not mean the athlete said yes — check
+    /// returns without UI. Returning normally does not mean the athlete said yes. Check
     /// `canSaveWorkouts` afterwards.
     func requestRecorderAuthorization() async throws {
         guard Self.isAvailable else { return }
@@ -51,7 +51,7 @@ final class HealthService {
     }
 
     /// Whether a recorded run can be saved to Health. Unlike read access, which HealthKit
-    /// hides, share status is reported truthfully — so the pre-run sheet can say "this run
+    /// hides, share status is reported truthfully, so the pre-run sheet can say "this run
     /// won't reach Apple Health" before the run, not after it.
     var canSaveWorkouts: Bool {
         Self.isAvailable && store.authorizationStatus(for: HKObjectType.workoutType()) == .sharingAuthorized
@@ -89,17 +89,17 @@ final class HealthService {
             .filter(WorkoutRow.isRun)   // drop GPS blips / accidental starts
     }
 
-    /// Ingest into Supabase — INSERT-ONLY (dedupe on user/source/HK-uuid, existing rows
+    /// Ingest into Supabase: INSERT-ONLY (dedupe on user/source/HK-uuid, existing rows
     /// untouched) so user corrections in `runs` survive every re-sync.
     ///
     /// Second dedupe layer: Garmin re-exports the SAME run as a brand-new HKWorkout
-    /// (new uuid) whenever its Health settings change — uuid dedupe can't catch that,
+    /// (new uuid) whenever its Health settings change, uuid dedupe can't catch that,
     /// so any candidate starting within ±5 min of an already-recorded run is skipped.
     ///
     /// **The order here is the fix for #37: dedupe, write, then report.** HR enrichment
     /// used to sit between the dedupe and the upsert, one serial HealthKit query per new
     /// run, on the premise that "kept is small". With a five-year archive `kept` was 348,
-    /// the refresh never reached the write, and nothing was persisted or logged — the same
+    /// the refresh never reached the write, and nothing was persisted or logged. The same
     /// 348 recomputed on every launch. Nothing that queries HealthKit may run before the
     /// upsert; enrichment happens after it, capped, in `backfillMissingHR`. See `SyncPass`.
     ///
@@ -110,7 +110,7 @@ final class HealthService {
               retiredExternalIDs: Set<String>) async throws -> Int {
         guard let userID = Supa.userID?.uuidString, !summaries.isEmpty else { return 0 }
 
-        // Dedupe rule lives in RunDedupe (pure + unit-tested) — see that file for why
+        // Dedupe rule lives in RunDedupe (pure + unit-tested): see that file for why
         // the uuid constraint alone is not enough, and why retired uuids count as stored.
         let reconciled = RunDedupe.reconcile(candidates: summaries, existing: existing,
                                              retiredExternalIDs: retiredExternalIDs)
@@ -119,7 +119,7 @@ final class HealthService {
         reportDedupeDrops(reconciled, candidates: summaries.count, kept: kept.count)
 
         // A dropped twin sometimes carries the run's other clock. Enriching an existing row
-        // with it is safe — it only fills a column that was empty.
+        // with it is safe. It only fills a column that was empty.
         await patchElapsed(reconciled.elapsedPatches)
 
         // The mirror case is not safe and is not automated: the stored row holds the LONGER
@@ -136,7 +136,7 @@ final class HealthService {
 
         // Runs Garmin exported without HR are written with `avg_hr` null and filled in
         // afterwards by `backfillMissingHR`, which runs on every refresh and is capped.
-        // A recent run gets its heart rate in this same refresh, one update later —
+        // A recent run gets its heart rate in this same refresh, one update later,
         // a second the write no longer waits on.
         let inserts = kept.map { WorkoutRow.insert($0, userID: userID) }
         // `.select()` is load-bearing, not decoration (#94). `ignoreDuplicates: true` drops
@@ -162,7 +162,7 @@ final class HealthService {
         let written = SyncPass.confirmedWrites(proposed: kept, writtenExternalIDs: returned.map(\.external_id))
         let report = SyncPass.writeReport(for: written)
         // `proposed` rides along so the two numbers disagreeing is visible in one row
-        // instead of inferred from the table's row count afterwards — that inference is
+        // instead of inferred from the table's row count afterwards. That inference is
         // what cost three days of triage on #94.
         Telemetry.info("sync.inserted", "runs written",
                        context: ["count": "\(report.count)",
@@ -178,7 +178,7 @@ final class HealthService {
     /// Put the two clocks of a just-written, pause-less workout in the right columns (#237).
     ///
     /// A source that writes no pause events reports its whole wall-clock span as duration,
-    /// so the row lands with moving = elapsed = however long the watch was left running —
+    /// so the row lands with moving = elapsed = however long the watch was left running,
     /// 10h24m for 8.1 mi on 15 Oct. The distance samples know better. This reads them for
     /// the runs this sync just inserted and, when `SampleMovingTime.correctedDurations` says
     /// the gap is a real stop rather than noise, rewrites those two columns and the pace.
@@ -189,7 +189,7 @@ final class HealthService {
     /// writes the whole archive checks the newest few and reports how many it skipped.
     ///
     /// The update is guarded on `duration_s` still being the value just written, so an edit
-    /// that landed in between is never overwritten. A failure leaves the row as inserted —
+    /// that landed in between is never overwritten. A failure leaves the row as inserted,
     /// wrong in the old way, not a new way.
     private func correctUnrecordedStops(_ written: [RunSummary]) async {
         let targets = SampleMovingTime.ingestTargets(written: written)
@@ -216,7 +216,7 @@ final class HealthService {
         }
         let eligible = SampleMovingTime.ingestTargets(written: written, limit: .max).count
         guard !fixed.isEmpty || eligible > targets.count else { return }
-        // Counts and HealthKit uuids only — no pace, no duration.
+        // Counts and HealthKit uuids only: no pace, no duration.
         Telemetry.info("sync.moving_time_corrected", "pause-less workouts given sample moving time",
                        context: ["count": "\(fixed.count)",
                                  "checked": "\(targets.count)",
@@ -227,7 +227,7 @@ final class HealthService {
     /// Reads one workout's distance samples, and nothing else, for `correctUnrecordedStops`.
     private let sampleReader = RunDetailLoader()
 
-    /// The Garmin re-export signature — reported only when it is actually news.
+    /// The Garmin re-export signature: reported only when it is actually news.
     ///
     /// A healthy refresh re-reads all of HealthKit and drops everything already stored,
     /// so the raw drop count is ~1,690 every time and means nothing. What the gate looks
@@ -262,7 +262,7 @@ final class HealthService {
     ///
     /// Purely additive: only ever writes a column that is currently null, never touches
     /// `duration_s`, and skips corrected rows (the athlete's edit is the record). Failures
-    /// are ignored on purpose — a missing elapsed time costs a line on the detail page,
+    /// are ignored on purpose. A missing elapsed time costs a line on the detail page,
     /// and the next refresh tries again.
     private func patchElapsed(_ patches: [UUID: Int]) async {
         guard !patches.isEmpty else { return }
@@ -280,7 +280,7 @@ final class HealthService {
     /// Backfill elapsed time for the archive, from the workouts this refresh already read.
     ///
     /// The sync reads every workout in Health on every refresh anyway (that is its own
-    /// problem — see issue #37), so the wall clock for a five-year-old run is already in
+    /// problem. See issue #37), so the wall clock for a five-year-old run is already in
     /// memory here. Matching it to the stored row by HealthKit uuid costs nothing extra:
     /// no additional HealthKit queries, one small update per row that is missing it.
     ///
@@ -305,7 +305,7 @@ final class HealthService {
     /// Repair pass: recent DB rows that predate HR enrichment get their avg HR filled
     /// from HealthKit's time window. Corrected rows are never touched (coach-set values).
     ///
-    /// This is where HR enrichment lives now — *after* the write, never in front of it
+    /// This is where HR enrichment lives now, *after* the write, never in front of it
     /// (#37). Which rows qualify, and how many, is decided by `SyncPass.hrEnrichmentTargets`
     /// so the cap is a tested number rather than a loop condition: no refresh can turn a
     /// 348-run backlog into 348 serial HealthKit queries again.
@@ -324,7 +324,7 @@ final class HealthService {
         return updated
     }
 
-    /// Average HR over a time window — how Garmin-written runs get their number.
+    /// Average HR over a time window: how Garmin-written runs get their number.
     private func windowAverageHR(start: Date, end: Date) async -> Int? {
         await withCheckedContinuation { cont in
             let query = HKStatisticsQuery(
@@ -342,7 +342,7 @@ final class HealthService {
 }
 
 extension WorkoutRow.Workout {
-    /// Read the fields a row is built from off a HealthKit workout — the only place an
+    /// Read the fields a row is built from off a HealthKit workout. The only place an
     /// `HKWorkout` becomes a `Workout`, for ingest and (#114) the recorder's own save alike.
     init(_ workout: HKWorkout) {
         let bpm = HKUnit.count().unitDivided(by: .minute())

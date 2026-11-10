@@ -1,23 +1,23 @@
 import SwiftUI
 import UIKit
 
-/// Tempo design tokens — color, type, spacing, radius. Single source of truth.
+/// Tempo design tokens: color, type, spacing, radius. Single source of truth.
 ///
 /// **v3 is theme-resolving.** Every palette token is a dynamic `UIColor` that picks its value
 /// from the trait environment, so `Tokens.Palette.canvas` is white in light mode and near-black
 /// in dark without a single call site changing. That property is why the facelift could land
 /// as a pilot: the screens that haven't been retuned yet still compile and still follow the
-/// system appearance — they're un-*tuned*, not broken.
+/// system appearance, they're un-*tuned*, not broken.
 ///
 /// Two rules the palette encodes, both learned the hard way:
 ///
-/// 1. **Volt is a fill, never text.** `#CDFB45` is ~1.2:1 on white — as body or label text on a
+/// 1. **Volt is a fill, never text.** `#CDFB45` is ~1.2:1 on white, as body or label text on a
 ///    light ground it is not "low contrast", it is invisible. It stays for button fills, pills,
 ///    ring strokes and chart marks, always with `onVolt` on top. Anything that wants to *say*
 ///    accent in text reaches for `accentText`, which is volt-derived ink on light and volt
 ///    itself on dark.
 /// 2. **Cards are tinted wells, not floating surfaces.** No borders, no shadows. A card is a
-///    fill lifted off the canvas, and the fill carries meaning — see `Well`.
+///    fill lifted off the canvas, and the fill carries meaning. See `Well`.
 enum Tokens {
 
     // MARK: Color
@@ -31,21 +31,21 @@ enum Tokens {
 
     enum Palette {
         // Surfaces
-        /// App background. Flat — the wells do the separating.
+        /// App background. Flat. The wells do the separating.
         static let canvas   = Tokens.dynamic(light: 0xFFFFFF, dark: 0x0B0D10)
         /// Default well fill. Equivalent to `Well.neutral`.
         static let surface  = Tokens.dynamic(light: 0xF4F5F3, dark: 0x161A20)
-        /// A well *inside* a well — recessed one more step in both themes.
+        /// A well *inside* a well: recessed one more step in both themes.
         static let inset    = Tokens.dynamic(light: 0xEAECE7, dark: 0x0E1014)
         /// Tracks, unfilled gauge strokes, inactive dots. Not a border colour any more.
         static let elevated = Tokens.dynamic(light: 0xE2E5E0, dark: 0x222831)
         static let divider  = Tokens.dynamic(light: 0xE6E9E4, dark: 0x2A313B)
 
-        // Text — light values are contrast-checked against the *canvas*, which is the worst
+        // Text: light values are contrast-checked against the *canvas*, which is the worst
         // case; every well is darker than white, so each only improves from here.
         static let textPrimary   = Tokens.dynamic(light: 0x14171A, dark: 0xF3F5F8) // 17.0:1
         static let textSecondary = Tokens.dynamic(light: 0x4A525C, dark: 0x9BA5B3) //  7.9:1
-        // Both values clear 4.5:1 against every ground in `Tokens.Well` — the *inset* fills
+        // Both values clear 4.5:1 against every ground in `Tokens.Well`. The *inset* fills
         // included, which is what the first two attempts at the light value missed. A mid-grey
         // on a light ground gets worse as the ground darkens, so the recessed panels are the
         // binding constraint, not the canvas. The dark value was already under on `surface`
@@ -54,29 +54,29 @@ enum Tokens {
         static let textTertiary  = Tokens.dynamic(light: 0x5B6470, dark: 0x7E8794) //  6.0:1 / 5.4:1
 
         // Brand
-        /// The one accent. **Fill only** — see the type-level note.
+        /// The one accent. **Fill only**. See the type-level note.
         static let volt   = Tokens.dynamic(light: 0xCDFB45, dark: 0xCDFB45)
         /// Text and icons on a volt fill. Near-black in both themes, because volt is.
         static let onVolt = Tokens.dynamic(light: 0x0B0D10, dark: 0x0B0D10)
         /// Volt's legal text form: darkened to ink on light (9.5:1), volt itself on dark.
         /// This is what `SectionLabel(color:)` eyebrows and accent links should use.
         static let accentText = Tokens.dynamic(light: 0x3F4A16, dark: 0xCDFB45)
-        /// Volt for *marks* — gauge arcs, day dots, progress bars, chart washes. Anything
+        /// Volt for *marks*: gauge arcs, day dots, progress bars, chart washes. Anything
         /// that has to be seen against the ground rather than sit underneath dark text.
         ///
         /// "Fill only" isn't the whole rule. A 10pt lime dot on white is ~1.2:1, so a filled
-        /// dot and an empty one look identical — and on the week strip those two states are
+        /// dot and an empty one look identical, and on the week strip those two states are
         /// the entire message. A button keeps plain `volt` because `onVolt` sits on top of it
         /// and carries the contrast; a bare mark has nothing on top, so it carries its own.
         ///
         /// The light value is deep enough to clear 3:1 against `elevated`, which is the colour
-        /// of the *unfilled* dot — the comparison that actually decides whether the week strip
+        /// of the *unfilled* dot. The comparison that actually decides whether the week strip
         /// is readable. That pushes it to olive rather than lime, which is the same place
         /// `accentText` lands: on a light ground, volt survives only where dark text sits on
         /// top of it.
         static let voltMark = Tokens.dynamic(light: 0x6E8712, dark: 0xCDFB45)
 
-        // Status — the dark values are the originals; the light ones are deepened, because
+        // Status: the dark values are the originals; the light ones are deepened, because
         // a colour tuned to glow on near-black washes out completely on white. Each is checked
         // against *every* well, both depths: an `info` note sits in whatever card the session
         // it annotates happens to be, so "readable on its own tint" isn't the bar.
@@ -89,7 +89,7 @@ enum Tokens {
     /// Card fills. The tint *is* the label: scanning the Plan list, you read the shape of a
     /// week before you read a word of it.
     ///
-    /// Kept deliberately quiet. These sit a few points off the canvas, not a few dozen — the
+    /// Kept deliberately quiet. These sit a few points off the canvas, not a few dozen. The
     /// failure mode for a tinted-well system on white is a page that looks like a highlighter
     /// accident, and the fix is restraint in the token, not restraint in how often it's used.
     enum Well: CaseIterable {
@@ -97,7 +97,7 @@ enum Tokens {
         case neutral
         /// Rest and recovery. Cool, a step back.
         case calm
-        /// Quality work — intervals, tempo, anything that costs something.
+        /// Quality work: intervals, tempo, anything that costs something.
         case warm
         /// Long runs. Cool but substantial, distinct from rest.
         case cool
@@ -137,7 +137,7 @@ enum Tokens {
     ///
     /// Each step is its own light/dark pair rather than `volt.opacity(…)`. Translucent lime
     /// over white barely separates from the paper at the low end, which flattens exactly the
-    /// thing the wall exists to show — the shape of a season, the injury gap, the taper. On
+    /// thing the wall exists to show. The shape of a season, the injury gap, the taper. On
     /// light the ramp runs pale-lime → deep olive; on dark it runs dim → full volt.
     enum Wall {
         static let ramp: [Color] = [
@@ -149,7 +149,7 @@ enum Tokens {
         ]
     }
 
-    /// Pace / HR zone ramp (Z1 easy → Z5 max). Used as fills — bars, wall cells, chart marks —
+    /// Pace / HR zone ramp (Z1 easy → Z5 max). Used as fills (bars, wall cells, chart marks)
     /// so the light values are deepened enough to hold their own against white.
     enum Zone {
         static let z1 = Tokens.dynamic(light: 0x2F6FE0, dark: 0x4F8DF7)
@@ -198,7 +198,7 @@ extension UIColor {
 extension Color {
     /// Hex int initializer, e.g. `Color(hex: 0xCDFB45)`.
     ///
-    /// Static — it does *not* follow the appearance. Prefer a `Tokens.Palette` member; this
+    /// Static. It does *not* follow the appearance. Prefer a `Tokens.Palette` member; this
     /// stays for one-off literals that genuinely mean the same thing in both themes.
     init(hex: UInt32, alpha: Double = 1) {
         self.init(

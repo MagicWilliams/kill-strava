@@ -1,8 +1,8 @@
 import SwiftUI
 
 /// Fitness / fatigue / form as one word and three numbers (#101). Shown on the just-running
-/// Today in place of the readiness ring — readiness answers "can I do quality today?", which
-/// is a question only a plan asks — and on Progress in place of a race projection.
+/// Today in place of the readiness ring (readiness answers "can I do quality today?", which
+/// is a question only a plan asks) and on Progress in place of a race projection.
 ///
 /// Taps through to `ReadinessDetailView`, which is the same three numbers in depth.
 struct FreshnessCard: View {

@@ -4,7 +4,7 @@ import XCTest
 /// Regression suite for the silent-revert read path (issue #8), the same bug class as the
 /// 2026-08-23 splash freeze: `try?` erased the difference between "the table is empty" and
 /// "the server never answered", so a network blip swapped the athlete's corrected distances
-/// for the raw Apple Health numbers they had overwritten — a wrong number on screen, no
+/// for the raw Apple Health numbers they had overwritten. A wrong number on screen, no
 /// crash, nothing to notice.
 ///
 /// The two invariants below are the ones that matter. Everything else is detail.
@@ -23,7 +23,7 @@ final class RunFetchTests: XCTestCase {
         )
     }
 
-    /// The same run as HealthKit still holds it — raw, pre-correction. `externalID` is the
+    /// The same run as HealthKit still holds it: raw, pre-correction. `externalID` is the
     /// HKWorkout uuid, which is what identifies a candidate as one Tempo already stored.
     private func raw(
         _ minutesFromEpoch: Int,
@@ -41,7 +41,7 @@ final class RunFetchTests: XCTestCase {
         )
     }
 
-    // MARK: Invariant 1 — a failed read never replaces corrected numbers with raw ones
+    // MARK: Invariant 1. A failed read never replaces corrected numbers with raw ones
 
     func testUnreachableKeepsTheCorrectedSetInsteadOfTheHealthKitCopy() {
         // The exact scenario from the issue: the athlete told the coach the run was 8.0,
@@ -59,7 +59,7 @@ final class RunFetchTests: XCTestCase {
 
     func testUnreachableWithNothingCachedFallsBackButSaysTheNumbersAreRaw() {
         // Cold launch offline: the fallback is the only way to show anything at all, so it
-        // stays — but it is announced, because these numbers are not the corrected ones.
+        // stays, but it is announced, because these numbers are not the corrected ones.
         let ingested = [raw(600, miles: 7.6)]
 
         let decision = RunFetch.resolve(.unreachable, ingested: ingested, onScreen: [])
@@ -70,7 +70,7 @@ final class RunFetchTests: XCTestCase {
         XCTAssertEqual(decision.warning, RunFetch.Copy.uncorrected)
     }
 
-    // MARK: Invariant 2 — anything other than a clean read is announced
+    // MARK: Invariant 2. Anything other than a clean read is announced
 
     func testOnlyACleanReadIsSilent() {
         let rows = [corrected(600, miles: 8.0)]
@@ -152,7 +152,7 @@ final class RunFetchTests: XCTestCase {
 
     func testIncompleteReadGraftsNothingWhenTheRowsAlreadyHoldTheRun() {
         // Re-export shape: the ingested candidate starts within the dedupe window of a row
-        // we already have, so it is the same run — nothing is missing, nothing to warn about.
+        // we already have, so it is the same run. Nothing is missing, nothing to warn about.
         let row = corrected(600, miles: 8.0)
         let sameRunReExported = raw(601, miles: 7.6)
 
@@ -169,7 +169,7 @@ final class RunFetchTests: XCTestCase {
 
     /// #202. The graft's blind spot, same shape as the one #97 closed for the sync.
     ///
-    /// A retired duplicate is soft-deleted, so it never comes back in `rows` — but HealthKit
+    /// A retired duplicate is soft-deleted, so it never comes back in `rows`, but HealthKit
     /// has never heard that Tempo retired anything and re-offers the workout on every
     /// refresh. The 47 timezone re-imports (2021-12-26 → 2025-04-27) sit *hours* from their
     /// keepers, so the start-time window cannot catch them; only the retired uuid can. Grafted
@@ -216,7 +216,7 @@ final class RunFetchTests: XCTestCase {
         XCTAssertEqual(decision.warning, RunFetch.Copy.missingRecent)
     }
 
-    // MARK: The takeaway cache — a failed read must not cost a Claude call
+    // MARK: The takeaway cache. A failed read must not cost a Claude call
 
     func testUnreadableTakeawayNeverTriggersGeneration() {
         XCTAssertFalse(RunFetch.Takeaway.unreadable.shouldGenerate)
@@ -230,7 +230,7 @@ final class RunFetchTests: XCTestCase {
     }
 }
 
-/// Paging the archive — see #48.
+/// Paging the archive: see #48.
 ///
 /// PostgREST caps an unbounded select at 1,000 rows, and this read is newest-first, so the
 /// cap silently discarded the oldest runs. Every all-time number in the app was computed from

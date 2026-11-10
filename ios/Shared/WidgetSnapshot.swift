@@ -10,7 +10,7 @@ import Foundation
 /// builds one of these from the same `RunStore` state Today renders, and the widget only
 /// ever *displays* it.
 ///
-/// Compiled into both targets. Everything here is pure — the build, the week rollover, the
+/// Compiled into both targets. Everything here is pure. The build, the week rollover, the
 /// stale rule and the timeline schedule are decisions, and they are pinned in
 /// `WidgetSnapshotTests` because none of them can be observed without a phone.
 struct WidgetSnapshot: Codable, Equatable {
@@ -42,7 +42,7 @@ struct WidgetSnapshot: Codable, Equatable {
     /// Miles per day, Monday first. Always seven entries.
     let dayMiles: [Double]
     let lastWeekMiles: Double
-    /// The plan's mileage target for `weekStart`'s week, and for the one after it — the
+    /// The plan's mileage target for `weekStart`'s week, and for the one after it. The
     /// second is what the gauge measures against once the week rolls over without the app
     /// being opened.
     let weekTargetMiles: Double?
@@ -67,13 +67,13 @@ struct WidgetSnapshot: Codable, Equatable {
 
 extension WidgetSnapshot {
     /// Must match the `com.apple.security.application-groups` entry in **both** targets'
-    /// entitlements; a mismatch fails silently — the app writes into a container the widget
+    /// entitlements; a mismatch fails silently. The app writes into a container the widget
     /// can't see, and the widget shows "Open Tempo" forever.
     static let appGroup = "group.studio.delight.tempo"
     static let defaultsKey = "widget.snapshot.v1"
 
     /// Past this, the widget stops presenting the numbers as current. 36h rather than 24h so
-    /// a normal one-launch-a-day habit never trips it — opening the app at 7am and again at
+    /// a normal one-launch-a-day habit never trips it, opening the app at 7am and again at
     /// 6pm the next day is a day and a half.
     static let staleAfter: TimeInterval = 36 * 3600
 
@@ -186,7 +186,7 @@ extension WidgetSnapshot {
             .trimmingCharacters(in: .whitespacesAndNewlines)
         guard !flat.isEmpty else { return nil }
 
-        // A sentence ends at . ! ? followed by a space — "7.5 mi" and "8:05/mi." both survive.
+        // A sentence ends at . ! ? followed by a space: "7.5 mi" and "8:05/mi." both survive.
         var sentences = 0
         var end = flat.endIndex
         var i = flat.startIndex
@@ -214,8 +214,8 @@ extension WidgetSnapshot {
 extension WidgetSnapshot {
 
     /// What a widget shows at a given moment. A pure function of the snapshot and the clock,
-    /// because the widget renders entries for times the app will never see — next Monday,
-    /// tomorrow morning — and each has to be honest on its own.
+    /// because the widget renders entries for times the app will never see (next Monday,
+    /// tomorrow morning) and each has to be honest on its own.
     enum Display: Equatable {
         /// The app has never written a snapshot.
         case empty
@@ -233,7 +233,7 @@ extension WidgetSnapshot {
         let dayMiles: [Double]
         /// 0 = Monday … 6 = Sunday, for the "today" ring on the dots.
         let todayIndex: Int
-        /// Nil after a rollover that skipped a whole week — nobody counted it.
+        /// Nil after a rollover that skipped a whole week: nobody counted it.
         let lastWeekMiles: Double?
         let gaugeTarget: Double?
         let gaugeBasis: GaugeBasis?
@@ -264,7 +264,7 @@ extension WidgetSnapshot {
         let target: Double?
         switch weeksLater {
         case ..<1:
-            // Same week as the snapshot (or a clock that went backwards — show what we have).
+            // Same week as the snapshot (or a clock that went backwards. Show what we have).
             miles = snapshot.weekMiles
             dayMiles = snapshot.dayMiles
             lastWeek = snapshot.lastWeekMiles
@@ -331,7 +331,7 @@ extension WidgetSnapshot {
 // MARK: - Relative wording
 
 extension WidgetSnapshot {
-    /// "Today", "Tomorrow", or the weekday — the session line on every widget.
+    /// "Today", "Tomorrow", or the weekday. The session line on every widget.
     static func dayLabel(for day: Date, at date: Date, calendar: Calendar = weekCalendar) -> String {
         let days = calendar.dateComponents([.day], from: calendar.startOfDay(for: date), to: calendar.startOfDay(for: day)).day ?? 0
         switch days {

@@ -3,23 +3,23 @@ import SwiftUI
 @testable import Tempo
 
 /// #81: the same shape that made the Projected Finish page drag sideways (#74) appears on the
-/// other two detail screens — a `Card` header built as `HStack { label; Spacer(); trailing }`,
+/// other two detail screens. A `Card` header built as `HStack { label; Spacer(); trailing }`,
 /// and Run Detail's distance hero with a `Spacer()` between "MI" and the pace stack.
 ///
 /// The shape alone proves nothing. Whether a row's parts add back up past the width it was
 /// offered depends on its exact text widths, so every row here is offered every width a phone
-/// can hand it — at 2x and at 3x, since which widths land on the pixel grid is what changes
-/// between them — and has to report no more than that.
+/// can hand it (at 2x and at 3x, since which widths land on the pixel grid is what changes
+/// between them) and has to report no more than that.
 ///
 /// Each row gets two tests, and the split is deliberate. #81 only fixes a row that overruns at
 /// a width a real phone offers; an overrun somewhere else in the sweep is latent, the way the
 /// `spread` row on Projected Finish is, and is left alone with the measurement written down.
 /// CI runs `xcodebuild -quiet`, which keeps assertion messages out of the log and prints only
-/// the names of the tests that failed — so which band an overrun lands in has to be in the
+/// the names of the tests that failed, so which band an overrun lands in has to be in the
 /// name, or the one thing the run needs to tell us is the one thing it can't.
 ///
 /// What the sweep found, 2026-10: of the six rows #81 named, only `PaceHRHeaderRow` overruns,
-/// and it does so at widths real phones hand it — so that one carries the fix and the other
+/// and it does so at widths real phones hand it, so that one carries the fix and the other
 /// five are pinned clean. The distance hero drifted in one state that looked real and wasn't:
 /// "0.00" with a "0:00" clock, which no run on file can produce. Both of the no-pace states a
 /// run can actually reach measure clean.
@@ -33,7 +33,7 @@ final class DetailLayoutTests: XCTestCase {
     /// card's 18pt padding, both sides.
     private let realCardOffers = DetailLayoutTests.screens.map { $0 - 76 }
 
-    /// What a row in the page column itself is offered — the distance hero sits there, not in
+    /// What a row in the page column itself is offered: the distance hero sits there, not in
     /// a card, so it is handed 36pt more than the headers are.
     private let realPageOffers = DetailLayoutTests.screens.map { $0 - 40 }
 
@@ -133,7 +133,7 @@ final class DetailLayoutTests: XCTestCase {
                            time: time)
     }
 
-    /// A 6-mile run in 55:12 — the everyday case.
+    /// A 6-mile run in 55:12. The everyday case.
     func testDistanceHeroAtRealPhoneWidths() {
         assertNoOverrun(hero(.mi, meters: 9656, seconds: 3312, time: "55:12"), realPageOffers)
     }
@@ -160,7 +160,7 @@ final class DetailLayoutTests: XCTestCase {
         assertNoOverrun(hero(.km, meters: 42195, seconds: 12333, time: "3:25:33"), sweep)
     }
 
-    /// An indoor run HealthKit gave no distance for: "0.00", a real duration, and no pace —
+    /// An indoor run HealthKit gave no distance for: "0.00", a real duration, and no pace,
     /// `runPace` has nothing to divide, so the right-hand stack is one line instead of two.
     func testDistanceHeroWithoutDistanceAtRealPhoneWidths() {
         assertNoOverrun(hero(.mi, meters: 0, seconds: 1930, time: "32:10"), realPageOffers)

@@ -17,12 +17,12 @@ extension EnvironmentValues {
 
 // MARK: - Card
 
-/// A tinted well. **No border, no shadow** — v2's `elevated` stroke and
+/// A tinted well. **No border, no shadow**, v2's `elevated` stroke and
 /// `black.opacity(0.35)` drop shadow are both gone.
 ///
 /// The shadow had to go before the light theme could work at all: a shadow tuned to separate
 /// a `#161A20` card from a `#0B0D10` canvas does nothing on white but add grey haze, and the
-/// usual fix — a second shadow value per theme — doubles the tuning surface of every card in
+/// usual fix (a second shadow value per theme) doubles the tuning surface of every card in
 /// the app forever. A fill that differs from the canvas separates in both themes with one
 /// value, and it can carry meaning while it's at it. See `Tokens.Well`.
 struct Card<Content: View>: View {
@@ -55,7 +55,7 @@ struct Card<Content: View>: View {
     }
 }
 
-/// A recessed panel inside a `Card` — the coach's read, a warning strip, a sub-metric block.
+/// A recessed panel inside a `Card`: the coach's read, a warning strip, a sub-metric block.
 /// Takes its fill from the enclosing card's tint, so a nested well inside a warm card stays
 /// warm instead of punching a neutral grey hole in it.
 struct InsetWell<Content: View>: View {
@@ -84,7 +84,7 @@ struct InsetWell<Content: View>: View {
 /// Mono uppercase section label (tracking matches the Figma system).
 ///
 /// The default is `textTertiary`; for an accent eyebrow pass `Tokens.Palette.accentText`,
-/// never `.volt` — volt is a fill and vanishes on the light canvas.
+/// never `.volt`, volt is a fill and vanishes on the light canvas.
 struct SectionLabel: View {
     private let text: String
     private let color: Color
@@ -102,7 +102,7 @@ struct SectionLabel: View {
     }
 }
 
-/// Small status pill. `bg` is a fill, so volt is legal here — with `onVolt` on top.
+/// Small status pill. `bg` is a fill, so volt is legal here, with `onVolt` on top.
 struct Tag: View {
     let text: String
     var fg: Color = Tokens.Palette.success
@@ -128,7 +128,7 @@ struct Pressable: ButtonStyle {
     var haptic: Bool = true
 
     func makeBody(configuration: Configuration) -> some View {
-        // ButtonStyle isn't a View, so @Environment can't live on the style itself — the
+        // ButtonStyle isn't a View, so @Environment can't live on the style itself. The
         // Reduce Motion read has to happen inside a real view. Not named `Body`: that
         // collides with ButtonStyle's own `Body` associatedtype and breaks conformance.
         PressBody(configuration: configuration, haptic: haptic)
@@ -184,7 +184,7 @@ struct PrimaryButton: View {
 }
 
 /// `PrimaryButton`'s quieter sibling: same shape, an `elevated` fill, primary ink. For the
-/// action that should stay one tap away without asking for it — Start on a rest day (#126).
+/// action that should stay one tap away without asking for it. Start on a rest day (#126).
 struct SecondaryButton: View {
     let title: String
     var icon: String? = nil
@@ -230,8 +230,8 @@ struct QuietButton: View {
 /// A pickable capsule: feel tags, shoe pairs, intake answers. Volt marks the choice, and
 /// volt is a fill, so `onVolt` sits on it.
 ///
-/// Three hand-written copies of this capsule existed — `SaveRunView`, `TrainingIntakeView`
-/// and `RunJournalEditSheet` each declared a private one — and they had already drifted
+/// Three hand-written copies of this capsule existed (`SaveRunView`, `TrainingIntakeView`
+/// and `RunJournalEditSheet` each declared a private one) and they had already drifted
 /// apart on fill, ink and type size (#179). One component with two `Ground`s, because that
 /// is the difference that is real: a chip inside a `Card` takes the `inset` fill to separate
 /// from the card it sits in, and a chip straight on the canvas takes `surface`.
@@ -244,9 +244,9 @@ struct QuietButton: View {
 /// one that forgot would have been a chip that felt broken for no visible reason.
 struct Chip: View {
     enum Ground {
-        /// Inside a `Card` — the save screen, the journal edit sheet.
+        /// Inside a `Card`: the save screen, the journal edit sheet.
         case card
-        /// Straight on the canvas — training intake.
+        /// Straight on the canvas: training intake.
         case canvas
     }
 
@@ -371,7 +371,7 @@ struct Screen<Content: View>: View {
     /// athlete already knows, where "Turkey Trot · 5K · 43 days" loses only the week count
     /// (#230).
     ///
-    /// `lineLimit(1)` is what makes the choice happen at all — a `Text` free to wrap always
+    /// `lineLimit(1)` is what makes the choice happen at all. A `Text` free to wrap always
     /// "fits", so without it the full form would never give way. It is applied only on this
     /// path: a screen that passes one subtitle keeps wrapping, as every screen did before.
     @ViewBuilder private var subtitleLine: some View {
@@ -399,7 +399,7 @@ extension Text {
 
     /// Display type with the optical tracking a light canvas needs.
     ///
-    /// Dark type on white looks heavier than light type on black at the same size — the
+    /// Dark type on white looks heavier than light type on black at the same size. The
     /// glyphs read as thicker than they measure. Space Grotesk only ships Bold here, so
     /// weight isn't a lever; tightening tracking as size grows is, and it keeps big numbers
     /// from turning into slabs on the new ground.

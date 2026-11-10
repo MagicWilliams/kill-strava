@@ -1,7 +1,7 @@
 import Foundation
 
 /// Opt-in auto-pause (#113): watches speed and decides when the athlete has stopped and when
-/// he has started again. It never touches the run itself — it only proposes `.pause(.auto)`
+/// he has started again. It never touches the run itself. It only proposes `.pause(.auto)`
 /// and `.resume(.auto)` to `RecorderState.reduce`, which already ignores both unless auto-pause
 /// is on and already refuses to let auto-resume lift a pause he made himself.
 ///
@@ -33,7 +33,7 @@ import Foundation
 struct AutoPause: Equatable {
 
     struct Thresholds: Equatable {
-        /// Below this, he is standing. 0.5 m/s is a 53:38/mi "pace" — nobody runs it.
+        /// Below this, he is standing. 0.5 m/s is a 53:38/mi "pace", nobody runs it.
         var stopBelow: Double = 0.5
         /// How long he must stay below `stopBelow` before the clock stops.
         var stopAfter: TimeInterval = 8
@@ -54,7 +54,7 @@ struct AutoPause: Equatable {
     }
 
     /// One speed reading. A negative or non-finite speed is how Core Location says "I don't
-    /// know" — it is treated as no reading at all, never as zero.
+    /// know". It is treated as no reading at all, never as zero.
     struct Sample: Equatable {
         var at: Date
         /// Metres per second.
@@ -67,7 +67,7 @@ struct AutoPause: Equatable {
         case pause(at: Date)
         case resume(at: Date)
 
-        /// The reducer event this decision becomes — always one #111 already defines.
+        /// The reducer event this decision becomes: always one #111 already defines.
         var event: RecorderEvent {
             switch self {
             case .pause(let at): .pause(.auto, at: at)

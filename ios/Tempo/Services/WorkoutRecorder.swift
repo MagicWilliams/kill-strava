@@ -26,8 +26,8 @@ protocol WorkoutSessionDriving: AnyObject {
     func resume(at date: Date)
     /// The athlete ended the run: stop the activity and end collection at `date`. The
     /// session is not ended yet; that happens in `finish` or `discard`. Indoors, collection
-    /// may end in `finish` instead, at this same `date`, so the treadmill's distance — only
-    /// written at Save (#116) — lands while the builder is still collecting.
+    /// may end in `finish` instead, at this same `date`, so the treadmill's distance (only
+    /// written at Save (#116)) lands while the builder is still collecting.
     func stop(at date: Date) async throws
     /// Append GPS fixes to the workout's route.
     func addRoute(_ locations: [CLLocation]) async throws
@@ -60,7 +60,7 @@ struct FinishedWorkout {
 @MainActor
 protocol RunLocationStreaming: AnyObject {
     var onLocations: (([CLLocation]) -> Void)? { get set }
-    /// Permission changed — the athlete turned location off mid-run.
+    /// Permission changed: the athlete turned location off mid-run.
     var onAccess: ((LocationAccess) -> Void)? { get set }
     func start()
     func stop()
@@ -145,7 +145,7 @@ struct RecoverySources {
     /// A workout to save a run into when no session survived ("save what we have"):
     /// `RescuedWorkout` on device. Nil if one can't be made.
     var rescue: @MainActor (RecorderState) -> WorkoutSessionDriving?
-    /// The workout a recording already became in Health, if it did — see
+    /// The workout a recording already became in Health, if it did. See
     /// `HealthWorkoutSession.savedWorkout(recordingID:store:)`.
     var savedWorkout: @MainActor (UUID) async -> FinishedWorkout?
 
@@ -179,20 +179,20 @@ struct RecoverySources {
 /// minimum), GPS into `TrackMath` and the workout's route, and one live `snapshot` for the
 /// run screen and the Live Activity.
 ///
-/// **The reducer drives; this file only does what it is told.** Every input — a tap, a
-/// Lock Screen intent, a HealthKit failure, location being revoked — becomes a
+/// **The reducer drives; this file only does what it is told.** Every input (a tap, a
+/// Lock Screen intent, a HealthKit failure, location being revoked) becomes a
 /// `RecorderEvent` passed to `send`. `send` reduces it (`RecorderState.reduce`, #111), asks
 /// `RecorderEffect.between` what the transition requires, and performs exactly that. There
 /// is no other path to pausing, stopping, saving or discarding a session, so the rule the
-/// reducer pins — only the athlete ends a run — holds for HealthKit too.
+/// reducer pins (only the athlete ends a run) holds for HealthKit too.
 ///
 /// HealthKit work is asynchronous, and order matters (distance before end of collection,
 /// end of collection before finish), so every HealthKit call goes through one serial queue.
 /// Results come back as events: a save that lands is `.saveSucceeded`, one that fails is
 /// `.saveFailed` and leaves everything in place for a retry.
 ///
-/// **Saving is Health, then Tempo** (#122). The workout is finished in HealthKit first —
-/// Health is the source of truth — and only then handed to `RecordedRunSaver`, which writes
+/// **Saving is Health, then Tempo** (#122). The workout is finished in HealthKit first (
+/// Health is the source of truth) and only then handed to `RecordedRunSaver`, which writes
 /// the `runs` row the sync would have written, and the journal with it. Its outcome is what
 /// the state machine hears (`saveEvent(for:workoutID:)`). A finished workout is kept, so a
 /// Retry after Tempo refused the row never finishes the HealthKit workout a second time.
@@ -224,7 +224,7 @@ struct RecoverySources {
 /// **A treadmill run (#116)** has no GPS: its curve is his step distance from Core Motion
 /// (`TreadmillDistance.Steps`), and none of it goes into the workout while he runs. At Save
 /// the save screen hands over what the console said (`confirmSave(…, treadmillConsoleM:)`),
-/// the curve is rescaled to it (`TreadmillDistance.rescaled`), and only then written —
+/// the curve is rescaled to it (`TreadmillDistance.rescaled`), and only then written,
 /// HealthKit can never take a sample back, so writing as he ran would have made a phone that
 /// over-counted impossible to correct. The workout is finished with the correction in its
 /// metadata, which is what marks the `runs` row corrected (`WorkoutRow.corrected`).
@@ -256,7 +256,7 @@ final class WorkoutRecorder {
     /// seen it: the "We kept your run" prompt (#128, Figma frame 10) is up while this is set.
     /// `.resume` is a run going again; `.rescue` / `.expired` a run waiting for "Save what we
     /// have" or "Discard"; `.unfinished` a run back on the save screen. Never `.nothing` or
-    /// `.orphanSession` — neither has a run to show.
+    /// `.orphanSession`. Neither has a run to show.
     private(set) var recovered: InProgressRun.Recovery?
     /// An auto-pause decision the run accepted: where the spoken + haptic cue (#118) fires,
     /// so an auto pause is never silent.
@@ -265,7 +265,7 @@ final class WorkoutRecorder {
     /// split and race-distance cues (#118, #117) are checked against the same step, in
     /// `announce`.
     @ObservationIgnored var onDistanceAdvanced: ((Double, Double) -> Void)?
-    /// Every refresh — each event, and once a second while recording — with the state, the
+    /// Every refresh (each event, and once a second while recording) with the state, the
     /// snapshot just built from it, and the recording's id. The Live Activity (#119) hangs
     /// off this, so the Lock Screen reads the very numbers the live screen does.
     @ObservationIgnored var onRefresh: ((RecorderState, RecorderSnapshot, UUID?) -> Void)?
@@ -274,7 +274,7 @@ final class WorkoutRecorder {
     /// music would stay ducked.
     @ObservationIgnored private(set) var cues: RunCueSpeaking?
 
-    /// Route fixes are written in batches of about this many — a few seconds of running.
+    /// Route fixes are written in batches of about this many: a few seconds of running.
     static let routeBatchSize = 10
     /// Fixes held while paused, in case auto-resume backdates the restart into them. Its
     /// streak is 3 s; this is that with room to spare.
@@ -382,10 +382,10 @@ final class WorkoutRecorder {
     ///   - makeSession: builds the session for a run of the given kind, at the countdown.
     ///   - steps: a treadmill run's distance. Nil counts nothing.
     ///   - units: read once per run, at the countdown.
-    ///   - saveToTempo: writes the saved workout into Tempo — `RecordedRunSaver.save` — with
+    ///   - saveToTempo: writes the saved workout into Tempo (`RecordedRunSaver.save`) with
     ///     its kind and, for a race, the goal id the retry queue links it by (#178).
     ///   - goal: the active goal, read when a race needs it (#117).
-    ///   - linkRace: files a saved race against its goal — `RaceLinker.link`.
+    ///   - linkRace: files a saved race against its goal, `RaceLinker.link`.
     ///   - tickInterval: how often the snapshot refreshes; nil for none (tests drive it).
     init(
         makeSession: @escaping (RecorderState.RunKind) throws -> WorkoutSessionDriving,
@@ -563,8 +563,8 @@ final class WorkoutRecorder {
     ///
     /// `InProgressRun.recover` decides (one copy of the decision table), and the recorder
     /// reaches the state it decided the way it reaches every state: the snapshot's own state,
-    /// then `.interrupted(.appTerminated)` stamped at the snapshot's last write, then — if the
-    /// session came back — `.recovered(sessionPaused:)`, all through `send`. The recovery
+    /// then `.interrupted(.appTerminated)` stamped at the snapshot's last write, then (if the
+    /// session came back) `.recovered(sessionPaused:)`, all through `send`. The recovery
     /// itself is reported once, as `recorder.recovered` or `recorder.recovery_failed`.
     ///
     /// Does nothing if a run is already under way in this process: nothing on disk outranks
@@ -600,8 +600,8 @@ final class WorkoutRecorder {
         }
 
         // A session with no run of ours behind it. The only way Tempo leaves one is dying
-        // between clearing the snapshot and ending the session — the athlete had already
-        // saved or discarded that run — so it is ended, not saved. Left running, it would
+        // between clearing the snapshot and ending the session (the athlete had already
+        // saved or discarded that run) so it is ended, not saved. Left running, it would
         // hold the phone's one workout session and block the next run.
         for stray in strays { await stray.driver.discard() }
     }
@@ -667,7 +667,7 @@ final class WorkoutRecorder {
         } else if let rescue = recovery.rescue(snapshot.state) {
             rescue.onSignal = { [weak self] in self?.receiveSignal($0) }
             self.session = rescue
-            // HealthKit has none of this run: every metre of the curve is written — outdoors
+            // HealthKit has none of this run: every metre of the curve is written, outdoors
             // at the stop, on a treadmill at Save like any treadmill run.
             writesDistance = kind != .treadmill
             distanceFlushed = BestEfforts.Point(t: 0, m: 0)
@@ -934,7 +934,7 @@ final class WorkoutRecorder {
     }
 
     /// GPS fixes. Only a running run is measured: not the countdown, not a pause, not a run
-    /// the recorder has lost hold of. Every fix's speed goes to auto-pause, paused or not —
+    /// the recorder has lost hold of. Every fix's speed goes to auto-pause, paused or not,
     /// it is how a stop ends.
     private func receiveLocations(_ locations: [CLLocation]) {
         for location in locations {

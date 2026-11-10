@@ -9,7 +9,7 @@ import XCTest
 /// fix was to decode `[Row]` with `.limit(1)` and take `.first`.
 ///
 /// That fix was applied by hand, one call site at a time, and it missed the today's-check-in
-/// read — which then logged a 406 on every single app refresh for months until the edge logs
+/// read, which then logged a 406 on every single app refresh for months until the edge logs
 /// were read (#224). A sweep that has to be remembered is a sweep that gets missed, so this
 /// is the lint instead.
 ///
@@ -19,7 +19,7 @@ import XCTest
 /// - on a read filtered by `.eq("id", ...)`, where the row is fetched by primary key and its
 ///   absence is a genuine error worth throwing.
 ///
-/// Anything else — a read filtered by a date, a status, a foreign key — can legally match
+/// Anything else (a read filtered by a date, a status, a foreign key) can legally match
 /// nothing, and must decode an array.
 final class ZeroRowSingleLintTests: XCTestCase {
 
@@ -73,7 +73,7 @@ final class ZeroRowSingleLintTests: XCTestCase {
             XCTAssertFalse(Self.offendingQueries(in: bad).isEmpty, "missed: \(bad)")
         }
         for fine in [
-            // By primary key — absence is a real error.
+            // By primary key: absence is a real error.
             """
             try await Supa.client
                 .from("runs")
@@ -135,7 +135,7 @@ final class ZeroRowSingleLintTests: XCTestCase {
     /// of the two legitimate shapes, flattened onto one line for the failure message.
     ///
     /// Chains are split on `Supa.client` and cut at `.execute()`, so the builder calls in
-    /// between are all that is examined — a `.single()` mentioned further down the function
+    /// between are all that is examined. A `.single()` mentioned further down the function
     /// belongs to no chain.
     static func offendingQueries(in source: String) -> [String] {
         var found: [String] = []
@@ -154,7 +154,7 @@ final class ZeroRowSingleLintTests: XCTestCase {
         return found
     }
 
-    /// Drops `//` comments so that writing *about* `.single()` never counts as calling it —
+    /// Drops `//` comments so that writing *about* `.single()` never counts as calling it,
     /// the comments added by the 2026-08-23 fix do exactly that. `://` is left alone so a
     /// URL in a string survives.
     static func stripComments(_ source: String) -> String {

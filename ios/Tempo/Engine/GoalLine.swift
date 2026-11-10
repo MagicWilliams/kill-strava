@@ -1,22 +1,22 @@
 import Foundation
 
-/// What the app says about the athlete's goal — on the Progress card and in the coach's
-/// context — as a pure function of the goal it actually has.
+/// What the app says about the athlete's goal (on the Progress card and in the coach's
+/// context) as a pure function of the goal it actually has.
 ///
 /// The third of the Chicago fallbacks (#44), and the same species as the countdown constant
 /// that became `RaceCountdown` (#36): a value from the beta-of-one reference athlete, left
 /// in the no-goal branch and presented as if it were the user's own.
 ///
 /// Two of them survived that fix. The Progress card printed `"3:15:00"` under the label
-/// **Goal** whenever there was no goal — directly beside a projection that renders `—:—:—`
-/// in the same state, so one screen showed a dash for the thing it did not know and a
-/// confident number for the thing it also did not know. And `coachContext` handed the model
+/// **Goal** whenever there was no goal, directly beside a projection that renders an empty
+/// placeholder in the same state, so one screen showed a dash for the thing it did not know
+/// and a confident number for the thing it also did not know. And `coachContext` handed the model
 /// a sentence asserting sub-3:15 at Chicago and "rebuilding from a small base" before any
 /// goal existed: that is the onboarding path, the one moment the coach is supposed to read
 /// the history and *propose* a goal, and it was being given the conclusion instead.
 ///
 /// So, as in `RaceCountdown`, there is no fallback goal here on purpose. Every case that
-/// cannot name a real target says so — in dashes on screen, in words to the coach — because
+/// cannot name a real target says so (in dashes on screen, in words to the coach) because
 /// a borrowed number reads as authoritative and an empty state does not.
 enum GoalLine {
 
@@ -33,7 +33,7 @@ enum GoalLine {
     /// nullable on the goal row, so "there is a goal" and "there is a target time" are
     /// genuinely different states and the old code collapsed them.
     enum State: Equatable {
-        /// No goal row at all — the pre-onboarding state.
+        /// No goal row at all: the pre-onboarding state.
         case noGoal
         /// A goal, but no target finish time on it yet.
         case untimed(race: String, on: String?)
@@ -90,8 +90,8 @@ enum GoalLine {
     ///
     /// Nil for the three that add nothing: `unsure` is what the coach saves when the athlete
     /// didn't state a target (it is the value David's 27 Nov tune-up actually carries),
-    /// `time` is a time goal with no time on it — a contradiction, and printing "A time"
-    /// beside no time would read as a promise — and nil is every goal written before the
+    /// `time` is a time goal with no time on it (a contradiction, and printing "A time"
+    /// beside no time would read as a promise) and nil is every goal written before the
     /// intake (#102).
     static func goalTypePhrase(_ goalType: String?) -> String? {
         guard let type = IntakeAnswers.GoalType(rawValue: goalType ?? "") else { return nil }
@@ -107,10 +107,10 @@ enum GoalLine {
     ///
     /// The scar: on 15 Oct the You tab's subtitle read "Race · 6 weeks out" and the card
     /// directly beneath it read "No goal yet. The coach proposes one from your data", with a
-    /// Talk to Coach button — both on screen at once. There *was* a goal: the 27 Nov tune-up,
+    /// Talk to Coach button. Both on screen at once. There *was* a goal: the 27 Nov tune-up,
     /// `goal_type = "unsure"`, no `goal_time_seconds`, which is deliberate for a race with no
     /// target. The card branched on the target time, so a goal without one read as no goal at
-    /// all — exactly the collapse `State.untimed` was split out to prevent (#44), one screen
+    /// all, exactly the collapse `State.untimed` was split out to prevent (#44), one screen
     /// late.
     ///
     /// So the line states what is known and names the one thing that is missing, instead of
@@ -132,7 +132,7 @@ enum GoalLine {
         return first.uppercased() + String(line.dropFirst())
     }
 
-    /// The goal's distance as the intake form names it — "5K", "Half", "Marathon" — keyed by
+    /// The goal's distance as the intake form names it ("5K", "Half", "Marathon") keyed by
     /// metres off `IntakeAnswers.Distance` rather than a second hand-written table, so the
     /// label and the math read one number. A distance that is none of them (a custom 30K) is
     /// spelled out in the athlete's own unit.
@@ -145,14 +145,14 @@ enum GoalLine {
         return known?.label ?? units.formatDistance(meters: raceMeters, decimals: 1)
     }
 
-    /// "Turkey Trot · 5K" — the title of the goal card, the race named once with its
+    /// "Turkey Trot · 5K": the title of the goal card, the race named once with its
     /// distance. Nil only when there is no goal.
     ///
     /// The card used to title itself `"<time> · <race name>"`, which named no distance at
     /// all. That silence is how a 5K saved as a marathon (#215) sat on the You tab for two
     /// weeks with nothing on screen contradicting it: "Race" is equally true of both. The
-    /// metres come from `RaceRecap.raceMeters(goal:)` — the same reading TARGET and PROJECTED
-    /// use — so the title cannot name one race while the numbers beneath it answer for
+    /// metres come from `RaceRecap.raceMeters(goal:)` (the same reading TARGET and PROJECTED
+    /// use) so the title cannot name one race while the numbers beneath it answer for
     /// another.
     ///
     /// The distance is left off a name that already carries it: "Chicago Marathon", not
@@ -177,7 +177,7 @@ enum GoalLine {
     /// in the athlete's unit. Units.missing when the goal has no target time.
     ///
     /// This used to be `PaceModel.paces(for: .marathon, goalSeconds:).marathon`, which reads
-    /// every goal time as a *marathon* time and divides it over 26.2 — so a 25:00 5K goal
+    /// every goal time as a *marathon* time and divides it over 26.2, so a 25:00 5K goal
     /// showed a target of 0:57 /mi (#188). It is not a Riegel equivalent either: the target
     /// is the pace the athlete has to hold on race day, which is plain time over distance.
     ///
@@ -191,7 +191,7 @@ enum GoalLine {
     /// `raceName`, `raceDate` and `goalTimeSeconds` come straight off `RunStore.goal`; pass
     /// `nil` for the whole goal when there is none.
     ///
-    /// An empty race name is no name and an empty race date is no date — `GoalInfo.raceDate`
+    /// An empty race name is no name and an empty race date is no date, `GoalInfo.raceDate`
     /// turns a null column into `""`, which the old coach line interpolated verbatim as
     /// "Race on , target …".
     static func state(raceName: String?, raceDate: String?, goalTimeSeconds: Int?, hasGoal: Bool) -> State {
@@ -199,7 +199,7 @@ enum GoalLine {
         let race = raceName.flatMap { $0.isEmpty ? nil : $0 } ?? unnamedRace
         let on = raceDate.flatMap { $0.isEmpty ? nil : $0 }
         // A goal time of zero is not a goal time. It is what `?? 0` used to produce, which
-        // reached the coach as "target 0:00:00" — the same lie in a different font.
+        // reached the coach as "target 0:00:00". The same lie in a different font.
         guard let seconds = goalTimeSeconds, seconds > 0 else {
             return .untimed(race: race, on: on)
         }

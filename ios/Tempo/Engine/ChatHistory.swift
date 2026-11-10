@@ -3,15 +3,15 @@ import Foundation
 /// Which slice of `coach_messages` the Coach tab opens on, and in what order it reads.
 ///
 /// Pure because the thing that broke was a *direction*. The read was
-/// `.order("created_at").limit(200)`, and PostgREST's `order` defaults to ascending —
+/// `.order("created_at").limit(200)`, and PostgREST's `order` defaults to ascending,
 /// ascending plus a limit returns the **oldest** 200 rows. Once the history passed 200
 /// messages a relaunch opened on the start of the conversation and simply never loaded
 /// anything said since (#93). Worse than the scroll position: `messages.suffix(24)` is the
 /// window handed to the coach, so the model was being briefed on the opening of a
 /// conversation it was supposedly continuing, and nothing in the app said so.
 ///
-/// The read therefore asks for the *newest* page — `created_at` descending, `id` descending
-/// to break ties the same way `ChangeLedgerService` does — and the device puts that page
+/// The read therefore asks for the *newest* page (`created_at` descending, `id` descending
+/// to break ties the same way `ChangeLedgerService` does) and the device puts that page
 /// back into reading order here.
 enum ChatHistory {
 
@@ -23,7 +23,7 @@ enum ChatHistory {
     static let pageSize = 200
 
     /// Turn the newest-first page the server returns into reading order: oldest first,
-    /// newest last — what the transcript renders top-to-bottom, and what `suffix(24)` has
+    /// newest last. What the transcript renders top-to-bottom, and what `suffix(24)` has
     /// to mean for the coach's window to be the recent end of the conversation.
     ///
     /// A sort rather than a bare `reversed()`, over a flipped page: the result is right even

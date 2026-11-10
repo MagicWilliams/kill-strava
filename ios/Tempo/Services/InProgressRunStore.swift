@@ -2,13 +2,13 @@ import Foundation
 
 /// Where the in-progress run snapshot (#115) lives on disk.
 ///
-/// I/O only — every decision about what a snapshot means is in `Engine/RunRecorder/
+/// I/O only. Every decision about what a snapshot means is in `Engine/RunRecorder/
 /// InProgressRun.swift`. This file exists to be boring, because it runs in the worst possible
 /// moment: once every ten seconds during a run, on a phone that is about to be killed.
 ///
 /// A file in Application Support rather than `UserDefaults`, which `WidgetSnapshotStore` uses
 /// for its few hundred bytes: a marathon's distance curve is tens of kilobytes and rewriting
-/// a defaults domain that often is not what it is for. Not in the App Group either — the
+/// a defaults domain that often is not what it is for. Not in the App Group either. The
 /// widgets have no business reading a run that is still happening.
 ///
 /// Writes are atomic. A half-written snapshot is the one thing worse than no snapshot: it
@@ -58,7 +58,7 @@ enum InProgressRunStore {
         }
     }
 
-    /// Called when the run reaches a resting place — see `InProgressRun.shouldClear`. A
+    /// Called when the run reaches a resting place: see `InProgressRun.shouldClear`. A
     /// snapshot left behind after a successful save is what turns one run into two.
     static func clear() {
         guard let url = fileURL else { return }

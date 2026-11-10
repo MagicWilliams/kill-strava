@@ -4,7 +4,7 @@ import XCTest
 /// Regression suite for the watch left recording (#229, #237).
 ///
 /// 15 Oct 2026: 8.1 mi came in through Apple Health from a source that wrote no pause
-/// events, and ingest stored `HKWorkout.duration` as moving time — 10h24m, 77:00/mi, 42 spm.
+/// events, and ingest stored `HKWorkout.duration` as moving time, 10h24m, 77:00/mi, 42 spm.
 /// Its own distance samples said about 1h41m. Nothing crashed; pace, load, the projection
 /// and the coach all quietly read the wrong number. These tests pin the line between "the
 /// samples outrank the stored duration" and "leave the run alone", from both sides.

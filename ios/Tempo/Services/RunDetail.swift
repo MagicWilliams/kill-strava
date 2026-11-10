@@ -100,7 +100,7 @@ final class RunDetailLoader {
         )
     }
 
-    /// Just the cumulative-distance curve for one run — no HR, no route, no splits.
+    /// Just the cumulative-distance curve for one run: no HR, no route, no splits.
     ///
     /// The sub-distance PR scan (#25) needs the distance timeline and nothing else, and it
     /// needs it 1,476 times. `load` would also pull heart rate, step counts and the GPS
@@ -109,7 +109,7 @@ final class RunDetailLoader {
     ///
     /// An empty result is an answer, not a failure: a manual run has no workout behind it,
     /// and some Garmin-written workouts have no distance samples at all. The caller marks
-    /// the run scanned either way — see `BestEffortsService`.
+    /// the run scanned either way. See `BestEffortsService`.
     func distanceTimeline(run: RunSummary) async -> [BestEfforts.Point] {
         guard run.source == "healthkit",
               let ext = run.externalID, let hkID = UUID(uuidString: ext),
@@ -129,7 +129,7 @@ final class RunDetailLoader {
 
     /// Moving time by the distance samples, for one workout the sync just wrote (#237).
     ///
-    /// One workout lookup and one distance query — no HR, no route, no steps. Nil when the
+    /// One workout lookup and one distance query. No HR, no route, no steps. Nil when the
     /// workout is gone or wrote no distance samples; the caller then keeps the stored clocks.
     func sampleMovingSeconds(workoutID: UUID) async -> Int? {
         guard let workout = try? await workout(uuid: workoutID) else { return nil }
@@ -167,7 +167,7 @@ final class RunDetailLoader {
     }
 
     /// Samples for a workout. Apple Watch associates samples with the workout object;
-    /// third-party writers (Garmin Connect) usually don't — for those, fall back to the
+    /// third-party writers (Garmin Connect) usually don't, for those, fall back to the
     /// workout's time window, restricted to the same source app so we never mix the
     /// iPhone's own motion estimates into a Garmin run.
     private func quantitySamples(_ id: HKQuantityTypeIdentifier, for workout: HKWorkout) async throws -> [HKQuantitySample] {
@@ -229,7 +229,7 @@ final class RunDetailLoader {
         steps: [HKQuantitySample],
         locations: [CLLocation],
         athleteMaxHR: Int,
-        displaySeconds: Int? = nil   // corrected run duration — zones normalize to what the page shows
+        displaySeconds: Int? = nil   // corrected run duration, zones normalize to what the page shows
     ) -> RunDetail {
         var d = RunDetail()
         let start = workout.startDate
@@ -284,7 +284,7 @@ final class RunDetailLoader {
             let values = hrPoints.map(\.bpm)
             d.avgHR = Int((values.reduce(0, +) / Double(values.count)).rounded())
             d.maxHR = values.max().map { Int($0.rounded()) }
-            // Third-party writers (Garmin) store sparse HR samples — each sample stands in
+            // Third-party writers (Garmin) store sparse HR samples: each sample stands in
             // for the gap until the next one (capped so one dropout can't dominate), then the
             // whole distribution is normalized to the run's recorded time so zone minutes
             // add up to the time the athlete actually ran.

@@ -4,7 +4,7 @@ import XCTest
 /// Pins what overlap review does to the journal when it retires one run of a pair (#152).
 ///
 /// Found while building shoes (#121, PR #149): a run recorded in Tempo (#122) carries the
-/// journal — shoe, RPE, notes, photo — and the Garmin export of the same run lands beside it
+/// journal (shoe, RPE, notes, photo) and the Garmin export of the same run lands beside it
 /// minutes later with the better HR trace. Keep the Garmin copy in overlap review and, before
 /// this, the journal stayed on the retired row: the miles left the shoe, the notes and the
 /// photo vanished from Run Detail. Nothing was deleted, which is exactly why nothing looked

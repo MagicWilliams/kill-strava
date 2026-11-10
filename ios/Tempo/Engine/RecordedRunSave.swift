@@ -4,14 +4,14 @@ import Foundation
 ///
 /// Before the recorder, a run reached Tempo only when the HealthKit sync next ran. A run
 /// recorded *here* should be on Today the moment it is saved, so the recorder writes the
-/// `runs` row itself — and writes **exactly the row the sync would have written**, through the
+/// `runs` row itself, and writes **exactly the row the sync would have written**, through the
 /// same `WorkoutRow` mapping and the same `RunDedupe` rule. That is what makes the shortcut
 /// safe: when the sync later reads the same workout out of Health, it finds the row already
 /// there and drops it as `droppedAlreadyStored`, the boring case, instead of inserting it again.
 ///
 /// **Apple Health is the source of truth.** The row is a convenience and the queue below is
 /// a convenience on top of it. If both are lost, the sync still ingests the run from Health,
-/// a refresh later. What only the queue can save is the journal — the athlete's RPE, notes
+/// a refresh later. What only the queue can save is the journal. The athlete's RPE, notes
 /// and photo exist nowhere else until a row exists to hang them on.
 ///
 /// Pure. `Services/RecordedRunSaver.swift` does the reads, the write and the disk.
@@ -21,10 +21,10 @@ enum RecordedRunSave {
     enum Decision: Equatable {
         /// New: write this row. It is the row the sync would write.
         case insert(RunInsert)
-        /// The row for this exact workout already exists — the sync, or an earlier attempt
+        /// The row for this exact workout already exists: the sync, or an earlier attempt
         /// whose answer was lost, got there first. Nothing to write; the journal goes here.
         case alreadyStored(rowID: UUID)
-        /// Another run already holds this start time — say a Garmin on the wrist recorded the
+        /// Another run already holds this start time: say a Garmin on the wrist recorded the
         /// same outing and its copy synced first. The sync would drop this workout as the same
         /// run, so the recorder does too, and the journal goes on the run that is there.
         case sameRunAs(rowID: UUID)
@@ -57,7 +57,7 @@ enum RecordedRunSave {
             return .insert(WorkoutRow.corrected(WorkoutRow.insert(kept, userID: userID), by: workout))
         }
         // reconcile drops a lone candidate only when a row sits inside the window, so this
-        // finds one — the first, the same scan order reconcile matched it in.
+        // finds one. The first, the same scan order reconcile matched it in.
         if let twin = nearby.first(where: {
             abs($0.start.timeIntervalSince(summary.start)) < RunDedupe.windowSeconds
         }) {
@@ -71,7 +71,7 @@ enum RecordedRunSave {
     ///
     /// The case this is for: a treadmill run saved with no signal in a basement gym. It is
     /// queued, and by the time the retry runs the sync has ingested the same workout from
-    /// Health — with the console's distance, because that is what is in the workout, but
+    /// Health, with the console's distance, because that is what is in the workout, but
     /// unmarked, because the sync reads no journal and no correction. Without this the run
     /// would read as the phone's own number that happened to be right.
     ///
@@ -111,13 +111,13 @@ enum RecordedRunSave {
     struct Pending: Codable, Equatable {
         var workout: WorkoutRow.Workout
         var journal: RunJournalEntry
-        /// The photo, already resized for upload — a `UIImage` does not survive a relaunch.
+        /// The photo, already resized for upload. A `UIImage` does not survive a relaunch.
         var photoJPEG: Data?
         var queuedAt: Date
         /// How it was recorded (#178). A race saved in a dead spot has no row to link when the
         /// recorder asks, so the queue remembers that it was a race and links it the moment
-        /// the retry lands the row. Optional so a run queued by an older build — whose JSON has
-        /// neither key — still decodes and retries; it just never links, which is what it did
+        /// the retry lands the row. Optional so a run queued by an older build (whose JSON has
+        /// neither key) still decodes and retries; it just never links, which is what it did
         /// before.
         var kind: RecorderState.RunKind? = nil
         /// The goal the race was run for, read at the save. The retry links only while that
@@ -128,8 +128,8 @@ enum RecordedRunSave {
 
     /// The link to write once a queued run's row lands on a retry, or nil for none (#178).
     ///
-    /// The same rule as the live save — `RaceFinish.link`, eligibility checked against when
-    /// the race started — plus one guard only the queue needs: the goal it was saved against
+    /// The same rule as the live save (`RaceFinish.link`, eligibility checked against when
+    /// the race started) plus one guard only the queue needs: the goal it was saved against
     /// is still the active one. Nothing about a queued outdoor run, or a pre-#178 entry with no
     /// kind, ever links.
     static func raceLink(
@@ -156,7 +156,7 @@ enum RecordedRunSave {
     /// After a failed attempt: keep it for the next try, or let it go.
     ///
     /// Same line as the journal's retries (`RunJournalPayload.isRetryable`): no answer, 408,
-    /// 429 and 5xx are "not now" — the dead spot at the end of a run this queue exists for —
+    /// 429 and 5xx are "not now" (the dead spot at the end of a run this queue exists for)
     /// and stay queued with no expiry, because the journal has nowhere else to live. Any other
     /// 4xx is a "no" that will still be a "no" next launch; retrying it forever would make
     /// every refresh fail the same way. Dropping one loses only the journal: the run itself is

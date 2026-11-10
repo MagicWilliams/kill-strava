@@ -1,4 +1,4 @@
-// #238 — tune-ups and dropping a race.
+// #238: tune-ups and dropping a race.
 //
 // What these pin is the deploy-order contract again (#206): the build David has installed
 // sends `features: ["run_facts"]` and has no idea what an end_goal card is. If this function

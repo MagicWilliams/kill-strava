@@ -10,7 +10,7 @@ Work one issue to a PR using the `builder` agent's rules (`.claude/agents/builde
    with the code, re-label it `needs-david` explaining the ambiguity, and take the next one.
 3. Branch `agent/<issue>-<slug>`, implement, add tests for any logic change.
 4. Verify: locally if you have Xcode, otherwise push and iterate on CI until green.
-5. Open the PR in the format the builder rules specify — including the **How David verifies
+5. Open the PR in the format the builder rules specify, including the **How David verifies
    this** section with literal on-device steps.
 
 Do not merge. Do not apply migrations. Do not deploy edge functions. One issue, one PR.

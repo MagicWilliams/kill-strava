@@ -1,13 +1,13 @@
 import Foundation
 
 /// Closing a block: what the athlete says happened, turned into exactly the rows that get
-/// written — pure, no I/O (#100).
+/// written, pure, no I/O (#100).
 ///
 /// The race may not exist as a run at all. David ran Chicago 2026 with no watch, and the
 /// Strava app on his phone paused itself mid-race, so there is nothing in Health that
 /// `RaceRecap.isRace` could find. **Typing the official finish time is therefore the primary
 /// path**, not a fallback for when the run is missing. When a race run *is* found, its clock
-/// is offered as the starting value and the athlete confirms or corrects it — a watch clock
+/// is offered as the starting value and the athlete confirms or corrects it. A watch clock
 /// is not the chip time.
 enum BlockCloseout {
 
@@ -31,7 +31,7 @@ enum BlockCloseout {
     /// Read a typed finish time, using the race distance to settle the one real ambiguity.
     ///
     /// `h:mm:ss` is unambiguous. Two parts are not: "18:45" for a 5K means minutes and
-    /// seconds, but "3:28" for a marathon means hours and minutes — nobody types the seconds
+    /// seconds, but "3:28" for a marathon means hours and minutes, nobody types the seconds
     /// of a time they're rounding. So a two-part entry is read as `m:ss` first and as `h:mm`
     /// only if `m:ss` would be an impossible pace for this distance. Nil when it's neither.
     static func parseFinish(_ text: String, raceMeters: Double) -> Int? {
@@ -67,7 +67,7 @@ enum BlockCloseout {
 
     /// The `goals` update. Every column is written, **nulls included**: re-closing a block as
     /// "didn't start" after first saving a time must clear `result_time_s`, and a synthesized
-    /// `Encodable` drops nil keys — which would leave the old time behind and trip the
+    /// `Encodable` drops nil keys, which would leave the old time behind and trip the
     /// `result_time_s … outcome = 'raced'` check in 0013.
     struct GoalPatch: Encodable, Equatable {
         let is_active: Bool
@@ -108,7 +108,7 @@ enum BlockCloseout {
     }()
 
     /// - Parameters:
-    ///   - finishS: required for `.raced`, ignored (and written as null) for anything else —
+    ///   - finishS: required for `.raced`, ignored (and written as null) for anything else,
     ///     a DNF's partial clock is not a result.
     ///   - raceRunID: the run that was the race, if there is one. Only a raced block keeps it.
     static func goalPatch(
@@ -132,7 +132,7 @@ enum BlockCloseout {
 
     /// `runs.external_id` for a race logged from the close-out. Derived from the goal, so
     /// closing the same block twice (a retry after a lost response) upserts one run rather
-    /// than inserting two — the same reasoning as `ManualRunIdentity`.
+    /// than inserting two. The same reasoning as `ManualRunIdentity`.
     static func raceRunExternalID(goalID: UUID) -> String {
         "race:\(goalID.uuidString)"
     }
@@ -175,7 +175,7 @@ enum BlockCloseout {
 
     // MARK: - Result against the goal
 
-    /// Result minus goal, in seconds — `RaceRecap`'s sign convention: negative is under goal.
+    /// Result minus goal, in seconds, `RaceRecap`'s sign convention: negative is under goal.
     static func delta(resultS: Int?, goalS: Int?) -> Int? {
         guard let resultS, let goalS, resultS > 0, goalS > 0 else { return nil }
         return resultS - goalS

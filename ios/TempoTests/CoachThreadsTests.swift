@@ -10,7 +10,7 @@ import XCTest
 /// from" at the top of the chat it is summarizing. All of it looks like a working screen.
 ///
 /// So each rule gets a test, with the numbers written out rather than derived from the
-/// constants — if `idleWindow` moves, these should have to be re-read, not silently follow.
+/// constants. If `idleWindow` moves, these should have to be re-read, not silently follow.
 final class CoachThreadsTests: XCTestCase {
 
     // MARK: - Fixtures
@@ -102,7 +102,7 @@ final class CoachThreadsTests: XCTestCase {
 
     // MARK: - Who is owed a summary
 
-    /// Starting a new chat is the athlete saying the last one is finished — no waiting.
+    /// Starting a new chat is the athlete saying the last one is finished. No waiting.
     func testStartingANewThreadPutsThePreviousOneInTheSummaryQueueImmediately() {
         let previous = row(title: nil, startedHoursAgo: 2, lastHoursAgo: 1, messages: 6)
         let fresh = row(startedHoursAgo: 0.1, messages: 1)
@@ -186,7 +186,7 @@ final class CoachThreadsTests: XCTestCase {
     }
 
     /// Reopening a conversation from the archive must not show a recap of one that happened
-    /// after it — a note about the future, presented as what the coach is carrying in.
+    /// after it. A note about the future, presented as what the coach is carrying in.
     func testAnOlderThreadDoesNotPickUpFromANewerOne() {
         let oldest = row(startedHoursAgo: 90, lastHoursAgo: 88)
         let middle = row(title: "Pacing", summary: "Settled on 7:25.", startedHoursAgo: 60, lastHoursAgo: 58)

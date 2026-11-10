@@ -157,7 +157,7 @@ final class RecorderEffectsTests: XCTestCase {
         XCTAssertEqual(step(recovering, .recovered(sessionPaused: true)).1, [])
     }
 
-    /// The Lock Screen can pause a run but not end one — so it produces no effect at all.
+    /// The Lock Screen can pause a run but not end one: so it produces no effect at all.
     func testTheLockScreenCannotStopARun() {
         XCTAssertEqual(step(started(), .endRequested(.lockScreen, at: t(600))).1, [])
         XCTAssertEqual(step(started(), .pause(.manual(.lockScreen), at: t(600))).1, [.pause(at: t(600))])

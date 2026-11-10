@@ -124,7 +124,7 @@ struct RunLockScreenView: View {
         .padding(Tokens.Space.lg)
     }
 
-    /// Paused is information, not an alarm: warning, never danger — as on the live screen.
+    /// Paused is information, not an alarm: warning, never danger, as on the live screen.
     private var statusColor: Color {
         switch display.stage {
         case .paused: Tokens.Palette.warning

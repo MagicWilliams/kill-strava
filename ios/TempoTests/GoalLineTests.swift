@@ -4,10 +4,11 @@ import XCTest
 /// Two Chicago fallbacks outlived the countdown constant that `RaceCountdown` replaced (#44).
 ///
 /// The Progress card printed `"3:15:00"` under the label **Goal** whenever there was no goal,
-/// beside a projection rendering `—:—:—` in that same state. And `coachContext` shipped a
-/// `static let` asserting "Sub-3:15 at the Chicago Marathon on 2026-10-11 … rebuilding from a
-/// small base" as the athlete's goal whenever there wasn't one — which is precisely the
-/// onboarding path, the one moment the coach exists to read the history and propose a goal.
+/// beside a projection rendering an empty placeholder in that same state. And
+/// `coachContext` shipped a `static let` asserting "Sub-3:15 at the Chicago Marathon on
+/// 2026-10-11 … rebuilding from a small base" as the athlete's goal whenever there wasn't
+/// one, which is precisely the onboarding path, the one moment the coach exists to read
+/// the history and propose a goal.
 /// It was handed the conclusion and asked to derive it.
 ///
 /// Neither looked broken. Both are the beta-of-one reference athlete's numbers wearing the
@@ -33,7 +34,7 @@ final class GoalLineTests: XCTestCase {
     }
 
     /// The projection and the goal sit on one card. In the no-goal state both are unknown,
-    /// so both must look unknown — that mismatch was the visible half of the bug.
+    /// so both must look unknown. That mismatch was the visible half of the bug.
     func testTheEmptyGoalMatchesTheEmptyProjectionBesideIt() {
         XCTAssertEqual(noGoal.finishTime, GoalLine.unknownFinish)
     }
@@ -48,7 +49,7 @@ final class GoalLineTests: XCTestCase {
         XCTAssertFalse(line.contains(where: \.isNumber), "no numbers survive in the no-goal line")
     }
 
-    /// The old fallback trailed "(no plan yet — assess and propose one when the athlete is
+    /// The old fallback trailed "(no plan yet, assess and propose one when the athlete is
     /// ready)" after its assertion. The instruction was the good half; keep it.
     func testNoGoalStillAsksTheCoachToProposeOne() {
         XCTAssertTrue(noGoal.coachLine.lowercased().contains("propose"))
@@ -69,7 +70,7 @@ final class GoalLineTests: XCTestCase {
         XCTAssertEqual(state().coachLine, "Chicago on 2026-10-11, target 3:15:00")
     }
 
-    /// The number is the athlete's when the athlete has set one — this is the case that
+    /// The number is the athlete's when the athlete has set one: this is the case that
     /// always worked, and it has to keep working after the fallback's removal.
     func testADifferentGoalIsReportedAsItself() {
         XCTAssertEqual(state(race: "Berlin", on: "2027-09-26", seconds: 10_800).coachLine,
@@ -98,7 +99,7 @@ final class GoalLineTests: XCTestCase {
         XCTAssertFalse(s.coachLine.contains("0:00:00"), "the ?? 0 fallback does not come back")
     }
 
-    /// `race_date` is nullable too, and `GoalInfo.raceDate` turns null into `""` — which the
+    /// `race_date` is nullable too, and `GoalInfo.raceDate` turns null into `""`, which the
     /// old coach line interpolated straight through as "Race on , target 3:15:00".
     func testAGoalWithoutARaceDateDoesNotLeaveADanglingOn() {
         XCTAssertEqual(state(on: nil).coachLine, "Chicago, target 3:15:00")
@@ -108,7 +109,7 @@ final class GoalLineTests: XCTestCase {
     }
 
     /// `race_name` is nullable. A goal with no name borrows the same "Race" placeholder
-    /// `RaceCountdown`, PlanView and YouView use — a generic noun, not a specific city.
+    /// `RaceCountdown`, PlanView and YouView use. A generic noun, not a specific city.
     func testAnUnnamedGoalIsCalledRaceNotChicago() {
         XCTAssertEqual(state(race: nil).coachLine, "Race on 2026-10-11, target 3:15:00")
         XCTAssertEqual(state(race: "").coachLine, "Race on 2026-10-11, target 3:15:00", "an empty name is no name")
@@ -177,7 +178,7 @@ final class GoalLineTests: XCTestCase {
     //
     // 15 Oct, You tab: the subtitle read "Race · 6 weeks out" and the card directly beneath
     // it read "No goal yet. The coach proposes one from your data", with a Talk to Coach
-    // button — both at once. The goal was the 27 Nov tune-up: `goal_type = "unsure"`, no
+    // button. Both at once. The goal was the 27 Nov tune-up: `goal_type = "unsure"`, no
     // `goal_time_seconds`, deliberately. The card branched on the target time, so a goal
     // without one read as no goal at all. `State.untimed` had existed since #44 for exactly
     // this; the card just never read it.
@@ -217,7 +218,7 @@ final class GoalLineTests: XCTestCase {
     }
 
     /// `unsure` is what the coach saved for the tune-up, and `time` is a time goal that has
-    /// lost its time — a contradiction. Neither earns a phrase: one has nothing to say, the
+    /// lost its time. A contradiction. Neither earns a phrase: one has nothing to say, the
     /// other would say something the goal does not contain.
     func testOnlyTheGoalTypesThatSaySomethingGetAPhrase() {
         XCTAssertEqual(GoalLine.goalTypePhrase("finish"), "Just finish")
@@ -258,7 +259,7 @@ final class GoalLineTests: XCTestCase {
                        "Turkey Trot 5k", "the match is case-insensitive")
     }
 
-    /// `race_name` is nullable, and a goal always has a distance even when it has no name —
+    /// `race_name` is nullable, and a goal always has a distance even when it has no name,
     /// so the unnamed case says the distance rather than the bare "Race" the old card used.
     func testAnUnnamedGoalIsNamedByItsDistance() {
         XCTAssertEqual(GoalLine.raceLabel(goal: untimed(name: nil, distance: "marathon", meters: 42_195), units: .mi),
