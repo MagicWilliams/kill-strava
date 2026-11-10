@@ -122,6 +122,24 @@ outside Tempo.
   No route, location, pace or heart rate.
 - Whether the recorder stays open to testers before the checklist is done is David's call.
 
+## Verdicts, estimates and missing data
+
+Tempo judges runs: a session verdict, a grade colour, a block on or off track. Every judgement
+follows the same rules as the numbers.
+
+- **A verdict can be reproduced from its inputs in one sentence, and the athlete can override
+  it.** The verdict comes from `Engine/`, with tests. The coach explains it and never picks it.
+  An athlete's tag ("not the plan, pickup game") re-grades the run as what it actually was. If
+  they dispute it with the coach, the result is that tag, not an edited engine output. This is
+  "the athlete's word outranks the math", applied to grades.
+- **A number based on an estimate says so wherever it appears, and points to the real value.**
+  A formula max HR gets the "EST" label on every screen it colours, plus the call to action that
+  replaces it with a tested value. A grade built on an estimate is an estimate too.
+- **Missing data is grey, never a guess.** No heart rate, no samples, no plan: the run shows as
+  ungraded, and that is stored as a result (the `efforts_scanned_at` lesson). This is different
+  from unclear *intent*: the product can choose a default for that, such as "inconclusive means
+  easy". Missing data never gets a default.
+
 ## Issue conventions
 
 Type: `bug` · `feat` · `chore` · `spike`
@@ -137,6 +155,11 @@ Priority: `p0` (broken for David or testers) · `p1` (next) · `p2` (someday).
 An `agent-ready` issue must state: the observed problem, where in the code it lives, what
 "done" looks like, and how it gets verified. If you cannot write those four, it is
 `needs-david`, not `agent-ready`.
+
+**An idea David shares in chat is not a build order.** It becomes a `spike` issue labelled
+`needs-david`, listing the open questions, each with a recommendation. Nothing gets built until
+he has answered them. His answers become a "spec (interviewed David <date>)" section in
+`progress.md`, and only then are the `agent-ready` build issues written from it, one per PR.
 
 ## Style
 
