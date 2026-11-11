@@ -96,7 +96,11 @@ struct CoachHomeView: View {
                 threads = (try? await CoachThreadService.threads()) ?? rows
             }
         } catch {
-            Telemetry.error("coach.threads_unreadable", error)
+            // Leaving the Coach tab mid-reload cancels this pass, and every await still
+            // ahead of it throws: the #155 shape, reported here as a named error until
+            // 2026-11-07 (#286). The on-screen half of this catch already treated a
+            // cancelled reload as benign; only the telemetry call was misnaming it.
+            Telemetry.errorUnlessCancelled("coach.threads_unreadable", error)
             // Keep whatever is already on screen; only an empty screen becomes the error.
             if threads.isEmpty { load = .failed }
         }
