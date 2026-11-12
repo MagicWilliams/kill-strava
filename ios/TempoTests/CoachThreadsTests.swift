@@ -49,6 +49,56 @@ final class CoachThreadsTests: XCTestCase {
         )
     }
 
+    // MARK: - Where a reason from outside the list lands (#214)
+
+    /// The #214 shape: a change confirmed in last week's conversation, tapped from What
+    /// changed while a newer conversation is the live one. Pushing the live thread and hoping
+    /// the message was in the page it loaded is what left the athlete at the bottom of an
+    /// unrelated chat with nothing saying why.
+    func testAFocusedMessageOpensItsOwnConversationNotTheLiveOne() {
+        let lastWeek = row(title: "Pacing Chicago", startedHoursAgo: 200, lastHoursAgo: 196)
+        let live = row(title: "Shoes", startedHoursAgo: 1)
+
+        XCTAssertEqual(
+            CoachThreads.destination(focusThread: lastWeek.id, in: [live, lastWeek], now: now),
+            .thread(lastWeek.id)
+        )
+    }
+
+    /// A conversation older than the page the list reads is still the right destination. The
+    /// message's `thread_id` cascades with its thread (0020), so a row carrying one cannot be
+    /// naming a conversation that has gone, and a membership check against one capped page
+    /// would send the oldest changes straight back to the live thread.
+    func testAConversationMissingFromTheListedPageIsStillOpened() {
+        let live = row(startedHoursAgo: 1)
+        let archived = UUID()
+
+        XCTAssertEqual(
+            CoachThreads.destination(focusThread: archived, in: [live], now: now),
+            .thread(archived)
+        )
+    }
+
+    /// An intake or a prefilled draft names no conversation. Either needs *a* conversation,
+    /// which is the live one while there is one.
+    func testAReasonThatNamesNoConversationTakesTheLiveOne() {
+        let live = row(startedHoursAgo: 2, lastHoursAgo: 1)
+
+        XCTAssertEqual(
+            CoachThreads.destination(focusThread: nil, in: [live], now: now),
+            .thread(live.id)
+        )
+    }
+
+    /// With the newest conversation already finished, or none at all, there is nothing to
+    /// continue: a new one gets started rather than an idle one reopened.
+    func testWithNoLiveConversationANewOneIsStarted() {
+        let finished = row(startedHoursAgo: 48, lastHoursAgo: 40)
+
+        XCTAssertEqual(CoachThreads.destination(focusThread: nil, in: [finished], now: now), .newThread)
+        XCTAssertEqual(CoachThreads.destination(focusThread: nil, in: [], now: now), .newThread)
+    }
+
     // MARK: - List order
 
     /// The whole point of ordering by `last_message_at`: a thread started days ago and

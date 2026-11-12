@@ -46,9 +46,23 @@ enum Route: Hashable {
 final class TabRouter: ObservableObject {
     @Published var selection: Tab = .today
     @Published var path: [Route] = []
-    /// A coach message to scroll to when the Coach tab next shows — set by "See in chat"
-    /// on a What changed entry, consumed (cleared) by `CoachView`.
-    @Published var coachFocus: UUID?
+    /// A coach message to scroll to when the Coach tab next shows, and the conversation to
+    /// open to reach it. Set by "See in chat" on a What changed entry, consumed (cleared) by
+    /// `CoachView` once it has scrolled.
+    @Published var coachFocus: CoachFocus?
+
+    /// One message the ledger links to, with the conversation that holds it.
+    ///
+    /// The thread travels with the message because the ledger reads it (#214). Before that,
+    /// `CoachHomeView` could only push the live conversation and let the transcript scroll if
+    /// the message happened to be in the page it loaded, which for a change made in an older
+    /// conversation it never was.
+    struct CoachFocus: Equatable {
+        let messageID: UUID
+        /// Nil when the proposing row carries no `thread_id`: there is no conversation to
+        /// name, so the live one opens and the ledger's button says that is what it does.
+        let threadID: UUID?
+    }
     /// Text to drop into the Coach composer when the tab next shows, consumed (cleared) by
     /// `CoachView`. Prefilled, never sent: the athlete gets to read it, change it, or back out.
     ///
@@ -87,14 +101,15 @@ final class TabRouter: ObservableObject {
     func openOverlapReview() { path.append(.overlapReview) }
     func openBlockReview(_ goal: GoalInfo) { path.append(.blockReview(goal)) }
 
-    /// Land on the Coach tab scrolled to one message.
+    /// Land on the Coach tab in the conversation that holds one message, scrolled to it.
     ///
-    /// Since #87 the tab opens on the list of conversations, so this sets the focus and
-    /// `CoachHomeView` pushes the live thread; the transcript scrolls to the message if it
-    /// is in the page it loaded. The ledger does not know which thread holds a message —
-    /// routing to the exact one is follow-up work.
-    func showCoachMessage(_ id: UUID) {
-        coachFocus = id
+    /// Since #87 the tab opens on the list of conversations, so this only sets the focus and
+    /// `CoachHomeView` does the push. That screen and not this one, because it is also what
+    /// remembers which reasons it has already opened a conversation for: a focus `CoachView`
+    /// could not find stays set, and pushing from here would re-push it on every pop back to
+    /// the list.
+    func showCoachMessage(_ id: UUID, in threadID: UUID?) {
+        coachFocus = CoachFocus(messageID: id, threadID: threadID)
         showCoach()
     }
 

@@ -23,9 +23,16 @@ final class ChangeLedgerTests: XCTestCase {
         _ json: String,
         text: String = "",
         at offset: TimeInterval = 0,
-        id: UUID = UUID()
+        id: UUID = UUID(),
+        thread: UUID? = nil
     ) throws -> ChangeLedger.Record {
-        ChangeLedger.Record(messageID: id, date: t0.addingTimeInterval(offset), text: text, action: try action(json))
+        ChangeLedger.Record(
+            messageID: id,
+            date: t0.addingTimeInterval(offset),
+            text: text,
+            action: try action(json),
+            threadID: thread
+        )
     }
 
     private func only(_ records: [ChangeLedger.Record], recorded: [UUID: ChangeLedger.RecordedRun] = [:]) throws -> ChangeLedger.Entry {
@@ -258,6 +265,44 @@ final class ChangeLedgerTests: XCTestCase {
         ])
         XCTAssertEqual(ChangeLedger.filtered(entries, kind: .body).map(\.kind), [.body])
         XCTAssertEqual(ChangeLedger.filtered(entries, kind: nil).count, 2)
+    }
+
+    // MARK: - Which conversation a change happened in (#214)
+
+    /// "See in chat" used to land on whichever conversation was live, and let the transcript
+    /// scroll if the message happened to be in the page it had loaded. For a change made in
+    /// an older conversation that scroll never matched, so the link looked like it worked and
+    /// quietly went somewhere else. The thread now rides on the entry, which is what lets the
+    /// push be the right one.
+    func testAnEntryCarriesTheConversationItsRowNames() throws {
+        let threadID = UUID()
+        let entry = try only([record(#"{"type":"update_plan_settings","days_per_week":5}"#, thread: threadID)])
+        XCTAssertEqual(entry.threadID, threadID)
+        XCTAssertEqual(ChangeLedger.chatLink(for: entry), .message(threadID))
+        XCTAssertEqual(ChangeLedger.chatLink(for: entry).label, "See in chat")
+    }
+
+    /// A row written while no thread could be resolved at all (`coach.thread_unresolved`, an
+    /// unreachable server or no session). There is no conversation to name, so the link opens
+    /// the live one, and the button says that instead of promising the message.
+    func testAnEntryWithNoConversationFallsBackAndTheButtonSaysSo() throws {
+        let entry = try only([record(#"{"type":"update_plan_settings","days_per_week":5}"#)])
+        XCTAssertNil(entry.threadID)
+        XCTAssertEqual(ChangeLedger.chatLink(for: entry), .liveConversation)
+        XCTAssertEqual(ChangeLedger.chatLink(for: entry).label, "Open latest chat")
+    }
+
+    /// Each entry keeps the conversation of the row it came from. Building the ledger walks
+    /// the whole history in order to chain the befores, and a change made in March must not
+    /// come out of that pass holding April's conversation.
+    func testEachEntryKeepsItsOwnConversation() throws {
+        let march = UUID(), april = UUID()
+        let entries = ChangeLedger.entries(from: [
+            try record(#"{"type":"set_risk_tolerance","level":"ambitious"}"#, at: 0, thread: march),
+            try record(#"{"type":"set_risk_tolerance","level":"standard"}"#, at: 86_400, thread: april),
+        ])
+        // Newest first, so April's change leads and each still names its own thread.
+        XCTAssertEqual(entries.map(\.threadID), [april, march])
     }
 
     // MARK: - Links

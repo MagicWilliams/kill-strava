@@ -142,7 +142,12 @@ struct ChangesView: View {
             }
             HStack(spacing: 8) {
                 targetLink(entry.target)
-                linkButton("See in chat", symbol: "bubble.left") { router.showCoachMessage(entry.id) }
+                // The label comes from the link, which is the one thing that knows whether
+                // this tap can actually reach the message (#214).
+                let chat = ChangeLedger.chatLink(for: entry)
+                linkButton(chat.label, symbol: "bubble.left") {
+                    router.showCoachMessage(entry.id, in: entry.threadID)
+                }
                 Spacer()
             }
             .padding(.top, 2)

@@ -106,9 +106,11 @@ struct CoachHomeView: View {
     ///
     /// Two callers, both of which used to land on a tab that *was* the transcript:
     ///
-    ///  - **"See in chat"** from What changed (#88). The ledger doesn't know which thread
-    ///    holds a message, so the live conversation is the honest guess and the transcript
-    ///    scrolls to the message if it is in the page it loads.
+    ///  - **"See in chat"** from What changed (#88). Since #214 the ledger reads the
+    ///    message's `thread_id`, so the focus names the conversation to open and the
+    ///    transcript scrolls to the message inside it. A row with no thread still falls back
+    ///    to the live conversation, and the ledger's button says so rather than claiming the
+    ///    message.
     ///  - **A just-sent training intake** (#102), whose first turn is the athlete's answers.
     ///    Those have to reach the coach, and `ChatStore.load` is what sends them — so a
     ///    conversation has to be open for it to happen at all.
@@ -126,13 +128,16 @@ struct CoachHomeView: View {
         // would still have nowhere to go on the reload after the athlete agrees.
         let intake = store.intakeHandoff?.sentToCoach == false && consent.maySend ? store.intakeHandoff?.id : nil
         let draft = router.coachDraft?.id
-        let reasons = [focus, intake, draft].compactMap { $0 }.filter { !routed.contains($0) }
+        let reasons = [focus?.messageID, intake, draft].compactMap { $0 }.filter { !routed.contains($0) }
         guard !reasons.isEmpty else { return }
         routed.formUnion(reasons)
-        if let live = CoachThreads.active(in: threads, now: .now) {
-            router.openCoachThread(live.id)
-        } else {
-            startNewChat()
+        // Only a focus that is one of *this* call's reasons gets to pick the conversation. A
+        // focus already routed and left set, because `CoachView` never found its message, must
+        // not drag a later draft or intake into that old conversation.
+        let focusThread = focus.flatMap { reasons.contains($0.messageID) ? $0.threadID : nil }
+        switch CoachThreads.destination(focusThread: focusThread, in: threads, now: .now) {
+        case .thread(let id): router.openCoachThread(id)
+        case .newThread: startNewChat()
         }
     }
 

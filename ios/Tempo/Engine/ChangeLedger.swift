@@ -36,6 +36,15 @@ enum ChangeLedger {
         /// The coach's text on that message.
         let text: String
         let action: ProposedAction
+        /// The conversation the proposing message belongs to
+        /// (`coach_messages.thread_id`), which is where "See in chat" has to land (#214).
+        ///
+        /// Nil is not "written before threads existed": 0020's backfill gave every row that
+        /// predated it a thread. It means the row was written while no thread could be
+        /// resolved at all, the `coach.thread_unresolved` path in `ChatStore.load`, which is
+        /// an unreachable server or a missing session. Rare, and the link says so rather
+        /// than naming a conversation it is guessing at.
+        var threadID: UUID? = nil
     }
 
     /// A run's pre-correction snapshot (`runs.original`), written on its first correction.
@@ -93,6 +102,9 @@ enum ChangeLedger {
         let changes: [Delta]
         let why: String?
         let target: Target
+        /// The conversation that holds the proposing message, when the row named one. See
+        /// `Record.threadID` for what nil means.
+        let threadID: UUID?
 
         /// The before→after line, every field on one line.
         var beforeAfter: String { changes.map(\.line).joined(separator: " · ") }
@@ -261,7 +273,8 @@ enum ChangeLedger {
             summary: a.displaySummary,
             changes: changes,
             why: why(text: record.text, action: a),
-            target: target
+            target: target,
+            threadID: record.threadID
         )
     }
 
@@ -359,6 +372,34 @@ enum ChangeLedger {
         default:
             return nil
         }
+    }
+
+    /// Where "See in chat" on an entry goes, and what the button is allowed to promise.
+    ///
+    /// Until #214 it always landed on the live conversation and let the transcript scroll if
+    /// the message happened to be in the page it loaded. For a change made in an older
+    /// conversation that scroll never matched, so the athlete arrived at the bottom of an
+    /// unrelated chat with nothing on screen saying why. The thread now travels with the
+    /// entry; the one row shape that still cannot be routed says so on the button instead of
+    /// promising a message it cannot reach.
+    enum ChatLink: Equatable {
+        /// Open this conversation and scroll to the message.
+        case message(UUID)
+        /// No thread on the row, so the live conversation is all there is to open.
+        case liveConversation
+
+        /// What the button reads. It names where the tap actually goes: "See in chat" on a
+        /// link that cannot reach the message is the promise #214 was filed about.
+        var label: String {
+            switch self {
+            case .message: return "See in chat"
+            case .liveConversation: return "Open latest chat"
+            }
+        }
+    }
+
+    static func chatLink(for entry: Entry) -> ChatLink {
+        entry.threadID.map(ChatLink.message) ?? .liveConversation
     }
 
     // MARK: - Formatting

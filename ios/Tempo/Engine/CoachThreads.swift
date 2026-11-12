@@ -94,6 +94,31 @@ enum CoachThreads {
         now.timeIntervalSince(row.lastMessageAt) >= idleWindow
     }
 
+    /// Which conversation something arriving from outside the list has to open.
+    enum Destination: Equatable {
+        case thread(UUID)
+        /// Nothing to reuse, so one gets created.
+        case newThread
+    }
+
+    /// Where a reason to open a conversation lands.
+    ///
+    /// "See in chat" on a What changed entry names the conversation that holds the message
+    /// (#214), so it goes to that one even when a newer conversation is the live one. Every
+    /// other reason (a just-sent intake, a prefilled draft) only needs *a* conversation: the
+    /// live one, or a new one once the last has been written up.
+    ///
+    /// A named thread is taken on trust rather than checked against `rows`, and both halves
+    /// of that are deliberate. `coach_messages.thread_id` is a foreign key that cascades on
+    /// delete (0020), so a message carrying one belongs to a thread that exists; and `rows`
+    /// is one capped page of the list, so a change made far enough back would fail a
+    /// membership check and fall straight back into the bug this routing replaced.
+    static func destination(focusThread: UUID?, in rows: [Row], now: Date) -> Destination {
+        if let focusThread { return .thread(focusThread) }
+        if let live = active(in: rows, now: now) { return .thread(live.id) }
+        return .newThread
+    }
+
     /// The threads owed a summary round trip, oldest first so the one the athlete just left
     /// is summarized after any older backlog and the list settles in reading order.
     ///
