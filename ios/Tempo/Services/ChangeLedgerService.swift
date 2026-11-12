@@ -12,6 +12,7 @@ enum ChangeLedgerService {
 
     private struct Row: Decodable {
         let id: UUID
+        let thread_id: UUID?
         let content: String
         let created_at: Date
         let proposed_action: ProposedAction?
@@ -45,7 +46,7 @@ enum ChangeLedgerService {
         while true {
             let page: [Row] = try await Supa.client
                 .from("coach_messages")
-                .select("id,content,created_at,proposed_action")
+                .select("id,thread_id,content,created_at,proposed_action")
                 .eq("action_state", value: "applied")
                 .order("created_at", ascending: false)
                 .order("id", ascending: false)   // a stable order, so a page boundary can't skip a tie
@@ -59,7 +60,13 @@ enum ChangeLedgerService {
         }
         return rows.compactMap { row in
             guard let action = row.proposed_action else { return nil }
-            return ChangeLedger.Record(messageID: row.id, date: row.created_at, text: row.content, action: action)
+            return ChangeLedger.Record(
+                messageID: row.id,
+                date: row.created_at,
+                text: row.content,
+                action: action,
+                threadID: row.thread_id
+            )
         }
     }
 

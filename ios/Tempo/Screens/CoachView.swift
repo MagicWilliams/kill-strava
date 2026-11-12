@@ -216,7 +216,7 @@ struct CoachView: View {
     /// pending while it isn't: on a fresh Coach tab the history hasn't arrived yet. A message
     /// older than what the chat loads simply never matches, and the view opens at the bottom.
     private func scrollToFocus(_ proxy: ScrollViewProxy) -> Bool {
-        guard let focus = router.coachFocus,
+        guard let focus = router.coachFocus?.messageID,
               chat.messages.contains(where: { $0.id == focus }) else { return false }
         router.coachFocus = nil
         proxy.scrollTo(focus, anchor: .center)

@@ -115,8 +115,10 @@ enum CoachThreadService {
 
     /// One applied change and the conversation it happened in.
     struct Applied {
-        let threadID: UUID?
         let record: ChangeLedger.Record
+        /// Read off the record since #214, where the ledger needs it too, so the thread this
+        /// change is tagged against and the thread its "See in chat" opens cannot drift.
+        var threadID: UUID? { record.threadID }
     }
 
     /// Every change the coach has actually made, with its thread.
@@ -140,9 +142,9 @@ enum CoachThreadService {
         return rows.compactMap { row in
             guard let action = row.proposed_action else { return nil }
             return Applied(
-                threadID: row.thread_id,
                 record: ChangeLedger.Record(
-                    messageID: row.id, date: row.created_at, text: row.content, action: action
+                    messageID: row.id, date: row.created_at, text: row.content, action: action,
+                    threadID: row.thread_id
                 )
             )
         }
