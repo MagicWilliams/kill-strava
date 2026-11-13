@@ -17,4 +17,14 @@ enum WidgetSnapshotStore {
         guard let data = try? JSONEncoder().encode(snapshot) else { return }
         defaults?.set(data, forKey: WidgetSnapshot.defaultsKey)
     }
+
+    /// Throw the snapshot away. The widget then renders "Open Tempo", exactly as it does
+    /// before a first sync.
+    ///
+    /// For account deletion (#295). A Home Screen widget still showing last week's distance
+    /// would be the most visible copy of data the athlete had just been told was gone, and
+    /// it lives in the App Group, which signing out does not touch.
+    static func clear() {
+        defaults?.removeObject(forKey: WidgetSnapshot.defaultsKey)
+    }
 }

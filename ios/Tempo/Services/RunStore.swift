@@ -116,6 +116,95 @@ final class RunStore: ObservableObject {
         await runLaunchSequence()
     }
 
+    /// Delete this account and everything the server holds for it (#295), then come back on
+    /// the same phone as a new athlete.
+    ///
+    /// Order is the whole design. Nothing local is touched until `delete-account` has said
+    /// the rows and the photos are gone: signing out first would put "deleted" on screen
+    /// over data still sitting on the server, with the anonymous session that was the only
+    /// way back to it thrown away. `AccountDeletion.mayForget` is that rule, and it is the
+    /// one thing in here a test can hold.
+    func deleteAccount() async -> AccountDeletion.Outcome {
+        guard let uid = Supa.userID?.uuidString else { return .failed }
+        // Before the call, while there is still a user for the row to hang off. Telemetry is
+        // detached, so this can still lose the race with the delete that follows; that costs
+        // one missing row, which is the cheap end of the two failures available here.
+        Telemetry.info("account.delete_requested")
+
+        let outcome: AccountDeletion.Outcome
+        do {
+            outcome = try await AccountGateway.deleteAccount()
+        } catch {
+            Telemetry.error("account.delete_failed", error)
+            return .failed
+        }
+        guard AccountDeletion.mayForget(outcome) else {
+            Telemetry.warn("account.delete_refused")
+            return outcome
+        }
+
+        forgetDeletedAccount(uid: uid)
+        await Supa.signOutLocally()
+        // Straight back through the launch sequence: anonymous sign-in mints a different
+        // user, that profile has never been onboarded, and RootTabView lands on Welcome.
+        phase = .idle
+        launch = .loading
+        await runLaunchSequence()
+        return .deleted
+    }
+
+    /// Everything about the deleted account that lives on this phone rather than on the
+    /// server. Called only after a confirmed deletion.
+    private func forgetDeletedAccount(uid: String) {
+        // Started by an earlier refresh and still writing efforts for the account that is
+        // now gone. Its writes would fail under RLS anyway; cancelling says why.
+        effortsBackfill?.cancel()
+        effortsBackfill = nil
+        for key in AccountDeletion.localKeys(uid: uid) {
+            UserDefaults.standard.removeObject(forKey: key)
+        }
+        CoachConsentStore.shared.forget()
+        // A snapshot of a run that was still going when the account went. It is keyed to
+        // nothing, so the next athlete on this phone would be offered it at launch.
+        InProgressRunStore.clear()
+        clearWidgetSnapshot()
+        forgetLoadedState()
+    }
+
+    /// Published state back to what a fresh process holds.
+    ///
+    /// Onboarding replaces the whole tab tree, so none of this is on screen while it is
+    /// stale. It is cleared anyway because the next athlete's first refresh fills in what
+    /// their data covers and nothing else: a plan, a goal or a takeaway left behind here
+    /// would be the previous account's, shown as theirs.
+    private func forgetLoadedState() {
+        runs = []
+        phase = .idle
+        riskTolerance = "standard"
+        maxHR = nil
+        daysPerWeek = 6
+        longRunDay = 0
+        units = .fallback
+        birthdate = nil
+        fitness = nil
+        todayTakeaway = nil
+        latestRead = nil
+        dataWarning = nil
+        plan = nil
+        goal = nil
+        planWeeks = []
+        sessions = []
+        todayCheckIn = nil
+        intakeHandoff = nil
+        startingPoint = nil
+        settingsGiven = []
+        pastBlocks = []
+        bestEfforts = BestEffortsService.Snapshot()
+        overlaps = []
+        overlapReview = OverlapReviewService.Snapshot()
+        lastOverlapDecision = nil
+    }
+
     private func runLaunchSequence() async {
         phase = .loading
         let signedIn = await Supa.signInAnonymouslyIfNeeded()

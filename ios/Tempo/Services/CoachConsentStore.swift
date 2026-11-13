@@ -52,8 +52,20 @@ final class CoachConsentStore: ObservableObject {
 
     // MARK: - The phone's copy
 
-    /// By user, so a future account on this phone doesn't inherit someone else's yes.
-    private func localKey(uid: String) -> String { "coachConsent.\(uid)" }
+    /// By user, so a future account on this phone doesn't inherit someone else's yes. The
+    /// key itself is `CoachConsent.defaultsKey`, so account deletion erases this one and not
+    /// a near miss.
+    private func localKey(uid: String) -> String { CoachConsent.defaultsKey(uid: uid) }
+
+    /// Forget the answer in memory, for an account that no longer exists (`AccountDeletion`).
+    /// The stored key is erased by whoever is deleting the account, from the one list in
+    /// `AccountDeletion.localKeys`; this is the part that must not outlive it in RAM.
+    ///
+    /// `.unknown` and not `.undecided`: the relaunch signs a new athlete in and asks them,
+    /// and until it has, nothing may send.
+    func forget() {
+        status = .unknown
+    }
 
     private func localRecord(uid: String) -> CoachConsent.Record? {
         UserDefaults.standard.data(forKey: localKey(uid: uid))
