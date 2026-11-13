@@ -79,6 +79,17 @@ enum Supa {
         }
     }
 
+    /// Drop the stored session without telling the server (#295).
+    ///
+    /// Local scope on purpose: this runs straight after `delete-account` has removed the
+    /// auth user, so a global sign-out has nobody to revoke a token for, and a round trip
+    /// that comes back 401 or never comes back at all must not leave a dead session in the
+    /// Keychain. A dead session is worse than none: the next launch finds one, skips
+    /// `signInAnonymously`, and every read fails against a user that no longer exists.
+    static func signOutLocally() async {
+        try? await client.auth.signOut(scope: .local)
+    }
+
     /// Ensure a `profiles` row exists for the current user (holds risk_tolerance etc.).
     static func ensureProfile() async {
         guard let uid = userID?.uuidString else { return }

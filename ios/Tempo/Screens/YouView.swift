@@ -8,6 +8,7 @@ struct YouView: View {
     @Environment(\.units) private var units
     @ObservedObject private var consent = CoachConsentStore.shared
     @State private var reviewingConsent = false
+    @State private var deletingAccount = false
 
     var body: some View {
         Screen(title: "You", subtitle: countdown.subtitle(), compactSubtitle: countdown.subtitle(.compact)) {
@@ -17,6 +18,7 @@ struct YouView: View {
             bests
             ShoesCard()
             settings
+            accountCard
         }
         .refreshable { await store.refresh() }
     }
@@ -234,6 +236,35 @@ struct YouView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(Pressable())
+    }
+
+    /// Deleting the account (#295), in a card of its own under the settings rather than as a
+    /// row inside them. Nothing above it changes anything the server can't hand back, and a
+    /// row that ends the account should not sit in the same list as the long run day.
+    ///
+    /// App Review 5.1.1(v) asks for this to be reachable from inside the app, which is why
+    /// it is on a tab and not behind a support email.
+    private var accountCard: some View {
+        Card {
+            SectionLabel("Account")
+            Button { deletingAccount = true } label: {
+                HStack {
+                    Text(AccountDeletion.Copy.title)
+                        .font(Tokens.Font.ui(13))
+                        .foregroundStyle(Tokens.Palette.danger)
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(Tokens.Palette.textTertiary)
+                }
+                .frame(minHeight: 24)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(Pressable())
+        }
+        .sheet(isPresented: $deletingAccount) {
+            DeleteAccountView { deletingAccount = false }
+        }
     }
 
     /// The one setting here that doesn't go through the Coach: a display preference, not a

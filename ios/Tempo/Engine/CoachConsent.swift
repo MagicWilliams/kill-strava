@@ -104,6 +104,12 @@ enum CoachConsent {
         }
     }
 
+    /// Where this phone keeps its copy of the answer, by user: a future account on this
+    /// phone must not inherit someone else's yes. Named here rather than inside
+    /// `CoachConsentStore` so `AccountDeletion.localKeys` can erase the same key the store
+    /// writes, instead of a second spelling of it.
+    static func defaultsKey(uid: String) -> String { "coachConsent.\(uid)" }
+
     /// The columns as a record. A half-filled pair or an unrecognised value is not a decision.
     static func record(decision: String?, at: Date?) -> Record? {
         guard let decision = decision.flatMap(Decision.init(rawValue:)), let at else { return nil }

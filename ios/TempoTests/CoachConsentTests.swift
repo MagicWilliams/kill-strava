@@ -170,14 +170,25 @@ final class CoachConsentTests: XCTestCase {
         try String(contentsOf: appRoot.appendingPathComponent(path), encoding: .utf8)
     }
 
+    /// The files allowed to reach the functions client, named one by one.
+    ///
+    /// `CoachGateway` is the consent gate. `AccountGateway` (#295) is deliberately outside
+    /// it: deleting an account sends no athlete data anywhere and reaches no model, and a
+    /// decline must not be able to refuse the request to stop holding someone's data. Two
+    /// named paths rather than an open door, so the next one is still a build failure.
+    static let functionCallers: Set<String> = [
+        "Services/CoachGateway.swift",
+        "Services/AccountGateway.swift",
+    ]
+
     /// "Enforced in one place" is only true while nobody writes a sixth call. A new service
     /// that reached for the functions client directly would send without asking, compile,
     /// and pass every other test, so that is what this fails on.
-    func testOnlyTheGatewayTouchesTheEdgeFunctions() throws {
+    func testOnlyTheGatewaysTouchTheEdgeFunctions() throws {
         var violations: [String] = []
         let files = try UnitsLintTests.swiftFiles(under: appRoot)
         XCTAssertGreaterThan(files.count, 90, "the scan found the app sources")
-        for name in files where name != "Services/CoachGateway.swift" {
+        for name in files where !Self.functionCallers.contains(name) {
             let text = try source(name)
             for needle in ["functions.invoke", ".functions.", "functions/v1", "api.anthropic.com"] where text.contains(needle) {
                 violations.append("Tempo/\(name): \(needle)")
@@ -187,6 +198,21 @@ final class CoachConsentTests: XCTestCase {
             violations.isEmpty,
             "Every Claude call goes through CoachGateway, which checks consent:\n" + violations.joined(separator: "\n")
         )
+    }
+
+    /// The second path, held to what it is for. It calls one function by name, sends nothing
+    /// an athlete typed, and does not consult the consent gate.
+    ///
+    /// The absence of `maySend` is the part that matters. Adding it here would read like
+    /// tidiness and would mean that an athlete who declined could not ask Tempo to delete
+    /// their data, which is the opposite of what declining is for.
+    func testTheAccountGatewayOnlyDeletesTheAccount() throws {
+        let gateway = try source("Services/AccountGateway.swift")
+        XCTAssertTrue(gateway.contains("\"delete-account\""), "it names the function it calls")
+        XCTAssertFalse(gateway.contains("maySend"), "deletion is not gated on consent")
+        for other in ["CoachGateway.invoke", "api.anthropic.com", "CoachConsentStore"] {
+            XCTAssertFalse(gateway.contains(other), "the deletion path has no business with \(other)")
+        }
     }
 
     func testTheGatewayChecksBeforeItCalls() throws {
