@@ -6,6 +6,23 @@ tags: [tempo, decision-log]
 
 Newest first. One entry per session that ships features or makes a product decision.
 
+## 2026-11-12: A roadmap, and one milestone at a time
+
+### Decisions
+- **The work runs on one milestone at a time.** The current one is **Public beta**: what has to be true before Tempo is offered to people who aren't David. See [[roadmap]].
+- **The bar:** Sign in with Apple (#294), account and data deletion (#295), a first launch that can't be empty (#285), builds reach testers on purpose (#296), triage can tell David from testers (#297), the recorder measured or labelled (#132), and the consent gate checked on a device (#283).
+- **Builders take milestone issues first.** Off-milestone work waits unless it's a `p0`.
+- **Parked until after the beta:** the MCP server (PRD-03), Coach v2, Watch and structured workouts, Garmin access, and the cancelled-task log cleanups.
+- This answers #253 ("what is the bar before someone who isn't you runs Tempo?").
+
+### Shipped
+- `docs/roadmap.md`, the Public beta milestone on GitHub, and issues #294–#297. The builder rules (`.claude/agents/builder.md`, `/build-next`) now pick from the current milestone first. Docs and issues only: no app code, nothing deployed or applied.
+
+### Next up
+- David: #294, #285, #296 and #297 each need a letter. Each issue has options and a recommendation.
+- #295 is `agent-ready` and can start now.
+- After the beta: choose the hook, coach and plan or the Drift Detector, for the next milestone.
+
 ## 2026-11-08: Open PRs merged, and coach and plan deployed
 
 ### Decisions
