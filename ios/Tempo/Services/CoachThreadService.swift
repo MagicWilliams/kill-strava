@@ -235,7 +235,10 @@ enum CoachThreadService {
                 .execute()
                 .value
         } catch {
-            Telemetry.error("coach.thread_transcript_unreadable", error)
+            // The write-up pass runs from `CoachHomeView.reload()`, so leaving the Coach tab
+            // cancels this read in flight and the await throws. That is the #155 class, not a
+            // transcript that could not be read, and it was named as an error here until #292.
+            Telemetry.errorUnlessCancelled("coach.thread_transcript_unreadable", error)
             return .notWritten
         }
         let transcript = ChatHistory.inReadingOrder(newestFirst: page, by: { $0.created_at })
@@ -269,7 +272,10 @@ enum CoachThreadService {
                 // the ones behind it still get written.
                 return refusal.appliesToLaterRequests ? .limited : .notWritten
             }
-            Telemetry.error("coach.thread_summarize_failed", error)
+            // Same cancelled pass, one await later: on 2026-11-09 this arrived as
+            // NSURLErrorDomain -999, the URLSession spelling of the same thing, and was
+            // reported as a named error (#292). A model call that genuinely failed still is.
+            Telemetry.errorUnlessCancelled("coach.thread_summarize_failed", error)
             return .notWritten
         }
         guard let title = reply.title, let summary = reply.summary, !title.isEmpty, !summary.isEmpty else {
