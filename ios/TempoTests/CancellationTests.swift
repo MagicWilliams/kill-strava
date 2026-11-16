@@ -95,4 +95,59 @@ final class CancellationTests: XCTestCase {
         )
         XCTAssertFalse(Cancellation.isCancellation(decoding))
     }
+
+    // MARK: #292, the two call sites inside the thread write-up pass
+
+    func testTheSummarizeCancellationIsACancellation() {
+        // 2026-11-09, 16:38:04 UTC: one `coach.thread_summarize_failed` error row, `detail`
+        // NSURLErrorDomain -999 "cancelled". `CoachThreadService.summarize` is reached from
+        // `summarizePending`, which `CoachHomeView.reload()` runs on every Coach-tab
+        // appearance, so leaving the tab mid-write-up is an ordinary thing to do. The row
+        // read as a coach call that failed; it was a reload that went away.
+        let cancelled = NSError(
+            domain: NSURLErrorDomain,
+            code: NSURLErrorCancelled,
+            userInfo: [NSLocalizedDescriptionKey: "cancelled"]
+        )
+        XCTAssertTrue(Cancellation.isCancellation(cancelled))
+    }
+
+    func testANonCancelledNSURLErrorStillReports() {
+        // The discrimination this fix rests on is inside NSURLErrorDomain, not between
+        // domains: the live row and a dropped connection share a domain and differ only by
+        // code, and `context.error_type` reads `NSURLError` for both. Only -999 goes quiet.
+        let dropped = NSError(domain: NSURLErrorDomain, code: NSURLErrorNetworkConnectionLost)
+        XCTAssertFalse(Cancellation.isCancellation(dropped))
+    }
+
+    /// The classification above only matters if the call sites route through it, and that is
+    /// the half this chain keeps missing: nine catch sites across #155, #201, #248, #281,
+    /// #286 and #292, each found one live error row at a time. Both sites inside `summarize`
+    /// are pinned by name here rather than left to the next triage pass. The transcript read
+    /// has no error row of its own yet; it is the same unguarded shape in the same function.
+    func testTheSummarizeCallSitesReportThroughErrorUnlessCancelled() throws {
+        let ios = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+        let root = ios.appendingPathComponent("Tempo")
+        let events = ["coach.thread_transcript_unreadable", "coach.thread_summarize_failed"]
+        var reported: [String: [String]] = [:]
+        var files = 0
+        for name in try UnitsLintTests.swiftFiles(under: root) {
+            files += 1
+            let text = try String(contentsOf: root.appendingPathComponent(name), encoding: .utf8)
+            for line in ZeroRowSingleLintTests.stripComments(text).components(separatedBy: "\n") {
+                for event in events where line.contains("\"\(event)\"") {
+                    reported[event, default: []].append("Tempo/\(name): \(line.trimmingCharacters(in: .whitespaces))")
+                }
+            }
+        }
+        XCTAssertGreaterThan(files, 90, "the scan found the app sources")
+        for event in events {
+            let sites = reported[event] ?? []
+            XCTAssertEqual(sites.count, 1, "one call site reports \(event):\n" + sites.joined(separator: "\n"))
+            XCTAssertTrue(
+                sites.allSatisfy { $0.contains("Telemetry.errorUnlessCancelled(") },
+                "A cancelled write-up pass is not a failure worth naming:\n" + sites.joined(separator: "\n")
+            )
+        }
+    }
 }
