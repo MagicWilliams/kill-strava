@@ -25,8 +25,9 @@ enum GoalLine {
     /// they should be visibly equally ignorant, not one dashed and one confident.
     static let unknownFinish = "--:--:--"
 
-    /// Used when a goal exists but carries no race name. Matches `RaceCountdown`, PlanView
-    /// and YouView.
+    /// Used when a goal exists but carries no race name. Same string as
+    /// `RaceCountdown.unnamedRace`, which is what the screens read; this one is for `state`,
+    /// whose callers want the name alone rather than the name-and-distance label.
     static let unnamedRace = "Race"
 
     /// What the app knows about the goal. `goal_time_seconds` and `race_date` are both
@@ -130,47 +131,6 @@ enum GoalLine {
         let line = parts.joined(separator: " · ")
         guard let first = line.first else { return line }
         return first.uppercased() + String(line.dropFirst())
-    }
-
-    /// The goal's distance as the intake form names it — "5K", "Half", "Marathon" — keyed by
-    /// metres off `IntakeAnswers.Distance` rather than a second hand-written table, so the
-    /// label and the math read one number. A distance that is none of them (a custom 30K) is
-    /// spelled out in the athlete's own unit.
-    static func distanceLabel(raceMeters: Double, units: Units) -> String {
-        // Within 1%: a half arrives as 21,097 or 21,098 and a mile as 1,609 or 1,609.34,
-        // depending which of the app's constants wrote it.
-        let known = IntakeAnswers.Distance.allCases.first { d in
-            d.meters.map { abs(raceMeters - Double($0)) / Double($0) < 0.01 } ?? false
-        }
-        return known?.label ?? units.formatDistance(meters: raceMeters, decimals: 1)
-    }
-
-    /// "Turkey Trot · 5K" — the title of the goal card, the race named once with its
-    /// distance. Nil only when there is no goal.
-    ///
-    /// The card used to title itself `"<time> · <race name>"`, which named no distance at
-    /// all. That silence is how a 5K saved as a marathon (#215) sat on the You tab for two
-    /// weeks with nothing on screen contradicting it: "Race" is equally true of both. The
-    /// metres come from `RaceRecap.raceMeters(goal:)` — the same reading TARGET and PROJECTED
-    /// use — so the title cannot name one race while the numbers beneath it answer for
-    /// another.
-    ///
-    /// The distance is left off a name that already carries it: "Chicago Marathon", not
-    /// "Chicago Marathon · Marathon". A goal with no name reads "Marathon race" rather than a
-    /// bare "Race", because a goal always has a distance even when it has no name.
-    ///
-    /// **Overlap note.** #230 (PR #249, open and green when this was written) adds
-    /// `RaceCountdown.raceLabel` with this same rule, keyed the same way, for the three tab
-    /// subtitles. Whichever lands second should delete its copy and call the other; both
-    /// suites pin the same strings, so the fold is mechanical.
-    static func raceLabel(goal: GoalInfo?, units: Units) -> String? {
-        guard let goal else { return nil }
-        let distance = distanceLabel(raceMeters: RaceRecap.raceMeters(goal: goal), units: units)
-        guard let name = goal.raceName?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !name.isEmpty else {
-            return "\(distance) race"
-        }
-        return name.localizedCaseInsensitiveContains(distance) ? name : "\(name) · \(distance)"
     }
 
     /// The You tab goal card's **TARGET**: the goal time spread over the goal's own distance,
