@@ -238,48 +238,4 @@ final class GoalLineTests: XCTestCase {
         XCTAssertEqual(GoalLine.untimedLine(goalType: "finish", on: nil), "Just finish")
         XCTAssertEqual(GoalLine.untimedLine(goalType: "pr", on: nil), "Chasing a PR · no target time")
     }
-
-    // MARK: - The card's title names the distance (#231, #230)
-
-    /// The title used to be `"<time> · <race name>"`. A 5K saved as a marathon (#215) sat on
-    /// this screen for two weeks because nothing on it said which race the plan was for.
-    func testTheRaceLabelNamesTheDistanceBesideTheName() {
-        XCTAssertEqual(GoalLine.raceLabel(goal: untimed(), units: .mi), "Turkey Trot · 5K")
-        XCTAssertEqual(GoalLine.raceLabel(goal: untimed(distance: "half", meters: 21_098), units: .mi),
-                       "Turkey Trot · Half")
-    }
-
-    /// Not twice, though: the athlete's own name for the race usually carries the distance.
-    func testANameThatAlreadyCarriesTheDistanceKeepsIt() {
-        XCTAssertEqual(
-            GoalLine.raceLabel(goal: untimed(name: "Chicago Marathon", distance: "marathon", meters: 42_195), units: .mi),
-            "Chicago Marathon")
-        XCTAssertEqual(GoalLine.raceLabel(goal: untimed(name: "Turkey Trot 5k"), units: .mi),
-                       "Turkey Trot 5k", "the match is case-insensitive")
-    }
-
-    /// `race_name` is nullable, and a goal always has a distance even when it has no name —
-    /// so the unnamed case says the distance rather than the bare "Race" the old card used.
-    func testAnUnnamedGoalIsNamedByItsDistance() {
-        XCTAssertEqual(GoalLine.raceLabel(goal: untimed(name: nil, distance: "marathon", meters: 42_195), units: .mi),
-                       "Marathon race")
-        XCTAssertEqual(GoalLine.raceLabel(goal: untimed(name: "   "), units: .mi), "5K race",
-                       "a name of spaces is no name")
-        XCTAssertNil(GoalLine.raceLabel(goal: nil, units: .mi), "no goal, nothing to name")
-    }
-
-    /// The metres come from `RaceRecap.raceMeters(goal:)`, the same reading TARGET and
-    /// PROJECTED use, so the title can't name one race while the numbers answer for another.
-    /// A custom distance has no label of its own and is spelled out in the athlete's unit.
-    func testTheDistanceIsReadOffTheSameMetresTheNumbersUse() {
-        XCTAssertEqual(GoalLine.distanceLabel(raceMeters: RaceRecap.raceMeters(goalDistance: "half"), units: .mi),
-                       "Half", "21,097.5 and 21,098 are one distance")
-        XCTAssertEqual(GoalLine.distanceLabel(raceMeters: Units.metersPerMile, units: .mi), "1 mi")
-        XCTAssertEqual(GoalLine.distanceLabel(raceMeters: 30_000, units: .km), "30.0 km")
-        XCTAssertEqual(GoalLine.raceLabel(goal: untimed(distance: "custom", meters: 30_000), units: .km),
-                       "Turkey Trot · 30.0 km")
-        // A goal written before 0014 has no `distance_m`; the label still carries it.
-        XCTAssertEqual(GoalLine.raceLabel(goal: untimed(distance: "10k", meters: nil), units: .mi),
-                       "Turkey Trot · 10K")
-    }
 }

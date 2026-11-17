@@ -76,10 +76,15 @@ struct YouView: View {
         }
     }
 
-    /// The race named once, with its distance (#231). The fallback is unreachable from the
-    /// two cases that use it — `raceLabel` is nil only when there is no goal at all.
+    /// The race named once, with its distance (#231), from the one engine that names it
+    /// (#278: this card and the three tab subtitles carried the same rule twice). The
+    /// fallback is unreachable from the two cases that use it — `raceLabel` is nil only when
+    /// there is no goal at all.
+    ///
+    /// Without `includingRole`: the card prints the role as its own `Tag` (#238), and asking
+    /// for it here would say "tune-up" twice on one card.
     private var raceLabel: String {
-        GoalLine.raceLabel(goal: store.goal, units: units) ?? GoalLine.unnamedRace
+        RaceCountdown.raceLabel(goal: store.goal, units: units) ?? RaceCountdown.unnamedRace
     }
 
     /// Race day as the RACE metric prints it, so the two lines of the card can't disagree

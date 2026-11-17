@@ -289,6 +289,17 @@ final class RaceCountdownTests: XCTestCase {
         XCTAssertEqual(label(goal(name: "Turkey Trot 5K", meters: 5_000)), "Turkey Trot 5K")
     }
 
+    /// Two distances `GoalLineTests` pinned for the You card's title (#231) and this suite
+    /// did not, kept when the two copies of this rule were folded into one (#278): the mile,
+    /// whose 1,609.34 has to match a table holding 1,609, and a 10K carried by its label
+    /// alone. The title reads this function now, so its regressions live here.
+    func testTheMileAndATenKWithNoMetresAreNamedToo() {
+        XCTAssertEqual(RaceCountdown.distanceLabel(raceMeters: Units.metersPerMile, units: .mi), "1 mi",
+                       "1,609.34 and the table's 1,609 are one distance")
+        XCTAssertEqual(label(goal(name: "Turkey Trot", distance: "10k")), "Turkey Trot · 10K",
+                       "pre-0014: no distance_m, and the label still carries the distance")
+    }
+
     /// The role (#238) is You's line and nobody else's, so it is asked for rather than
     /// assumed. An ordinary goal race has no role word — "goal" on a goal would be noise.
     func testTheRoleRidesOnTheLabelOnlyWhenAskedFor() {
