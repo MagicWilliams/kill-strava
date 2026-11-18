@@ -34,6 +34,14 @@ async function database(): Promise<PGlite> {
     insert into auth.users values ('${ATHLETE}'), ('${OTHER}');
   `);
   await db.exec(await Deno.readTextFile(new URL("../migrations/0024_usage_limits.sql", import.meta.url)));
+  // Every later migration that seeds a kind, in order: the invariant below is "every kind
+  // the functions can claim has limits", and a kind added by a later file (0026: `review`,
+  // #91) would otherwise read as missing its rows here while being perfectly limited in
+  // production. Listed explicitly rather than globbed, so a migration that has nothing to do
+  // with the limiter cannot quietly become part of this test's fixture.
+  for (const file of ["0026_weekly_reviews.sql"]) {
+    await db.exec(await Deno.readTextFile(new URL(`../migrations/${file}`, import.meta.url)));
+  }
   return db;
 }
 

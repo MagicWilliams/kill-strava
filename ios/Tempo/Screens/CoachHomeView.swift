@@ -23,6 +23,10 @@ struct CoachHomeView: View {
     @State private var tags: [UUID: [CoachThreads.Tag]] = [:]
     /// Changes applied this week, for the "What changed" row. Nil until the ledger answers.
     @State private var changesThisWeek: Int?
+    /// The newest weekly review (#91), for the row beside it. Nil until one has been written,
+    /// and after a read that failed — which is also what a database without migration 0026
+    /// looks like, so the row stays quiet rather than claiming anything.
+    @State private var weeklyReview: WeeklyReview.Written?
     @State private var load: Load = .loading
     @State private var starting = false
     /// What this screen has already opened a conversation for, so popping back to the list
@@ -36,7 +40,7 @@ struct CoachHomeView: View {
             LazyVStack(alignment: .leading, spacing: 14) {
                 header
                 if !consent.maySend { Card { CoachConsentNotice() } }
-                changesRow
+                quickRows
                 SectionLabel("Conversations").padding(.top, 6)
                 content
             }
@@ -81,6 +85,7 @@ struct CoachHomeView: View {
             // Either may have arrived with the tab switch, before this view existed, so
             // both are checked here as well as on change.
             openConversationIfNeeded()
+            weeklyReview = (try? await WeeklyReviewService.latest()) ?? weeklyReview
             if let applied = try? await CoachThreadService.applied() {
                 tags = CoachThreadService.tags(from: applied)
                 changesThisWeek = ChangeLedger.countThisWeek(
@@ -94,6 +99,22 @@ struct CoachHomeView: View {
             // on the next appearance — or on a pull to refresh, if the athlete is watching.
             if await CoachThreadService.summarizePending(rows, context: store.coachContext()) {
                 threads = (try? await CoachThreadService.threads()) ?? rows
+            }
+            // Last, and after the recaps: the review of the week that finished reads them, so
+            // a recap written in the pass above is in the review rather than missing from it.
+            // Only the first appearance on or after a Monday spends anything here — every one
+            // after that finds the row already written (`WeeklyReviewService.writeIfDue`).
+            if case .written(let written) = await WeeklyReviewService.writeIfDue(
+                latest: weeklyReview,
+                inputs: WeeklyReviewService.Inputs(
+                    runs: store.runs,
+                    plan: store.plan,
+                    planWeeks: store.planWeeks,
+                    goal: store.goal,
+                    context: store.coachContext()
+                )
+            ) {
+                weeklyReview = written
             }
         } catch {
             Telemetry.error("coach.threads_unreadable", error)
@@ -139,26 +160,19 @@ struct CoachHomeView: View {
     /// Start a new conversation and open it.
     ///
     /// The thread is created before the push so the transcript it opens on is scoped from
-    /// its first message — a chat that starts unscoped writes rows no thread can see.
-    ///
-    /// The write-up of the conversation being left is awaited here rather than backgrounded,
-    /// and the order is the reason: a thread is owed a recap once a *newer* one exists, so
-    /// the new thread has to be created first, and the recap has to be written before the
-    /// push because it is what the new conversation opens with — on screen as "Picking up
-    /// from", and in the coach's own context as `memory.picking_up`. Pushing first would
-    /// send the opening turn to a coach that had not been told what the last conversation
-    /// settled. It is one model round trip, bounded by `Supa`'s 15s request timeout, and the
-    /// button says it is working.
+    /// its first message — a chat that starts unscoped writes rows no thread can see. The
+    /// create-then-write-up-then-open order is `CoachThreadService.startFresh`, which spells
+    /// out why it is that way round; the write-up is awaited rather than backgrounded, so
+    /// the new conversation opens knowing what the last one settled. It is one model round
+    /// trip, bounded by `Supa`'s 15s request timeout, and the button says it is working.
     private func startNewChat() {
         guard !starting else { return }
         starting = true
         Task {
             defer { starting = false }
             do {
-                let id = try await CoachThreadService.create()
-                let rows = (try? await CoachThreadService.threads()) ?? []
+                let (id, rows) = try await CoachThreadService.startFresh(context: store.coachContext())
                 if !rows.isEmpty { threads = rows }
-                await CoachThreadService.summarizePending(rows, context: store.coachContext())
                 router.openCoachThread(id)
             } catch {
                 Telemetry.error("coach.thread_create_failed", error)
@@ -203,30 +217,50 @@ struct CoachHomeView: View {
         .disabled(starting)
     }
 
-    /// Entry point to the ledger of applied changes (#88), moved here from the transcript
-    /// when Coach home became a screen of its own.
-    private var changesRow: some View {
-        Button { router.openChanges() } label: {
-            HStack(spacing: 10) {
-                Image(systemName: "clock.arrow.circlepath")
-                    .foregroundStyle(Tokens.Palette.accentText)
-                Text("What changed")
-                    .font(Tokens.Font.ui(14, .semibold)).foregroundStyle(Tokens.Palette.textPrimary)
-                Spacer()
+    /// The two ways out of this screen that are not a conversation: the ledger of applied
+    /// changes (#88) and the week that finished (#91). Side by side, as the mockup has them —
+    /// both are a glance at something that happened rather than somewhere you go to work.
+    private var quickRows: some View {
+        HStack(spacing: 8) {
+            QuickRow(title: "What changed", action: { router.openChanges() }) {
                 if let count = changesThisWeek {
-                    Text(count == 0 ? "None this week" : "\(count) this week")
+                    Text(count == 0 ? "None" : "\(count) this wk")
                         .font(Tokens.Font.mono(11)).foregroundStyle(Tokens.Palette.textSecondary)
+                        .fixedSize()
                 }
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(Tokens.Palette.textTertiary)
             }
-            .padding(.horizontal, 14).padding(.vertical, 11)
-            .background(Tokens.Palette.surface)
-            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-            .contentShape(Rectangle())
+            weeklyReviewRow
         }
-        .buttonStyle(Pressable())
+    }
+
+    /// The weekly review row, with its unread dot.
+    ///
+    /// Three states, and the distinction is the same one the thread recaps make: a review
+    /// that has been written and not opened (the dot), one already read (nothing), and none
+    /// at all. The last one says so rather than offering a tap that would land on nothing —
+    /// which is also what the row shows while the table is unreadable, since a review nobody
+    /// can read is not a review the athlete has.
+    @ViewBuilder private var weeklyReviewRow: some View {
+        let review = weeklyReview
+        QuickRow(
+            title: "Weekly review",
+            enabled: review != nil,
+            action: { if let review { router.openWeeklyReview(review) } }
+        ) {
+            if let review {
+                if review.isUnread {
+                    Circle().fill(Tokens.Palette.accentText).frame(width: 8, height: 8)
+                } else {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(Tokens.Palette.textTertiary)
+                }
+            } else {
+                Text("None yet")
+                    .font(Tokens.Font.mono(11)).foregroundStyle(Tokens.Palette.textTertiary)
+                    .fixedSize()
+            }
+        }
     }
 
     @ViewBuilder private var content: some View {
@@ -311,6 +345,50 @@ struct CoachHomeView: View {
         if Calendar.current.isDateInToday(date) { return "TODAY" }
         if Calendar.current.isDateInYesterday(date) { return "YESTERDAY" }
         return date.formatted(.dateTime.month(.abbreviated).day()).uppercased()
+    }
+}
+
+/// One compact row above Conversations: a title, whatever belongs on the right, and a tap.
+///
+/// Half the width, so neither row carries an icon or a chevron it has no room for.
+private struct QuickRow<Trailing: View>: View {
+    private let title: String
+    private let enabled: Bool
+    private let action: () -> Void
+    private let trailing: Trailing
+
+    init(
+        title: String,
+        enabled: Bool = true,
+        action: @escaping () -> Void,
+        @ViewBuilder trailing: () -> Trailing
+    ) {
+        self.title = title
+        self.enabled = enabled
+        self.action = action
+        self.trailing = trailing()
+    }
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 6) {
+                Text(title)
+                    .font(Tokens.Font.ui(14, .semibold))
+                    .foregroundStyle(enabled ? Tokens.Palette.textPrimary : Tokens.Palette.textSecondary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.85)
+                Spacer(minLength: 2)
+                trailing
+            }
+            .padding(.horizontal, 14)
+            .frame(height: 48)
+            .frame(maxWidth: .infinity)
+            .background(Tokens.Palette.surface)
+            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(Pressable())
+        .disabled(!enabled)
     }
 }
 

@@ -125,6 +125,26 @@ Reply with ONLY a JSON object, no prose and no code fence:
 - summary: 1–2 sentences, under 240 characters. What was decided and what changed: paces, sessions, the plan, what you are watching. Keep the numbers; they are the useful part. Past tense, no greeting, no questions.
 - Ground both in what was actually said. If the conversation decided nothing, say that ("Asked about Thursday's session; nothing changed.") rather than inventing an outcome.`;
 
+// Weekly review (#91): one shot, no tools, parsed by `review.ts` and stored by the app on
+// `weekly_reviews`. The week's numbers arrive pre-computed in <weekly_review>
+// (Engine/WeeklyReview.swift) so the model reads them off rather than re-deriving them from
+// 21 days of recent runs, and the changes it describes are the ledger's own entries rather
+// than its memory of the conversation.
+//
+// Written once per week and then read for months, which is why it asks for the sections
+// separately: the screen draws three labelled blocks, and a heading the model renamed would
+// leave two of them empty.
+export const WEEKLY_REVIEW_INSTRUCTIONS = `The week in <weekly_review> has finished. Write the athlete's weekly review. They read it on one screen: a headline, then Training, then how the plan moved, then next week.
+
+Reply with ONLY a JSON object, no prose and no code fence:
+{"headline": "...", "training": "...", "plan_moved": "...", "next_week": "..."}
+
+- headline: one or two sentences, under 160 characters, saying what this week amounted to. No date, no greeting.
+- training: 2 to 4 sentences on the running itself. Quote the week's own numbers: miles against the planned target, the sessions done, paces and heart rate where the runs show something. Say plainly when the week was short of the plan, and when there was nothing on the plan to be short of.
+- plan_moved: 1 to 3 sentences on what changed in the plan during the week and why, from the entries in \`changes\`. With no entries, say that nothing in the plan changed. Never invent a change that is not listed.
+- next_week: 2 to 3 sentences on what is coming and what to do about it, from \`next_week\` and the race date when there is one. One instruction the athlete can act on, no list.
+- Ground every sentence in the data given. If a number is missing, write the review without it rather than estimating one. Past tense for the week, present for what is next. No markdown, no questions, no sign-off.`;
+
 // amend_run / add_run come from run_corrections.ts, chosen per client (#206).
 export const OTHER_TOOLS = [
   {

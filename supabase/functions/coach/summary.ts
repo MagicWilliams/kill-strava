@@ -31,7 +31,11 @@ export const SUMMARY_LIMIT = 240;
 /// The model is asked for bare JSON and usually sends it. ```json fences are the common
 /// deviation; a leading "Here's the summary:" is the other. Both are recoverable, and
 /// recovering them is cheaper than a second round trip.
-function jsonObject(text: string): unknown {
+///
+/// Exported for `review.ts` (#91), which parses a different JSON object out of the same
+/// model under the same rules. One recovery, used twice: a second copy is how one of the two
+/// stops recovering a fence nobody noticed it was getting.
+export function jsonObject(text: string): unknown {
   const unfenced = text
     .replace(/^\s*```(?:json)?\s*/i, "")
     .replace(/\s*```\s*$/, "")
@@ -51,7 +55,9 @@ function jsonObject(text: string): unknown {
 }
 
 /// One line of prose: whitespace collapsed, clipped to `limit` on a word boundary.
-function line(value: unknown, limit: number): string | null {
+///
+/// Exported alongside `jsonObject`, for the same reason.
+export function line(value: unknown, limit: number): string | null {
   if (typeof value !== "string") return null;
   const text = value.replace(/\s+/g, " ").trim();
   if (!text) return null;

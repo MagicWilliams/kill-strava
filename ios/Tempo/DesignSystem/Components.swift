@@ -311,11 +311,21 @@ struct Chip: View {
 struct StatTile: View {
     let value: String
     let label: String
+    /// One quiet line under the label: what the number is being read against ("plan 24",
+    /// "from -3.1"). Absent on every tile that has nothing to compare itself to (#91).
+    var caption: String? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
             Text(value).display(22)
             SectionLabel(label)
+            if let caption {
+                Text(caption)
+                    .font(Tokens.Font.mono(10))
+                    .foregroundStyle(Tokens.Palette.textTertiary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(14)

@@ -16,6 +16,7 @@ import {
   TOOL_RESULT_PROPOSED,
   TOOL_RESULT_RECORDED,
   VOICE,
+  WEEKLY_REVIEW_INSTRUCTIONS,
 } from "./prompts.ts";
 import { RUN_FACTS_FEATURE, runEditing } from "./run_corrections.ts";
 
@@ -27,6 +28,7 @@ function everyPrompt(): Record<string, string> {
     takeaway: TAKEAWAY_INSTRUCTIONS,
     block_review: BLOCK_REVIEW_INSTRUCTIONS,
     summarize: SUMMARIZE_INSTRUCTIONS,
+    weekly_review: WEEKLY_REVIEW_INSTRUCTIONS,
     tools: JSON.stringify(OTHER_TOOLS),
     recorded: TOOL_RESULT_RECORDED,
     proposed: TOOL_RESULT_PROPOSED,
