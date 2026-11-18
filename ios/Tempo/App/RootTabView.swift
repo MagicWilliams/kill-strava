@@ -40,6 +40,9 @@ enum Route: Hashable {
     /// One coach conversation (#87). The id and not the row: a thread's title and recap are
     /// written while it is open, and a pushed copy of the row would go stale behind it.
     case coachThread(UUID)
+    /// One week's coach review (#91). The row and not the id, unlike a conversation: a review
+    /// is written once and never changes after that, so the copy cannot go stale.
+    case weeklyReview(WeeklyReview.Written)
 }
 
 @MainActor
@@ -84,6 +87,7 @@ final class TabRouter: ObservableObject {
     func openRaceRecap(_ run: RunSummary) { path.append(.raceRecap(run)) }
     func openChanges() { path.append(.changes) }
     func openCoachThread(_ id: UUID) { path.append(.coachThread(id)) }
+    func openWeeklyReview(_ review: WeeklyReview.Written) { path.append(.weeklyReview(review)) }
     func openOverlapReview() { path.append(.overlapReview) }
     func openBlockReview(_ goal: GoalInfo) { path.append(.blockReview(goal)) }
 
@@ -236,6 +240,7 @@ struct RootTabView: View {
                 case .changes: ChangesView()
                 case .overlapReview: OverlapReviewView()
                 case .blockReview(let goal): BlockReviewView(goal: goal)
+                case .weeklyReview(let review): WeeklyReviewView(review: review)
                 case .coachThread(let id):
                     // The one pushed screen with the tab bar still under it. A conversation is
                     // where a training intake lands and a place people stay, so the rest of the

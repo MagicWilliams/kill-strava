@@ -10,13 +10,15 @@
 // for a durable fact (#87): the card is the athlete's consent, the app writes it.
 //
 // Modes: no mode is a chat turn. `takeaway` reads one run, `block_review` one
-// training block, and `summarize` writes up a finished thread as {title, summary}
-// (#87) — all three one-shot, no tools, nothing persisted here.
+// training block, `summarize` writes up a finished thread as {title, summary}
+// (#87), and `review` writes up a finished training week as a headline plus three
+// sections (#91) — all four one-shot, no tools, nothing persisted here.
 
 import { sanitizeHistory, type WireMessage } from "./history.ts";
 import { runEditing, shapeRunInput, speaksRunFacts } from "./run_corrections.ts";
 import { goalLifecycle } from "./goal_lifecycle.ts";
 import { parseThreadSummary } from "./summary.ts";
+import { parseWeeklyReview } from "./review.ts";
 import { goalRejections, HELD_BACK_PLAN } from "./goal_guard.ts";
 import { ACKNOWLEDGE_RULES, isSilent, oneCardOnly, surplusCards, toolsForTurn } from "./proposals.ts";
 import { usageRefusal } from "../_shared/usage_gate.ts";
@@ -33,6 +35,7 @@ import {
   TAKEAWAY_INSTRUCTIONS,
   TOOL_RESULT_PROPOSED,
   TOOL_RESULT_RECORDED,
+  WEEKLY_REVIEW_INSTRUCTIONS,
 } from "./prompts.ts";
 
 const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
@@ -71,7 +74,7 @@ Deno.serve(async (req) => {
   try {
     const body = await readBodyWithin(req, MAX_REQUEST_BYTES.coach);
     if (body === null) return tooLargeResponse("coach");
-    const { messages, context, mode, run, block, features, acknowledging } = JSON.parse(body);
+    const { messages, context, mode, run, block, week, features, acknowledging } = JSON.parse(body);
 
     // #206: a build that computes run corrections itself says so in `features`; anything
     // else (every build installed before it) keeps the totals schema it was written against.
@@ -91,10 +94,12 @@ Deno.serve(async (req) => {
     // Takeaway mode: one-shot per-run read, cached by the app in runs.coach_takeaway.
     // Block review mode: one-shot block retrospective, cached by the app in goals.review.
     // Summarize mode: one-shot thread write-up, stored by the app on coach_threads (#87).
+    // Review mode: one-shot weekly write-up, stored by the app on weekly_reviews (#91).
     const takeaway = mode === "takeaway";
     const blockReview = mode === "block_review";
     const summarize = mode === "summarize";
-    const oneShot = takeaway || blockReview || summarize;
+    const weeklyReview = mode === "review";
+    const oneShot = takeaway || blockReview || summarize || weeklyReview;
     // Summarize is one-shot in that it carries no tools, but unlike the other two it has
     // nothing to say without a transcript: an empty thread must not reach Anthropic to come
     // back with a write-up of a conversation that never happened.
@@ -112,6 +117,10 @@ Deno.serve(async (req) => {
     if (blockReview) {
       system += `\n\n<block_review>\n${JSON.stringify(block ?? {}, null, 1)}\n</block_review>`;
       wireMessages = [{ role: "user", content: BLOCK_REVIEW_INSTRUCTIONS }];
+    }
+    if (weeklyReview) {
+      system += `\n\n<weekly_review>\n${JSON.stringify(week ?? {}, null, 1)}\n</weekly_review>`;
+      wireMessages = [{ role: "user", content: WEEKLY_REVIEW_INSTRUCTIONS }];
     }
     // The transcript stays in place and the instruction goes in as the last user turn: the
     // thing being summarized IS the conversation, so it cannot be replaced by the prompt the
@@ -271,6 +280,24 @@ Deno.serve(async (req) => {
       const written = parseThreadSummary(reply);
       return Response.json(
         written ? { title: stripDashes(written.title), summary: stripDashes(written.summary) } : {},
+      );
+    }
+
+    // A weekly review is all four fields or nothing at all (#91), the same deal: `review.ts`
+    // returns null for anything half-formed, and an empty object is what tells the app to
+    // leave the week unreviewed and ask again rather than store a screen with a blank
+    // section on it.
+    if (weeklyReview) {
+      const written = parseWeeklyReview(reply);
+      return Response.json(
+        written
+          ? {
+            headline: stripDashes(written.headline),
+            training: stripDashes(written.training),
+            plan_moved: stripDashes(written.plan_moved),
+            next_week: stripDashes(written.next_week),
+          }
+          : {},
       );
     }
 

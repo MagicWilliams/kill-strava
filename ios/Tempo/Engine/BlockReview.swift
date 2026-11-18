@@ -25,15 +25,21 @@ enum BlockReview {
         let day: Date
         let type: String
         let status: String
+        /// Whether the coach changed this session after the plan was built
+        /// (`sessions.adapted`). Nothing in a block review reads it; the weekly review
+        /// counts it (#91), and it is carried here rather than in a second session type so
+        /// the two screens cannot disagree about what a planned session is.
+        let adapted: Bool
 
-        init(day: Date, type: String, status: String) {
+        init(day: Date, type: String, status: String, adapted: Bool = false) {
             self.day = day
             self.type = type
             self.status = status
+            self.adapted = adapted
         }
 
         init(_ s: SessionInfo) {
-            self.init(day: s.day, type: s.type, status: s.status)
+            self.init(day: s.day, type: s.type, status: s.status, adapted: s.adapted)
         }
 
         var isQuality: Bool { ["tempo", "threshold", "interval"].contains(type) }

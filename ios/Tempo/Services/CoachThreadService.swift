@@ -76,6 +76,29 @@ enum CoachThreadService {
         return id
     }
 
+    /// Start a conversation that is not the one just left, with the one being left written up
+    /// first.
+    ///
+    /// The order is the reason this is one function and not three calls at each call site: a
+    /// thread is owed a recap once a *newer* one exists, so the new thread has to be created
+    /// before the backlog is read, and the recap has to be written before the new conversation
+    /// is opened, because it is what that conversation opens with — on screen as "Picking up
+    /// from", and in the coach's own context as `memory.picking_up`. Opening first would send
+    /// the first turn to a coach that had not been told what the last conversation settled.
+    ///
+    /// Returns the new thread and the list as it stood when the backlog was read, so a caller
+    /// showing the list can update it without a second read. Two callers: New chat on Coach
+    /// home, and Discuss this review (#91).
+    static func startFresh(
+        context: CoachContext,
+        now: Date = .now
+    ) async throws -> (id: UUID, threads: [CoachThreads.Row]) {
+        let id = try await create(now: now)
+        let rows = (try? await threads()) ?? []
+        await summarizePending(rows, context: context, now: now)
+        return (id, rows)
+    }
+
     /// The thread a message sent now belongs to: the live one, or a fresh one.
     ///
     /// This is what the Coach tab opens into when nothing told it which thread to show —

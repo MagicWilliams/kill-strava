@@ -6,14 +6,21 @@
 // answer, kept pure because its worst mistake would be silent: reading a refusal as a pass
 // leaves the bill unbounded, and reading a limiter fault as a refusal takes the coach down.
 
-export type UsageKind = "chat" | "takeaway" | "block_review" | "summarize" | "plan";
+export type UsageKind = "chat" | "takeaway" | "block_review" | "summarize" | "review" | "plan";
 
 /** Every kind a function can claim. Each must have rows in `usage_limits`. */
-export const USAGE_KINDS: readonly UsageKind[] = ["chat", "takeaway", "block_review", "summarize", "plan"];
+export const USAGE_KINDS: readonly UsageKind[] = [
+  "chat",
+  "takeaway",
+  "block_review",
+  "summarize",
+  "review",
+  "plan",
+];
 
 /** Which allowance a `coach` request draws on. No mode, or one we don't know, is a chat turn. */
 export function usageKindForMode(mode: unknown): UsageKind {
-  if (mode === "takeaway" || mode === "block_review" || mode === "summarize") return mode;
+  if (mode === "takeaway" || mode === "block_review" || mode === "summarize" || mode === "review") return mode;
   return "chat";
 }
 
@@ -82,6 +89,8 @@ export function limitMessage(kind: UsageKind, retryAfterS: number): string {
       return `You've reached the limit on coach retrospectives for now. It resets ${reset}. Your block and result are saved.`;
     case "summarize":
       return `You've reached the limit on conversation recaps for now. It resets ${reset}. Your conversations are saved.`;
+    case "review":
+      return `You've reached the limit on weekly reviews for now. It resets ${reset}. Your week's runs and changes are saved, and the review is written the next time you open Coach after that.`;
     case "plan":
       return `You've reached the limit on plan builds for now. It resets ${reset}. Your existing plan wasn't changed.`;
   }
