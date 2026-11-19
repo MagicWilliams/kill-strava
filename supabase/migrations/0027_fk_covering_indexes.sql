@@ -1,0 +1,89 @@
+-- Covering indexes for the six foreign keys the performance advisor still flags (#254).
+--
+-- ⚠️  UNAPPLIED. David applies it. Requires 0001, 0002, 0006 and 0008. No app change
+-- depends on it, and nothing here reads, moves or deletes a row.
+--
+-- Numbered 0027, not 0022 or 0026: #89 claims 0022 (body reports) and #91 claims 0026
+-- (weekly reviews), both in flight. Same reasoning as 0021's note — a shared prefix is how
+-- 0002 ended up ambiguous. Nothing here depends on either, so landing order does not matter.
+--
+-- ── Why ──────────────────────────────────────────────────────────────────────────────
+-- The Supabase performance advisor lists six columns under `unindexed_foreign_keys`. Each
+-- one is the child side of a referential action, and Postgres does not index that side for
+-- you: when the parent row goes, the FK has to find the children, and with no index leading
+-- with the column that means a sequential scan of the whole child table.
+--
+--   app_events.user_id            -> auth.users,  on delete cascade
+--   risk_acknowledgments.user_id  -> auth.users,  on delete cascade
+--   plans.goal_id                 -> goals,       on delete cascade
+--   sessions.plan_id              -> plans,       on delete cascade
+--   sessions.week_id              -> plan_weeks,  on delete cascade
+--   runs.superseded_by            -> runs,        on delete set null
+--
+-- Existing indexes do not serve these. `plans_user_idx` and `sessions_user_date_idx` lead
+-- with `user_id`, which is the wrong column for `goal_id`, `plan_id` and `week_id`.
+-- `app_events_recent_idx` and `app_events_event_idx` lead with `created_at` and `event`.
+-- `runs_live_idx` names `superseded_by` only in its `where` clause, so it cannot be used to
+-- look the column up. `risk_acknowledgments` has nothing but its primary key.
+--
+-- Hygiene, not a fix for a measured slow query — the same call 0019 and 0021 made. Row
+-- counts are small today and the app hard-deletes almost nothing. Two things make it worth
+-- doing now rather than later:
+--
+--   * `auth.users` deletion is about to become an ordinary thing a user does, not a hand-
+--     written statement David runs. Account deletion (#295, open) leans entirely on these
+--     `on delete cascade` edges to empty the tables, so every unindexed `user_id` is a
+--     table scan inside that request. `app_events` is the one that matters: it is the only
+--     table here that grows on its own, from every tester, without anybody running.
+--   * The cost is near zero at this size, and it only rises.
+--
+-- Naming follows the tables' own convention, which drops the `_id` suffix
+-- (`plans_user_idx`, `plan_weeks_plan_idx`). `runs_superseded_by_idx` keeps its spelling
+-- because the column is `superseded_by`.
+--
+-- Plain btree on the column alone, deliberately. A partial index on `runs(superseded_by)`
+-- would be smaller, since the column is null for every live run, but the advisor's lint
+-- asks whether an index leads with the FK column and a partial one is not worth the
+-- argument for the few hundred bytes it saves here.
+--
+-- Re-runnable: `if not exists` throughout.
+
+create index if not exists app_events_user_idx           on app_events(user_id);
+create index if not exists risk_acknowledgments_user_idx on risk_acknowledgments(user_id);
+create index if not exists plans_goal_idx                on plans(goal_id);
+create index if not exists sessions_plan_idx             on sessions(plan_id);
+create index if not exists sessions_week_idx             on sessions(week_id);
+create index if not exists runs_superseded_by_idx        on runs(superseded_by);
+
+-- ── Check (changes nothing) ──────────────────────────────────────────────────────────
+--
+-- The six are present:
+--
+--   select tablename, indexname from pg_indexes
+--   where indexname in ('app_events_user_idx', 'risk_acknowledgments_user_idx',
+--                       'plans_goal_idx', 'sessions_plan_idx', 'sessions_week_idx',
+--                       'runs_superseded_by_idx')
+--   order by tablename, indexname;
+--
+-- Expect six rows. Nothing else in the database changed, so there is no row count to
+-- compare and no dry run to approve: `create index` adds no rows, edits none and deletes
+-- none, for David or for any tester.
+--
+-- The advisor agrees (this is the shape of its `unindexed_foreign_keys` lint, run against
+-- the FKs above):
+--
+--   select c.conrelid::regclass as table_name, c.conname
+--   from pg_constraint c
+--   where c.contype = 'f'
+--     and c.connamespace = 'public'::regnamespace
+--     and not exists (
+--       select 1 from pg_index i
+--       where i.indrelid = c.conrelid
+--         and (i.indkey::smallint[])[0:array_length(c.conkey, 1) - 1] @> c.conkey
+--     )
+--   order by 1, 2;
+--
+-- Expect `app_events_user_id_fkey`, `plans_goal_id_fkey`,
+-- `risk_acknowledgments_user_id_fkey`, `runs_superseded_by_fkey`, `sessions_plan_id_fkey`
+-- and `sessions_week_id_fkey` to be gone from the result. The next performance-advisor run
+-- should no longer list them.
