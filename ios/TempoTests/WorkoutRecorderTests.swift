@@ -138,6 +138,9 @@ final class WorkoutRecorderTests: XCTestCase {
     private var cues: FakeCues!
     /// Every telemetry event name, #131 lines and diagnostics alike, in order.
     private var logged: [String] = []
+    /// The diagnostics with the context they carried, so a test can pin what a line says and
+    /// not only that it was sent. #131 lines are pinned whole through `lines` instead.
+    private var loggedContext: [(event: String, context: [String: String])] = []
     private var lines: [RecorderTelemetry.Line] = []
     /// What the recorder wrote for kill recovery (#115); nil is a clear.
     private var persisted: [InProgressRun?] = []
@@ -172,6 +175,7 @@ final class WorkoutRecorderTests: XCTestCase {
         steps = FakeSteps()
         cues = FakeCues()
         logged = []
+        loggedContext = []
         lines = []
         persisted = []
         saved = []
@@ -209,13 +213,21 @@ final class WorkoutRecorderTests: XCTestCase {
             clock: { [unowned self] in now },
             tickInterval: nil,
             report: { [unowned self] in lines += $0; logged += $0.map(\.event.rawValue) },
-            log: { [unowned self] event, _ in logged.append(event) },
+            log: { [unowned self] event, context in
+                logged.append(event)
+                loggedContext.append((event: event, context: context))
+            },
             persist: { [unowned self] in persisted.append($0) },
             recovery: recovery
         )
         recorder.onAutoPause = { [unowned self] in autoPauses.append($0) }
         current = recorder
         return recorder
+    }
+
+    /// The context of the first `event` diagnostic sent, or nil if none was.
+    private func context(ofFirst event: String) -> [String: String]? {
+        loggedContext.first { $0.event == event }?.context
     }
 
     private func started(_ kind: RecorderState.RunKind = .outdoor, target: RecorderState.SessionTarget? = nil,
@@ -491,6 +503,36 @@ final class WorkoutRecorderTests: XCTestCase {
         XCTAssertTrue(logged.contains("recorder.interrupted"))
     }
 
+    /// #309, 2026-11-23: a recording failed 17s into `running` and was discarded out of
+    /// `.recovering` 34 minutes later. Its `recorder.session_error` row carried only
+    /// `step=running`, so nothing in `app_events` said whether GPS had dropped, HealthKit had
+    /// failed, or a permission had gone away. The session had handed over the reason and this
+    /// call site dropped it on the floor, which is the one question the row exists to answer.
+    func testASessionFailureSaysWhatFailedAndNotOnlyWhere() async {
+        let recorder = await started()
+        now = t(17)
+        session.onSignal?(.failed(reason: "HKErrorWorkoutSessionFailed"))
+        await recorder.settled()
+
+        let ctx = context(ofFirst: "recorder.session_error")
+        XCTAssertEqual(ctx?["step"], "running")
+        XCTAssertEqual(ctx?["reason"], "HKErrorWorkoutSessionFailed")
+    }
+
+    /// On device the reason is `String(describing:)` of HealthKit's NSError, which carries a
+    /// domain, a code, a localized description and sometimes an underlying error, so it is
+    /// nothing like the short constant the test above sends. HealthKit writes that text and
+    /// never the athlete, but it is bounded anyway, the same 300 characters `Telemetry.error`
+    /// and `recorder.save_failed` bound their descriptions to.
+    func testALongSessionFailureReasonIsBounded() async {
+        let recorder = await started()
+        now = t(17)
+        session.onSignal?(.failed(reason: String(repeating: "e", count: 500)))
+        await recorder.settled()
+
+        XCTAssertEqual(context(ofFirst: "recorder.session_error")?["reason"]?.count, 300)
+    }
+
     /// The Lock Screen can't end a run, so the session never hears about it.
     func testTheLockScreenCannotEndARun() async {
         let recorder = await started()
@@ -615,6 +657,11 @@ final class WorkoutRecorderTests: XCTestCase {
         XCTAssertEqual(location.starts, 0)
         XCTAssertTrue(logged.contains("recorder.session_error"))
         XCTAssertTrue(logged.contains("recorder.interrupted"))
+        // The sibling call site, and the shape #309 matched the `running` one to: a thrown
+        // error reports its step and its type.
+        let ctx = context(ofFirst: "recorder.session_error")
+        XCTAssertEqual(ctx?["step"], "prepare")
+        XCTAssertEqual(ctx?["error_type"], "Refused")
     }
 
     func testCancellingTheCountdownDiscardsThePreparedSession() async {
@@ -1081,6 +1128,7 @@ final class WorkoutRecorderTests: XCTestCase {
         cues = FakeCues()
         lines = []
         logged = []
+        loggedContext = []
         persisted = []
         saved = []
         return makeRecorder(units: { units }, recovery: RecoverySources(
