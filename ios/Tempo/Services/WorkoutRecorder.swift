@@ -928,7 +928,16 @@ final class WorkoutRecorder {
             heartRate = RecorderSnapshot.HeartRate(bpm: bpm, at: at)
         case .failed(let reason):
             lastFailure = reason
-            log("recorder.session_error", ["step": "running"])
+            // What failed, not only where. The reason is HealthKit's own error description,
+            // from `HealthWorkoutSession.workoutSession(_:didFailWithError:)`, so it tells a
+            // GPS drop from a revoked permission from a session that died under the run. On
+            // 2026-11-23 a recording failed 17s into `running` and the row carried only
+            // `step=running`, which left the cause unknowable (#309). Bounded at 300 like
+            // every other description Tempo reports (`Telemetry.error`, `recorder.save_failed`):
+            // HealthKit writes this string and never the athlete, but a whole NSError
+            // description does not belong in a context value.
+            log("recorder.session_error", ["step": "running",
+                                           "reason": String(reason.prefix(300))])
             send(.interrupted(.sessionFailed, at: clock()))
         }
     }
