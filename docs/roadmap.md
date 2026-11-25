@@ -12,8 +12,8 @@ This page says why the list is what it is.
 
 ## Now: Public beta
 
-**The bar:** someone who isn't David can install Tempo, keep their training across a
-reinstall, delete it if they want, get a working first launch, and get builds on purpose
+**The bar:** someone who isn't David can install Tempo, keep their training on a
+new phone, delete it if they want, get a working first launch, and get builds on purpose
 rather than on every merge.
 
 This is no longer hypothetical. The public TestFlight opened on 2026-11-05 and other people are
@@ -23,7 +23,7 @@ is still open (#283). What's left:
 
 | # | Item | State | Why it's on the bar |
 |---|---|---|---|
-| #294 | Sign in with Apple, linked to the anonymous account | needs David | A reinstall or new phone loses the plan, coach history and corrections today |
+| #294 | Sign in with Apple, linked to the anonymous account | needs David | A new phone or a lost Keychain session loses the plan, coach history and corrections today |
 | #295 | Delete my account and data | in review (PR #299) | App Store 5.1.1(v), and the only way out today is asking David |
 | #285 | First launch never shows an empty app | needs David | 2 of the first 5 testers got zero runs |
 | #296 | Set the external TestFlight group to hand-promoted builds | needs David | Decided 2026-11-08 (#279). Only the App Store Connect setting is left, and agents can't see it |
