@@ -12,7 +12,8 @@ enum Supa {
             // session still persists across launches). Silences the supabase-swift
             // deprecation warning; becomes the default in the next major version.
             auth: SupabaseClientOptions.AuthOptions(
-                storage: sessionStorage,
+                storage: vault,
+                storageKey: vault.key,
                 emitLocalSessionAsInitialSession: true
             ),
             global: SupabaseClientOptions.GlobalOptions(session: session)
@@ -42,13 +43,23 @@ enum Supa {
     /// matching the backend split in SupabaseConfig: the simulator is a throwaway
     /// environment, and an anonymous token in its UserDefaults is not a secret worth
     /// protecting.
-    private static var sessionStorage: any AuthLocalStorage {
+    private static let vault: SessionVault = {
         #if targetEnvironment(simulator)
-        return SimulatorSessionStorage()
+        return SessionVault(base: SimulatorSessionStorage(),
+                            key: SessionVault.sdkKey(for: SupabaseConfig.url)) { key in
+            UserDefaults.standard.data(forKey: key) == nil ? .empty : .held
+        }
         #else
-        return AuthClient.Configuration.defaultLocalStorage
+        return .keychain(for: SupabaseConfig.url)
         #endif
-    }
+    }()
+
+    private static let recovery = SessionRecovery(
+        vault: vault,
+        refresh: SessionRecovery.refresh(url: SupabaseConfig.url,
+                                         key: SupabaseConfig.publishableKey,
+                                         session: session)
+    )
 
     /// Current signed-in user id, if any.
     static var userID: UUID? {
@@ -63,7 +74,28 @@ enum Supa {
     /// showing a retry and showing a splash forever.
     @discardableResult
     static func signInAnonymouslyIfNeeded() async -> Bool {
-        if (try? await client.auth.session) != nil { return true }
+        do {
+            _ = try await client.auth.session
+            reportHold()
+            return true
+        } catch {
+            // Not the same as having no session. Signing in here replaces the only key to
+            // whatever account is stored, so `SessionLoss` has to allow it first.
+            switch await recovery.run(after: error) {
+            case .hold(let reason):
+                UserDefaults.standard.set(reason, forKey: holdKey)
+                return false
+            case .restore:
+                reportHold()
+                Telemetry.info("auth.session_restored")
+                return true
+            case .createAccount(let cause):
+                return await createAccount(cause)
+            }
+        }
+    }
+
+    private static func createAccount(_ cause: SessionLoss.Cause) async -> Bool {
         do {
             _ = try await client.auth.signInAnonymously()
             // Verify the session actually landed rather than trusting the call that made it.
@@ -72,11 +104,26 @@ enum Supa {
             // `Supa.userID`. Returning `true` there reports a success we cannot back up, and
             // the athlete gets "Couldn't load your profile" for a profile nothing ever asked
             // for. Same rule as LaunchGate: a failure must never wear another failure's face.
-            return (try? await client.auth.session) != nil
+            guard (try? await client.auth.session) != nil else { return false }
+            vault.discardSetAside()
+            reportHold()
+            Telemetry.log(cause == .nothingStored ? .info : .warn, "auth.account_created",
+                          context: ["cause": cause.rawValue])
+            return true
         } catch {
             Telemetry.error("auth.anonymous_sign_in_failed", error)
             return false
         }
+    }
+
+    private static let holdKey = "auth.lastHold"
+
+    /// A held launch has no session to report itself with, so the next one that gets a session
+    /// reports it. The reason is an error code, never anything about the account.
+    private static func reportHold() {
+        guard let reason = UserDefaults.standard.string(forKey: holdKey) else { return }
+        UserDefaults.standard.removeObject(forKey: holdKey)
+        Telemetry.warn("auth.session_held", context: ["reason": reason])
     }
 
     /// Ensure a `profiles` row exists for the current user (holds risk_tolerance etc.).
