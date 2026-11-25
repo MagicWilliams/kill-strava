@@ -6,6 +6,20 @@ tags: [tempo, decision-log]
 
 Newest first. One entry per session that ships features or makes a product decision.
 
+## 2026-11-24: A failed token refresh no longer replaces the account
+
+### Decisions
+- **A new anonymous account is created in two cases only:** nothing is stored, or the auth server says the stored token or session no longer exists (`refresh_token_not_found`, `session_not_found`). Every other failure is "not signed in", with the stored session kept.
+- **`refresh_token_already_used`, `session_expired` and `user_banned` are held, not replaced.** The account still exists and the server side can undo each. The cost is that the launch stays on the unreachable screen until somebody does, and reinstalling doesn't clear it. David can veto this.
+- **The app keeps a session the SDK removes.** supabase-swift deletes it for several refusals (four in 2.55.5, `user_banned` too in 2.55.8), sometimes while the app is open, so storage now moves it to a second slot on the phone until the server has answered.
+
+### Shipped
+- In a PR, not merged. Nothing was deployed or applied.
+
+### Next up
+- Device check of the Keychain path, which simulators don't use.
+- What the unreachable screen should say to somebody held for `refresh_token_already_used`. It calls it a connection problem today.
+
 ## 2026-11-08: Open PRs merged, and coach and plan deployed
 
 ### Decisions
