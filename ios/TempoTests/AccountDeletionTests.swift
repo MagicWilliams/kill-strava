@@ -150,7 +150,7 @@ final class AccountDeletionTests: XCTestCase {
 
     func testARequestIsOnlyFollowedUpForTheAccountThatMadeIt() {
         XCTAssertEqual(AccountDeletion.recheck(asked(), current: a), .ask(asked()))
-        XCTAssertEqual(AccountDeletion.recheck(asked(), current: b), .stale,
+        XCTAssertEqual(AccountDeletion.recheck(asked(), current: b), .stale(asked()),
                        "one account's request says nothing about another")
         XCTAssertEqual(AccountDeletion.recheck(asked(), current: nil), .none)
         XCTAssertEqual(AccountDeletion.recheck(nil, current: a), .none)
@@ -182,6 +182,36 @@ final class AccountDeletionTests: XCTestCase {
         XCTAssertEqual(AccountDeletion.settle(asked(secondsAgo: 601), standing: .exists, now: now), .drop)
         XCTAssertEqual(AccountDeletion.settle(asked(secondsAgo: 86_400), standing: .unknown, now: now), .keepAsking,
                        "a day offline is not an answer")
+    }
+
+    func testAnUnsettledDeletionNeverReachesOnboarding() {
+        // The auth check timed out, the profile read worked, and there was no row. Treating
+        // that as a new athlete sends a user who doesn't exist through setup.
+        XCTAssertTrue(AccountDeletion.blocksLaunch(unsettled: true, profile: .new))
+        XCTAssertFalse(AccountDeletion.blocksLaunch(unsettled: true, profile: .onboarded), "kept their account")
+        XCTAssertFalse(AccountDeletion.blocksLaunch(unsettled: true, profile: .unreadable), "the gate says its own piece")
+        XCTAssertFalse(AccountDeletion.blocksLaunch(unsettled: false, profile: .new), "a new athlete is let in")
+    }
+
+    /// The session went before the answer came. Nothing can ask on that account's behalf again,
+    /// so this is the last chance for what it left here to go.
+    func testAStaleRequestClearsWhatItsAccountLeft() throws {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+        let source = try String(contentsOf: root.appendingPathComponent("Tempo/Services/RunStore.swift"), encoding: .utf8)
+        let stale = try XCTUnwrap(source.range(of: "case .stale(let old):"))
+        let clears = try XCTUnwrap(source.range(of: "clearLeftovers(of: old)", range: stale.upperBound..<source.endIndex))
+        let forgets = try XCTUnwrap(source.range(of: "AccountGateway.asked = nil", range: stale.upperBound..<source.endIndex))
+        XCTAssertLessThan(clears.lowerBound, forgets.lowerBound, "cleared before the request is forgotten")
+
+        let start = try XCTUnwrap(source.range(of: "private func clearLeftovers("))
+        let end = try XCTUnwrap(source.range(of: "private func forgetDeletedAccount(", range: start.upperBound..<source.endIndex))
+        let body = source[start.upperBound..<end.lowerBound]
+        for store in ["AccountDeletion.localKeys", "AccountDeletion.unscopedKeys", "RecordedRunSaver.dropQueued(by:",
+                      "URLCache.shared.removeAllCachedResponses()", "clearWidgetSnapshot()"] {
+            XCTAssertTrue(body.contains(store), "a stale request must reach \(store)")
+        }
+        XCTAssertFalse(body.contains("InProgressRunStore"), "a run in progress is this launch's")
+        XCTAssertFalse(body.contains("signOut"), "the session held now is someone else's")
     }
 
     func testTheRequestSurvivesARelaunch() throws {

@@ -181,7 +181,7 @@ final class RunStore: ObservableObject {
         AccountGateway.asked = nil
     }
 
-    private enum DeletionCheck { case nothingToSettle, finished, unconfirmed }
+    private enum DeletionCheck { case nothingToSettle, unsettled, finished, unconfirmed }
 
     /// Settle a deletion whose answer never arrived, before anything is loaded for its account.
     ///
@@ -193,7 +193,9 @@ final class RunStore: ObservableObject {
         switch AccountDeletion.recheck(AccountGateway.asked, current: Supa.userID) {
         case .none:
             return .nothingToSettle
-        case .stale:
+        case .stale(let old):
+            // Cleared before the request is: if the app dies part way, the next launch repeats it.
+            clearLeftovers(of: old)
             AccountGateway.asked = nil
             return .nothingToSettle
         case .ask(let pending):
@@ -202,7 +204,7 @@ final class RunStore: ObservableObject {
 
         switch AccountDeletion.settle(asked, standing: await AccountGateway.standing(), now: .now) {
         case .keepAsking:
-            return .nothingToSettle
+            return .unsettled
         case .drop:
             AccountGateway.asked = nil
             return .nothingToSettle
@@ -212,6 +214,21 @@ final class RunStore: ObservableObject {
             await leaveDeletedAccount(asked.uid)
             return .finished
         }
+    }
+
+    /// What an account left on this phone when it asked to be deleted and its session went
+    /// before the answer came. No session is dropped here: there is none for it, and the one
+    /// held now belongs to someone else.
+    ///
+    /// Less than `forgetDeletedAccount` on purpose. A run in progress is this launch's, already
+    /// handed to the recorder, and it is not worth losing a run to tidy up after an account.
+    private func clearLeftovers(of asked: AccountDeletion.Asked) {
+        for key in AccountDeletion.localKeys(uid: asked.uid.uuidString) + AccountDeletion.unscopedKeys {
+            UserDefaults.standard.removeObject(forKey: key)
+        }
+        RecordedRunSaver.dropQueued(by: asked)
+        URLCache.shared.removeAllCachedResponses()
+        clearWidgetSnapshot()
     }
 
     /// Everything about the deleted account that lives on this phone rather than on the
@@ -274,10 +291,13 @@ final class RunStore: ObservableObject {
     private func runLaunchSequence() async {
         phase = .loading
         var signedIn = await Supa.signInAnonymouslyIfNeeded()
+        var deletionUnsettled = false
         if signedIn {
             switch await settleDeletion() {
             case .nothingToSettle:
                 break
+            case .unsettled:
+                deletionUnsettled = true
             case .finished:
                 signedIn = await Supa.signInAnonymouslyIfNeeded()
             case .unconfirmed:
@@ -290,6 +310,13 @@ final class RunStore: ObservableObject {
         }
         if signedIn { await Supa.ensureProfile() }
         let profile = signedIn ? await loadProfile() : .unreadable
+        // The auth server couldn't say whether the account is still there, and its profile has
+        // just said it isn't. Retry asks again (#295).
+        guard !AccountDeletion.blocksLaunch(unsettled: deletionUnsettled, profile: profile) else {
+            launch = .unreachable(reason: LaunchGate.Copy.deletionUnconfirmed)
+            phase = .idle
+            return
+        }
         // Before `launch` is set, not after: the first frame of the app has to know whether to
         // ask, and the `refresh` below generates takeaways that have to know whether they can.
         if signedIn, profile != .unreadable { await CoachConsentStore.shared.load() }

@@ -18,6 +18,7 @@ import {
   accountResult,
   bearerToken,
   DELETE_FAILED_MESSAGE,
+  eachOf,
   ownsAll,
   partitionListing,
   PHOTO_BUCKET,
@@ -25,6 +26,7 @@ import {
   resolveCaller,
   runSteps,
   type StepResult,
+  SWEEP_WIDTH,
   verdict,
 } from "./deletion.ts";
 
@@ -96,47 +98,58 @@ Deno.serve(async (req) => {
 /**
  * Every object under `<uid>/`, gone.
  *
- * Storage has no "delete this prefix", so the folder is walked and its keys removed a page
- * at a time. An empty folder is a success: most athletes have no photos at all, and that
- * must never be the thing that stops an account being deleted.
- *
- * Paging is by what is left behind. Removing objects takes their rows out of the listing,
- * so the next page of the same folder begins where the folders this page held now sit;
- * advancing by the page size instead would step straight over whatever moved up.
+ * Storage has no "delete this prefix", so the folders are walked a level at a time, several
+ * folders of a level at once. A level is listed to its end before any of its folders is
+ * emptied: emptying one takes it out of its parent's listing and would move the next page. An
+ * empty folder is a success: most athletes have no photos at all, and that must never be the
+ * thing that stops an account being deleted.
  */
 async function removePhotos(admin: SupabaseClient, uid: string): Promise<StepResult> {
-  const bucket = admin.storage.from(PHOTO_BUCKET);
-  const queue: Array<{ prefix: string; depth: number }> = [{ prefix: photoPrefix(uid), depth: 0 }];
-
-  while (queue.length > 0) {
-    const { prefix, depth } = queue.pop()!;
-    if (depth >= MAX_DEPTH) {
-      return { ok: false, detail: "deeper than a photo key goes" };
-    }
-
-    let offset = 0;
-    while (true) {
-      const { data, error } = await bucket.list(prefix, { limit: PAGE, offset });
-      if (error) return { ok: false, detail: `list: ${error.message}` };
-      const page = data ?? [];
-      if (page.length === 0) break;
-
-      const { objects, folders } = partitionListing(prefix, page);
-      if (objects.length > 0) {
-        // Belt to partitionListing's braces: nothing outside this athlete's folder, ever.
-        if (!ownsAll(uid, objects)) return { ok: false, detail: "key outside the caller's folder" };
-        const { error: removeError } = await bucket.remove(objects);
-        if (removeError) return { ok: false, detail: `remove: ${removeError.message}` };
-      }
-      for (const folder of folders) queue.push({ prefix: folder, depth: depth + 1 });
-
-      // Nothing removed and nothing new to skip means the page was neither: stop rather
-      // than ask for it again.
-      if (objects.length === 0 && folders.length === 0) break;
-      offset += folders.length;
-    }
+  let level = [photoPrefix(uid)];
+  for (let depth = 0; level.length > 0; depth++) {
+    if (depth >= MAX_DEPTH) return { ok: false, detail: "deeper than a photo key goes" };
+    const below: string[] = [];
+    const swept = await eachOf(level, SWEEP_WIDTH, (prefix) => sweepFolder(admin, uid, prefix, below));
+    if (!swept.ok) return swept;
+    level = below;
   }
   return { ok: true };
+}
+
+/**
+ * Remove one folder's objects a page at a time, and add its folders to `below`.
+ *
+ * Paging is by what is left behind. Removing objects takes their rows out of the listing, so
+ * the next page begins where the folders this page held now sit; advancing by the page size
+ * instead would step straight over whatever moved up.
+ */
+async function sweepFolder(
+  admin: SupabaseClient,
+  uid: string,
+  prefix: string,
+  below: string[],
+): Promise<StepResult> {
+  const bucket = admin.storage.from(PHOTO_BUCKET);
+  let offset = 0;
+  while (true) {
+    const { data, error } = await bucket.list(prefix, { limit: PAGE, offset });
+    if (error) return { ok: false, detail: `list: ${error.message}` };
+    const page = data ?? [];
+
+    const { objects, folders } = partitionListing(prefix, page);
+    if (objects.length > 0) {
+      // Belt to partitionListing's braces: nothing outside this athlete's folder, ever.
+      if (!ownsAll(uid, objects)) return { ok: false, detail: "key outside the caller's folder" };
+      const { error: removeError } = await bucket.remove(objects);
+      if (removeError) return { ok: false, detail: `remove: ${removeError.message}` };
+    }
+    below.push(...folders);
+
+    // A short page is the last one. Nothing removed and nothing new to skip means the page
+    // was neither: stop rather than ask for it again.
+    if (page.length < PAGE || (objects.length === 0 && folders.length === 0)) return { ok: true };
+    offset += folders.length;
+  }
 }
 
 /** The auth user, and with it every row that cascades off it (migrations 0001 to 0025). */

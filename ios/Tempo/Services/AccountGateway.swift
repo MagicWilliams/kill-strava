@@ -27,12 +27,35 @@ enum AccountGateway {
         let deleted: Bool?
     }
 
+    /// How long to wait for a deletion. `Supa`'s session gives up on any request after thirty
+    /// seconds, and a long photo journal can take longer to remove than that. Giving up early
+    /// reports a deletion that is going fine as one that couldn't be confirmed.
+    private static let limit: TimeInterval = 120
+
+    private static let session: URLSession = {
+        let config = URLSessionConfiguration.ephemeral
+        config.timeoutIntervalForRequest = limit
+        config.timeoutIntervalForResource = limit
+        config.waitsForConnectivity = false
+        return URLSession(configuration: config)
+    }()
+
     /// Asks the server to delete this account. Throws what the functions client throws,
     /// including a non-2xx, which is how a refused or half-finished deletion arrives.
+    ///
+    /// A functions client of its own, for `limit` and nothing else: `Supa.client.functions`
+    /// would bring the shorter session with it.
     static func deleteAccount() async throws -> AccountDeletion.Outcome {
-        let reply: Reply = try await Supa.client.functions.invoke(
+        let token = try await Supa.client.auth.session.accessToken
+        let client = FunctionsClient(
+            url: SupabaseConfig.url.appendingPathComponent("functions/v1"),
+            headers: ["apikey": SupabaseConfig.publishableKey, "Authorization": "Bearer \(token)"],
+            region: Optional<String>.none,
+            fetch: { try await session.data(for: $0) }
+        )
+        let reply: Reply = try await client.invoke(
             function,
-            options: FunctionInvokeOptions(body: Request())
+            options: FunctionInvokeOptions(body: Request(), timeoutInterval: limit)
         )
         return AccountDeletion.outcome(deleted: reply.deleted)
     }

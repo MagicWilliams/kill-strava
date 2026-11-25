@@ -6,6 +6,7 @@ import {
   DELETE_FAILED_MESSAGE,
   DELETION_ORDER,
   type DeletionStep,
+  eachOf,
   ownsAll,
   partitionListing,
   PHOTO_BUCKET,
@@ -102,6 +103,36 @@ Deno.test("only keys inside the athlete's own folder may be removed", () => {
   assertFalse(ownsAll(MINE, [`${MINE}/run/photo.jpg`, `${SOMEONE_ELSE}/run/photo.jpg`]));
   assertFalse(ownsAll(MINE, [photoPrefix(MINE)]), "the bare folder names no object");
   assertFalse(ownsAll(MINE, [`${MINE}-and-more/run/photo.jpg`]), "a uid prefix is not the uid");
+});
+
+Deno.test("folders are swept several at once, and every one of them", async () => {
+  const items = Array.from({ length: 50 }, (_, i) => i);
+  const seen: number[] = [];
+  let running = 0;
+  let most = 0;
+  const result = await eachOf(items, 8, async (item) => {
+    running++;
+    most = Math.max(most, running);
+    await Promise.resolve();
+    seen.push(item);
+    running--;
+    return { ok: true };
+  });
+  assertEquals(result, { ok: true });
+  assertEquals(seen.sort((a, b) => a - b), items);
+  assert(most > 1 && most <= 8, `ran ${most} at once`);
+  assertEquals(await eachOf([], 8, () => Promise.resolve({ ok: false })), { ok: true }, "nothing to sweep");
+});
+
+Deno.test("one folder that could not be swept fails the sweep and stops it", async () => {
+  let started = 0;
+  const result = await eachOf(Array.from({ length: 50 }, (_, i) => i), 4, async (item) => {
+    started++;
+    await Promise.resolve();
+    return item === 2 ? { ok: false, detail: "storage down" } : { ok: true };
+  });
+  assertEquals(result, { ok: false, detail: "storage down" });
+  assert(started < 50, "nothing new starts after a failure");
 });
 
 // The steps, and what each failure leaves behind.

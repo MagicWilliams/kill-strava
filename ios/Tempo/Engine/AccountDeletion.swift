@@ -95,13 +95,15 @@ enum AccountDeletion {
         /// This account was asked to go, and no answer arrived. Find out.
         case ask(Asked)
         /// It was about an account this phone no longer holds a session for. Nothing can be
-        /// asked on its behalf, and it says nothing about the one signed in now.
-        case stale
+        /// asked on its behalf, and it says nothing about the one signed in now. What that
+        /// account left on this phone goes: its athlete asked for that, and with its session
+        /// gone the copies lead nowhere.
+        case stale(Asked)
     }
 
     static func recheck(_ asked: Asked?, current: UUID?) -> Recheck {
         guard let asked, let current else { return .none }
-        return asked.uid == current ? .ask(asked) : .stale
+        return asked.uid == current ? .ask(asked) : .stale(asked)
     }
 
     /// What the auth server says about the account this phone holds a session for.
@@ -142,6 +144,14 @@ enum AccountDeletion {
         case .unknown: return .keepAsking
         case .exists: return now.timeIntervalSince(asked.at) < mayStillBeRunning ? .keepAsking : .drop
         }
+    }
+
+    /// Must a launch stop short of onboarding? Yes while a deletion is unsettled and there is
+    /// no onboarded profile behind the session. An account that could ask to be deleted had
+    /// one, so its absence means the account is gone or going, and setup would be saving
+    /// answers for a user who doesn't exist.
+    static func blocksLaunch(unsettled: Bool, profile: LaunchGate.Profile) -> Bool {
+        unsettled && profile == .new
     }
 
     enum Copy {

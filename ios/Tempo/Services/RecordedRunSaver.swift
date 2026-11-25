@@ -74,8 +74,9 @@ enum RecordedRunSaver {
     /// could not write with no row to point at — through the same `RaceLinker` write.
     static func retryPending(store: RunStore) async {
         guard let account = Supa.userID else { return }
-        if PendingQueue.load().contains(where: { $0.owner == nil }) {
-            PendingQueue.update { RecordedRunSave.claiming($0, for: account) }
+        let asked = AccountGateway.asked?.uid
+        if PendingQueue.load().contains(where: { $0.owner != account }) {
+            PendingQueue.update { RecordedRunSave.claiming($0, for: account, deletionAsked: asked) }
         }
         let queue = PendingQueue.load().filter { RecordedRunSave.mayRetry($0, as: account) }
         guard !queue.isEmpty else { return }
@@ -103,6 +104,12 @@ enum RecordedRunSaver {
     /// sign in as that account again, so nothing could ever send them.
     static func eraseQueue() {
         PendingQueue.erase()
+    }
+
+    /// Drop what an account that asked to be deleted left in the queue (`RecordedRunSave.leaving`).
+    static func dropQueued(by asked: AccountDeletion.Asked) {
+        guard !PendingQueue.load().isEmpty else { return }
+        PendingQueue.update { RecordedRunSave.leaving($0, behind: asked) }
     }
 
     // MARK: - One attempt

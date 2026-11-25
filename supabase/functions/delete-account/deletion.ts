@@ -165,6 +165,33 @@ export function ownsAll(uid: string, keys: readonly string[]): boolean {
   return keys.every((key) => key.startsWith(prefix) && key.length > prefix.length);
 }
 
+/** How many run folders are swept at once. */
+export const SWEEP_WIDTH = 8;
+
+/**
+ * Run `work` over `items`, at most `width` at a time, and stop starting new ones at the first
+ * failure. That failure is the answer: a sweep that missed one folder is not a sweep.
+ *
+ * In parallel because the phone is waiting. One folder at a time, a long photo journal ran
+ * past what the app would wait for, and the athlete was told it couldn't be confirmed.
+ */
+export async function eachOf<T>(
+  items: readonly T[],
+  width: number,
+  work: (item: T) => Promise<StepResult>,
+): Promise<StepResult> {
+  let next = 0;
+  let failed: StepResult | null = null;
+  const lane = async () => {
+    while (!failed && next < items.length) {
+      const result = await work(items[next++]);
+      if (!result.ok) failed ??= result;
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(Math.max(1, width), items.length) }, lane));
+  return failed ?? { ok: true };
+}
+
 /** How one step went. `ok` is the only thing the verdict reads; `detail` is for the log. */
 export type StepResult = { ok: boolean; detail?: string };
 

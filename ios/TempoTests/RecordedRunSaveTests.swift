@@ -380,15 +380,43 @@ final class RecordedRunSaveTests: XCTestCase {
 
     }
 
-    /// A build before this wrote no owner, and the entry may be the only copy of a journal. The
-    /// account that finds it keeps it, from then on against anyone else.
-    func testARunQueuedByAnOlderBuildIsClaimedOnce() {
-        let mine = UUID(), someoneElse = UUID()
+    /// A build before this wrote no owner, and the entry may be the only copy of a journal.
+    func testARunQueuedByAnOlderBuildIsClaimed() {
+        let mine = UUID()
         let claimed = RecordedRunSave.claiming([queued(.outdoor, goalID: nil)], for: mine)
         XCTAssertEqual(claimed.map(\.owner), [mine])
         XCTAssertTrue(RecordedRunSave.mayRetry(claimed[0], as: mine))
-        XCTAssertEqual(RecordedRunSave.claiming(claimed, for: someoneElse), claimed, "and is not claimed again")
-        XCTAssertFalse(RecordedRunSave.mayRetry(claimed[0], as: someoneElse))
+    }
+
+    /// A session lost without a deletion: same phone, same person, new account. Nobody can sign
+    /// in as the old one to send this, so left with it the notes and photo are lost for good.
+    func testARunFromALostSessionGoesToTheAccountThatReplacedIt() {
+        let lost = UUID(), mine = UUID()
+        var pending = queued(.outdoor, goalID: nil)
+        pending.owner = lost
+        XCTAssertEqual(RecordedRunSave.claiming([pending], for: mine).map(\.owner), [mine])
+        XCTAssertEqual(RecordedRunSave.claiming([pending], for: mine, deletionAsked: lost).map(\.owner), [lost],
+                       "unless that account asked to be deleted")
+        XCTAssertEqual(RecordedRunSave.claiming([pending], for: mine, deletionAsked: mine).map(\.owner), [mine],
+                       "someone else's request is not this run's")
+        pending.owner = nil
+        XCTAssertEqual(RecordedRunSave.claiming([pending], for: mine, deletionAsked: lost).map(\.owner), [mine])
+    }
+
+    func testAStaleDeletionTakesOnlyWhatThatAccountQueued() {
+        let gone = UUID(), mine = UUID()
+        func entry(owner: UUID?, at offset: TimeInterval) -> RecordedRunSave.Pending {
+            var pending = queued(.outdoor, goalID: nil)
+            pending.owner = owner
+            pending.queuedAt = Date(timeIntervalSince1970: 10_000 + offset)
+            return pending
+        }
+        let asked = AccountDeletion.Asked(uid: gone, at: Date(timeIntervalSince1970: 10_000))
+        let kept = RecordedRunSave.leaving([
+            entry(owner: gone, at: -60), entry(owner: gone, at: 60),
+            entry(owner: nil, at: -60), entry(owner: nil, at: 60), entry(owner: mine, at: -60),
+        ], behind: asked)
+        XCTAssertEqual(kept, [entry(owner: nil, at: 60), entry(owner: mine, at: -60)])
     }
 
     func testOnlyANotNowStaysQueued() {
