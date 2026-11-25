@@ -1,7 +1,7 @@
 ---
 title: Tempo roadmap
 tags: [tempo, roadmap]
-updated: 2026-11-12
+updated: 2026-11-24
 ---
 
 # Roadmap
@@ -17,21 +17,22 @@ reinstall, delete it if they want, get a working first launch, and get builds on
 rather than on every merge.
 
 This is no longer hypothetical. The public TestFlight opened on 2026-11-05 and other people are
-using the app. Consent (#263), per-user usage limits (#262) and request size caps (#276)
-already shipped. What's left:
+using the app. Per-user usage limits (#262) and request size caps (#276) are live. The consent
+screen (#263) merged, but only newer builds have it and the server doesn't check it, so consent
+is still open (#283). What's left:
 
 | # | Item | State | Why it's on the bar |
 |---|---|---|---|
 | #294 | Sign in with Apple, linked to the anonymous account | needs David | A reinstall or new phone loses the plan, coach history and corrections today |
-| #295 | Delete my account and data | agent-ready | App Store 5.1.1(v), and the only way out today is asking David |
+| #295 | Delete my account and data | in review (PR #299) | App Store 5.1.1(v), and the only way out today is asking David |
 | #285 | First launch never shows an empty app | needs David | 2 of the first 5 testers got zero runs |
-| #296 | Promote builds to testers by hand, or not | needs David | Every green merge may reach strangers today |
+| #296 | Set the external TestFlight group to hand-promoted builds | needs David | Decided 2026-11-08 (#279). Only the App Store Connect setting is left, and agents can't see it |
 | #297 | Mark David's accounts so triage can split him from testers | needs David | A tester's crash currently reads as his |
 | #132 | Recorder field test, or label it unmeasured | needs device | Recorded runs save to testers' Apple Health |
-| #283 | Device check that the consent sheet gates the coach | needs device | The code shipped. Nobody has seen it run |
+| #283 | Enforce consent on the server, and check the screen on a device | needs David | Older builds still reach the coach with no answer on record |
 
-Four of the seven are waiting on a decision, not on code. Each issue states the options and a
-recommendation, so answering with a letter is enough.
+Five of the seven are waiting on David, not on code. Each issue states the options and a
+recommendation.
 
 Done when every row above is closed. Then the "What to Test" note for the next external
 build can stop saying "this might lose your data".
@@ -41,8 +42,9 @@ build can stop saying "this might lose your data".
 After the bar, the open product question is what keeps a stranger using Tempo:
 
 - **The coach and the plan.** This is what testers actually used in their first week.
-- **The Drift Detector** ([[prd-02-drift-detector]]). The stated v1 feature. The fitness
-  estimate shipped (#247). The expected curve and the drift tiers haven't started.
+- **The Drift Detector** ([[prd-02-drift-detector]]). The stated v1 feature. The engine is
+  merged: the fitness estimate, the expected curve and the drift tiers (#244, #235, #236). The
+  hero chart and weekly tab aren't built.
 
 Pick one and give it the next milestone. Don't pick both.
 
