@@ -1,4 +1,5 @@
 import Foundation
+import os
 import Supabase
 
 /// Shared Supabase client. Auth, Postgres (PostgREST), and Edge Functions all hang off this.
@@ -50,9 +51,20 @@ enum Supa {
         #endif
     }
 
-    /// Current signed-in user id, if any.
+    /// Current signed-in user id, if any. Nil for an account the server has confirmed deleted,
+    /// from that moment and not from the sign-out that follows it.
     static var userID: UUID? {
-        client.auth.currentUser?.id
+        AccountDeletion.signedIn(stored: client.auth.currentUser?.id,
+                                 deleted: deletedAccounts.withLock { $0 })
+    }
+
+    /// Accounts this process has seen the server delete. In memory is enough: the next launch
+    /// finds no session for them.
+    private static let deletedAccounts = OSAllocatedUnfairLock<Set<UUID>>(initialState: [])
+
+    /// From here on nothing in the app is signed in as `uid` (#295).
+    static func markDeleted(_ uid: UUID) {
+        deletedAccounts.withLock { _ = $0.insert(uid) }
     }
 
     /// Ensure a session exists. Beta-of-one: anonymous auth (the session persists in the
@@ -63,7 +75,12 @@ enum Supa {
     /// showing a retry and showing a splash forever.
     @discardableResult
     static func signInAnonymouslyIfNeeded() async -> Bool {
-        if (try? await client.auth.session) != nil { return true }
+        if let held = try? await client.auth.session {
+            guard deletedAccounts.withLock({ $0.contains(held.user.id) }) else { return true }
+            // The sign-out after a deletion didn't take. A session for nobody must not pass
+            // for being signed in.
+            await signOutLocally()
+        }
         do {
             _ = try await client.auth.signInAnonymously()
             // Verify the session actually landed rather than trusting the call that made it.
@@ -77,6 +94,13 @@ enum Supa {
             Telemetry.error("auth.anonymous_sign_in_failed", error)
             return false
         }
+    }
+
+    /// Stop every request still in flight for an account that has been deleted (#295): a photo
+    /// half uploaded, a sync mid-page. Storage would accept the upload, because the token is
+    /// good for as long as it was going to be, and nothing would ever name that photo again.
+    static func cancelRequestsInFlight() async {
+        for task in await session.allTasks { task.cancel() }
     }
 
     /// Drop the stored session without telling the server (#295).

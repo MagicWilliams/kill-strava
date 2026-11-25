@@ -36,4 +36,33 @@ enum AccountGateway {
         )
         return AccountDeletion.outcome(deleted: reply.deleted)
     }
+
+    /// Whether the account this phone holds a session for still exists, from the auth server
+    /// itself. Changes nothing, which is why a launch may ask it (`RunStore.settleDeletion`).
+    static func standing() async -> AccountDeletion.Standing {
+        do {
+            _ = try await Deadline.run { try await Supa.client.auth.user() }
+            return .exists
+        } catch let error as AuthError {
+            return AccountDeletion.standing(authErrorCode: error.errorCode.rawValue)
+        } catch {
+            return .unknown
+        }
+    }
+
+    // MARK: - The request, on disk until it is settled
+
+    static var asked: AccountDeletion.Asked? {
+        get {
+            UserDefaults.standard.data(forKey: AccountDeletion.askedKey)
+                .flatMap { try? JSONDecoder().decode(AccountDeletion.Asked.self, from: $0) }
+        }
+        set {
+            guard let data = newValue.flatMap({ try? JSONEncoder().encode($0) }) else {
+                UserDefaults.standard.removeObject(forKey: AccountDeletion.askedKey)
+                return
+            }
+            UserDefaults.standard.set(data, forKey: AccountDeletion.askedKey)
+        }
+    }
 }

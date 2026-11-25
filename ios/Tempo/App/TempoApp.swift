@@ -53,6 +53,7 @@ struct TempoApp: App {
                 // re-renders the whole tree in the new unit.
                 .environment(\.units, runs.units)
                 .task { await runs.start() }
+                .onChange(of: runs.accountGeneration) { router.reset() }
                 // Widget taps (#76): Week opens Today, Coach opens the Coach tab.
                 .onOpenURL { url in
                     switch WidgetLink(url: url) {

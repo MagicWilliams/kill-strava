@@ -124,6 +124,28 @@ enum RecordedRunSave {
         /// goal is still the active one: a block replaced while the run sat queued does not
         /// get someone else's race filed under it.
         var goalID: UUID? = nil
+        /// The account it was recorded under (#295). The file outlives the session it was
+        /// written in, and a retry runs as whoever is signed in by then. Nil for a run queued
+        /// by an older build, which didn't say; `claiming` fills it in.
+        var owner: UUID? = nil
+    }
+
+    /// Give runs queued by an older build to the account that finds them, which on the first
+    /// refresh after updating is the one that recorded them. Left unowned they would stay
+    /// anyone's, and go up as whoever signs in next.
+    static func claiming(_ queue: [Pending], for account: UUID) -> [Pending] {
+        queue.map { pending in
+            var claimed = pending
+            claimed.owner = pending.owner ?? account
+            return claimed
+        }
+    }
+
+    /// May the signed-in account retry this run? Only its own. One that belongs to another
+    /// account stays on disk: its journal and photo are not the new account's to have, and
+    /// nothing has said the old one is gone.
+    static func mayRetry(_ pending: Pending, as account: UUID) -> Bool {
+        pending.owner == account
     }
 
     /// The link to write once a queued run's row lands on a retry, or nil for none (#178).

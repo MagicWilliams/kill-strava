@@ -366,6 +366,31 @@ final class RecordedRunSaveTests: XCTestCase {
         XCTAssertNil(RecordedRunSave.raceLink(for: decoded[0], savedRunID: UUID(), goal: raceGoal(), calendar: cal))
     }
 
+    /// The queue is a file, and files outlive sessions (#295). Deleting the account signs the
+    /// phone in as someone new and then refreshes, and the refresh retries the queue: the old
+    /// athlete's run, notes and photo would have gone up as the new one's.
+    func testAQueuedRunIsOnlyRetriedByTheAccountThatRecordedIt() throws {
+        let mine = UUID(), someoneElse = UUID()
+        var pending = queued(.outdoor, goalID: nil)
+        pending.owner = mine
+        let relaunched = try JSONDecoder().decode(RecordedRunSave.Pending.self, from: JSONEncoder().encode(pending))
+        XCTAssertEqual(relaunched.owner, mine, "who recorded it survives the relaunch")
+        XCTAssertTrue(RecordedRunSave.mayRetry(relaunched, as: mine))
+        XCTAssertFalse(RecordedRunSave.mayRetry(relaunched, as: someoneElse))
+
+    }
+
+    /// A build before this wrote no owner, and the entry may be the only copy of a journal. The
+    /// account that finds it keeps it, from then on against anyone else.
+    func testARunQueuedByAnOlderBuildIsClaimedOnce() {
+        let mine = UUID(), someoneElse = UUID()
+        let claimed = RecordedRunSave.claiming([queued(.outdoor, goalID: nil)], for: mine)
+        XCTAssertEqual(claimed.map(\.owner), [mine])
+        XCTAssertTrue(RecordedRunSave.mayRetry(claimed[0], as: mine))
+        XCTAssertEqual(RecordedRunSave.claiming(claimed, for: someoneElse), claimed, "and is not claimed again")
+        XCTAssertFalse(RecordedRunSave.mayRetry(claimed[0], as: someoneElse))
+    }
+
     func testOnlyANotNowStaysQueued() {
         // No answer at all is the dead spot at the end of a run — the case the queue is for.
         for status in [nil, 408, 429, 500, 503] as [Int?] {

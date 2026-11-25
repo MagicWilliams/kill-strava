@@ -25,10 +25,12 @@ enum Telemetry {
         _ detail: String? = nil,
         context: [String: String] = [:]
     ) {
+        // Read here and not in the task: an event that waited its turn past an account
+        // deletion (#295) must not be filed under the account that came next.
+        guard let uid = Supa.userID?.uuidString else { return }
         // Detached so a caller's cancellation (a torn-down view, an abandoned refresh)
         // never silences the report about why it was torn down.
         Task.detached(priority: .background) {
-            guard let uid = Supa.userID?.uuidString else { return }
             let row = EventInsert(
                 user_id: uid,
                 level: level.rawValue,

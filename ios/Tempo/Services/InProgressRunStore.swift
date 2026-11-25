@@ -65,6 +65,16 @@ enum InProgressRunStore {
         try? FileManager.default.removeItem(at: url)
     }
 
+    /// The snapshot and the quarantined one, for an account that no longer exists (#295).
+    /// `clear` leaves the second alone: it is evidence, until the run in it is someone's who
+    /// asked for their data to go.
+    static func erase() {
+        clear()
+        guard let url = fileURL else { return }
+        try? FileManager.default.removeItem(
+            at: url.deletingLastPathComponent().appendingPathComponent(quarantineName))
+    }
+
     // MARK: - Private
 
     private static var fileURL: URL? {

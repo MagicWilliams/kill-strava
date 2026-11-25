@@ -22,9 +22,9 @@ final class ShoeStore: ObservableObject {
     @Published private var storedDefaultID: UUID?
 
     /// Read by the post-run picker too — see `ShoeMileage.resolvedDefault`.
-    static let defaultShoeKey = "shoes.defaultShoeID"
+    nonisolated static let defaultShoeKey = "shoes.defaultShoeID"
     /// Miles at which a pair is nudged toward retirement. Clamped by `ShoeMileage`.
-    static let retirementMilesKey = "shoes.retirementMiles"
+    nonisolated static let retirementMilesKey = "shoes.retirementMiles"
 
     private let defaults: UserDefaults
 

@@ -23,6 +23,9 @@ final class CoachConsentStore: ObservableObject {
     func load() async {
         guard let uid = Supa.userID?.uuidString else { return }
         let server = await readServer(uid: uid)
+        // The account was deleted while this was being read (#295). Its "agreed" must not
+        // become the answer of whoever comes next, nor be written back to the phone.
+        guard uid == Supa.userID?.uuidString else { return }
         // The phone's copy is read after the await, not before: an answer given while the read
         // was in flight has to be in this comparison, or the stale result would overwrite it.
         let resolution = CoachConsent.resolve(server: server, local: localRecord(uid: uid))
