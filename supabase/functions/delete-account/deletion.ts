@@ -17,8 +17,12 @@ export const PHOTO_BUCKET = "run-photos";
  * Storage objects, and `storage.objects` rows survive the user they belonged to. Once the
  * user is gone the uid is the only thing that ever named those objects, so photos go first
  * or they stay forever.
+ *
+ * `stragglers` is the photo sweep again, after the account. The phone may have been uploading
+ * a photo while the first sweep ran, and Storage checks a token's signature, not whether its
+ * user still exists, so that upload is accepted even after the account has gone.
  */
-export const DELETION_ORDER = ["photos", "account"] as const;
+export const DELETION_ORDER = ["photos", "account", "stragglers"] as const;
 export type DeletionStep = typeof DELETION_ORDER[number];
 
 /** One entry of a Storage `list()` page. A folder placeholder has no `id`. */
@@ -39,6 +43,78 @@ export function callerID(user: { id?: unknown } | null | undefined): string | nu
   if (typeof id !== "string") return null;
   const uid = id.toLowerCase();
   return UUID.test(uid) ? uid : null;
+}
+
+/** The bearer token out of an `Authorization` header, or null. */
+export function bearerToken(authorization: string | null): string | null {
+  const match = /^Bearer\s+(\S+)$/i.exec(authorization?.trim() ?? "");
+  return match ? match[1] : null;
+}
+
+/**
+ * The `sub` a token claims. It proves nothing by itself: nothing here checks a signature, so
+ * the only caller is `resolveCaller`, after the auth server has checked it.
+ */
+function claimedSubject(token: string): string | null {
+  const parts = token.split(".");
+  if (parts.length !== 3) return null;
+  try {
+    const base64 = parts[1].replace(/-/g, "+").replace(/_/g, "/");
+    return callerID({ id: JSON.parse(atob(base64))?.sub });
+  } catch {
+    return null;
+  }
+}
+
+/** The parts of an auth error a decision is made on. Never the message: wording changes. */
+export type AuthFailure = { status?: unknown; code?: unknown };
+
+/** The auth server saying, in its own code and not a proxy's, that a user does not exist. */
+function saysUserNotFound(error: AuthFailure | null | undefined): boolean {
+  const status = error?.status;
+  return error?.code === "user_not_found" && (status === 403 || status === 404);
+}
+
+export type Caller =
+  | { kind: "signed_in"; uid: string }
+  /** A genuine, unexpired token for an account that has already been deleted. */
+  | { kind: "already_gone"; uid: string }
+  | { kind: "nobody" };
+
+/**
+ * Who is asking, from what the auth server said about this token.
+ *
+ * `already_gone` is how a retry ends when the first answer was lost: the account went, the
+ * phone never heard, and refusing the retry with a 401 would leave it holding a dead session.
+ *
+ * `user_not_found` is the only code that means it. The auth server checks the signature and
+ * the expiry before it looks the user up, so an expired, malformed or forged token never gets
+ * that far: those are `bad_jwt`. A revoked session on a living account is `session_not_found`.
+ * An outage carries no code. Every one of those is nobody, and nobody is never told "deleted".
+ *
+ * `token` must be the one `answer` is about. The uid is read from it because a missing user
+ * has no row to read it from.
+ */
+export function resolveCaller(
+  answer: { user: { id?: unknown } | null | undefined; error: AuthFailure | null | undefined },
+  token: string,
+): Caller {
+  const uid = callerID(answer.user);
+  if (uid) return { kind: "signed_in", uid };
+  if (!answer.user && saysUserNotFound(answer.error)) {
+    const gone = claimedSubject(token);
+    if (gone) return { kind: "already_gone", uid: gone };
+  }
+  return { kind: "nobody" };
+}
+
+/**
+ * What `admin.deleteUser` came back with. "There is no such user" is the outcome asked for,
+ * not a failure: it is every retry after a lost reply, and the second of two taps that raced.
+ */
+export function accountResult(error: (AuthFailure & { message?: string }) | null): StepResult {
+  if (!error || saysUserNotFound(error)) return { ok: true };
+  return { ok: false, detail: error.message };
 }
 
 /**
@@ -98,15 +174,36 @@ export type Verdict = {
 };
 
 /**
- * The words the athlete reads when deletion did not happen. Like the usage limiter's, they
- * say that nothing changed, because the alternative reading, "it half worked", is the one
- * that would make someone stop trusting the answer.
+ * The words for a deletion that was not confirmed. They cannot say that nothing happened:
+ * photos go first, so a failure after that has already removed some, and an error from
+ * `deleteUser` does not prove the user is still there. What is true in every case is that it
+ * is not confirmed, and that trying again is the way to finish it.
  */
 export const DELETE_FAILED_MESSAGE =
-  "Tempo couldn't delete your account just now. Nothing was deleted, and your data is still here. Try again, or email david@delight.studio.";
+  "Tempo couldn't confirm that your account was deleted. Some or all of your data may already be gone. Try again to finish, or email david@delight.studio.";
 
 /**
- * 200 only when both steps succeeded.
+ * Run the steps in order and stop at the first that fails, so the account is never deleted
+ * while its photos are still in the bucket with nothing left to name them.
+ */
+export async function runSteps(
+  steps: Record<DeletionStep, () => Promise<StepResult>>,
+): Promise<Record<DeletionStep, StepResult>> {
+  const skipped: StepResult = { ok: false, detail: "not attempted" };
+  const results: Record<DeletionStep, StepResult> = {
+    photos: skipped,
+    account: skipped,
+    stragglers: skipped,
+  };
+  for (const step of DELETION_ORDER) {
+    results[step] = await steps[step]();
+    if (!results[step].ok) break;
+  }
+  return results;
+}
+
+/**
+ * 200 only when every step succeeded.
  *
  * A partial pass is a failure with a 500, and the app leaves the phone exactly as it was: a
  * sign-out on top of a half-finished deletion would strand whatever is left on the server

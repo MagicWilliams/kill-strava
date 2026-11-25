@@ -1,12 +1,18 @@
 import { assert, assertEquals, assertFalse } from "jsr:@std/assert@^1";
 import {
+  accountResult,
+  bearerToken,
   callerID,
   DELETE_FAILED_MESSAGE,
   DELETION_ORDER,
+  type DeletionStep,
   ownsAll,
   partitionListing,
   PHOTO_BUCKET,
   photoPrefix,
+  resolveCaller,
+  runSteps,
+  type StepResult,
   verdict,
 } from "./deletion.ts";
 
@@ -34,7 +40,8 @@ Deno.test("no user, no id, or a non-uuid id is nobody", () => {
 Deno.test("photos are deleted before the account", () => {
   // Not cosmetic. Postgres cascades into every user table but not into Storage, and once the
   // auth user is gone nothing names `<uid>/...` any more.
-  assertEquals([...DELETION_ORDER], ["photos", "account"]);
+  // Then the photos again, for an upload that was in flight during the first sweep.
+  assertEquals([...DELETION_ORDER], ["photos", "account", "stragglers"]);
 });
 
 Deno.test("the prefix is the athlete's own folder in the private bucket", () => {
@@ -97,30 +104,152 @@ Deno.test("only keys inside the athlete's own folder may be removed", () => {
   assertFalse(ownsAll(MINE, [`${MINE}-and-more/run/photo.jpg`]), "a uid prefix is not the uid");
 });
 
-Deno.test("200 only when the photos went and the account went", () => {
-  assertEquals(verdict({ photos: { ok: true }, account: { ok: true } }), {
-    status: 200,
-    body: { deleted: true },
+// The steps, and what each failure leaves behind.
+
+const OK: StepResult = { ok: true };
+const NO: StepResult = { ok: false, detail: "storage down" };
+
+/** Runs the steps with invented results, recording which ones actually ran. */
+async function run(outcome: Partial<Record<DeletionStep, StepResult>>) {
+  const ran: DeletionStep[] = [];
+  const step = (name: DeletionStep) => () => {
+    ran.push(name);
+    return Promise.resolve(outcome[name] ?? OK);
+  };
+  const results = await runSteps({
+    photos: step("photos"),
+    account: step("account"),
+    stragglers: step("stragglers"),
   });
+  return { ran, answer: verdict(results) };
+}
+
+Deno.test("200 only when every step succeeded", async () => {
+  const { ran, answer } = await run({});
+  assertEquals(ran, ["photos", "account", "stragglers"]);
+  assertEquals(answer, { status: 200, body: { deleted: true } });
 });
 
-Deno.test("a half-finished deletion is a failure, and names the step", () => {
-  const photosFailed = verdict({ photos: { ok: false, detail: "storage down" }, account: { ok: true } });
-  assertEquals(photosFailed.status, 500);
-  assertFalse(photosFailed.body.deleted);
-  assertEquals(photosFailed.body.step, "photos");
-
-  // The one that matters most: the rows are gone but the photos are not. Reporting this as
-  // success would leave objects in the bucket that nothing will ever name again.
-  const accountFailed = verdict({ photos: { ok: true }, account: { ok: false, detail: "500" } });
-  assertEquals(accountFailed.status, 500);
-  assertFalse(accountFailed.body.deleted);
-  assertEquals(accountFailed.body.step, "account");
+Deno.test("a failed photo sweep leaves the account alone", async () => {
+  // The account is what names the photos. Deleting it now would strand them.
+  const { ran, answer } = await run({ photos: NO });
+  assertEquals(ran, ["photos"]);
+  assertEquals(answer.status, 500);
+  assertFalse(answer.body.deleted);
+  assertEquals(answer.body.step, "photos");
 });
 
-Deno.test("the refusal says nothing was deleted", () => {
-  const body = verdict({ photos: { ok: false }, account: { ok: true } }).body;
+Deno.test("a half-finished deletion is a failure, and names the step", async () => {
+  // The one the copy has to survive: the photos are gone and the account is not.
+  const account = await run({ account: { ok: false, detail: "500" } });
+  assertEquals(account.ran, ["photos", "account"]);
+  assertEquals(account.answer.status, 500);
+  assertFalse(account.answer.body.deleted);
+  assertEquals(account.answer.body.step, "account");
+
+  // The account went but the last sweep did not, so a photo may be left. Not a success: the
+  // phone keeps its token, and the retry comes back as `already_gone` and sweeps again.
+  const stragglers = await run({ stragglers: NO });
+  assertEquals(stragglers.answer.status, 500);
+  assertFalse(stragglers.answer.body.deleted);
+  assertEquals(stragglers.answer.body.step, "stragglers");
+});
+
+Deno.test("the failure copy is true after every kind of failure", () => {
+  const body = verdict({ photos: OK, account: NO, stragglers: NO }).body;
   assertEquals(body.error, "delete_failed");
   assertEquals(body.message, DELETE_FAILED_MESSAGE);
-  assert(DELETE_FAILED_MESSAGE.includes("still here"));
+  // It used to say "Nothing was deleted, and your data is still here", which is false once
+  // the photo sweep has run and unknowable once `deleteUser` has been called.
+  assertFalse(/nothing was deleted|still here/i.test(DELETE_FAILED_MESSAGE));
+  assert(DELETE_FAILED_MESSAGE.includes("couldn't confirm"));
+  assert(DELETE_FAILED_MESSAGE.includes("Some or all of your data may already be gone"));
+  assert(DELETE_FAILED_MESSAGE.includes("Try again"));
+  assertFalse(/[\u2013\u2014]/.test(DELETE_FAILED_MESSAGE), "no dashes in copy");
+});
+
+// The retry after a lost reply. The server deletes the account, the answer never arrives, and
+// the phone is left with a genuine token for a user who does not exist. Refused with a 401, the
+// person could never finish. Accepted too easily, an expired token or an outage would read as
+// "deleted" and the phone would throw away the only way back to living rows.
+
+/** An unsigned token with the given claims: these tests supply the auth server's answer. */
+function token(claims: unknown): string {
+  const part = (value: unknown) =>
+    btoa(JSON.stringify(value)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  return `${part({ alg: "HS256" })}.${part(claims)}.signature`;
+}
+const MY_TOKEN = token({ sub: MINE, role: "authenticated", is_anonymous: true });
+const GONE = { status: 403, code: "user_not_found" };
+
+Deno.test("a living account is whoever the auth server says, not what the token claims", () => {
+  assertEquals(
+    resolveCaller({ user: { id: MINE }, error: null }, token({ sub: SOMEONE_ELSE })),
+    { kind: "signed_in", uid: MINE },
+  );
+});
+
+Deno.test("a genuine token for a user who no longer exists is an account already gone", () => {
+  assertEquals(resolveCaller({ user: null, error: GONE }, MY_TOKEN), { kind: "already_gone", uid: MINE });
+  assertEquals(
+    resolveCaller({ user: null, error: { ...GONE, status: 404 } }, MY_TOKEN),
+    { kind: "already_gone", uid: MINE },
+  );
+});
+
+Deno.test("no other auth failure is ever read as a deletion", () => {
+  const failures: Array<[string, { status?: unknown; code?: unknown } | null]> = [
+    ["expired, malformed or forged", { status: 403, code: "bad_jwt" }],
+    ["the same, spelled the way a client library does", { status: 400, code: "invalid_jwt" }],
+    ["signed out elsewhere, account alive", { status: 403, code: "session_not_found" }],
+    ["auth-js turns that into a missing session", { status: 400, code: undefined }],
+    ["no token at all", { status: 401, code: "no_authorization" }],
+    ["banned, account alive", { status: 403, code: "user_banned" }],
+    ["rate limited", { status: 429, code: "over_request_rate_limit" }],
+    ["auth server down", { status: 503, code: undefined }],
+    ["no answer at all", { status: 0, code: undefined }],
+    ["a proxy's 404", { status: 404, code: undefined }],
+    ["the right word on a server error", { status: 500, code: "user_not_found" }],
+    ["the right word with no status", { code: "user_not_found" }],
+    ["no user and no error", null],
+  ];
+  for (const [why, error] of failures) {
+    assertEquals(resolveCaller({ user: null, error }, MY_TOKEN), { kind: "nobody" }, why);
+  }
+});
+
+Deno.test("a gone account needs a token that names exactly one user", () => {
+  const bad = [
+    "",
+    "not.a.jwt",
+    "only.two",
+    token({ role: "anon" }),
+    token({ sub: "" }),
+    token({ sub: `${MINE}/../${SOMEONE_ELSE}` }),
+    token(null),
+  ];
+  for (const each of bad) {
+    assertEquals(resolveCaller({ user: null, error: GONE }, each), { kind: "nobody" }, each);
+  }
+});
+
+Deno.test("a user the server returned but cannot identify is nobody", () => {
+  assertEquals(resolveCaller({ user: { id: 7 }, error: GONE }, MY_TOKEN), { kind: "nobody" });
+});
+
+Deno.test("deleting a user who is already gone is done, and any other error is not", () => {
+  assertEquals(accountResult(null), { ok: true });
+  assertEquals(accountResult({ status: 404, code: "user_not_found", message: "User not found" }), { ok: true });
+  assertFalse(accountResult({ status: 404, message: "not found" }).ok, "a 404 from something else");
+  assertFalse(accountResult({ status: 500, code: "user_not_found", message: "x" }).ok);
+  assertFalse(accountResult({ status: 500, code: "unexpected_failure", message: "x" }).ok);
+  assertFalse(accountResult({ status: 0, message: "fetch failed" }).ok);
+});
+
+Deno.test("only a bearer token is a token", () => {
+  assertEquals(bearerToken("Bearer abc.def.ghi"), "abc.def.ghi");
+  assertEquals(bearerToken("bearer abc"), "abc");
+  for (const bad of [null, "", "Bearer", "Bearer ", "Basic abc", "abc", "Bearer a b"]) {
+    assertEquals(bearerToken(bad), null);
+  }
 });

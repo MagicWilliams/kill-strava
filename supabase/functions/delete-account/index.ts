@@ -15,12 +15,15 @@
 
 import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2";
 import {
-  callerID,
+  accountResult,
+  bearerToken,
   DELETE_FAILED_MESSAGE,
   ownsAll,
   partitionListing,
   PHOTO_BUCKET,
   photoPrefix,
+  resolveCaller,
+  runSteps,
   type StepResult,
   verdict,
 } from "./deletion.ts";
@@ -40,8 +43,8 @@ Deno.serve(async (req) => {
     return Response.json({ error: "POST only" }, { status: 405 });
   }
 
-  const authorization = req.headers.get("Authorization");
-  if (!authorization) {
+  const token = bearerToken(req.headers.get("Authorization"));
+  if (!token) {
     return Response.json({ deleted: false, error: "no_user" }, { status: 401 });
   }
 
@@ -56,33 +59,36 @@ Deno.serve(async (req) => {
     );
   }
 
-  // Who is asking, read from the token and only from the token.
+  // Who is asking, read from the token and only from the token. Passed explicitly so the
+  // answer is about this token and no other: `resolveCaller` relies on that.
   const caller = createClient(url, anonKey, {
-    global: { headers: { Authorization: authorization } },
+    auth: { persistSession: false, autoRefreshToken: false },
   });
-  const { data: { user } } = await caller.auth.getUser();
-  const uid = callerID(user);
-  if (!uid) {
+  const { data, error } = await caller.auth.getUser(token);
+  const who = resolveCaller({ user: data?.user, error }, token);
+  if (who.kind === "nobody") {
     return Response.json({ deleted: false, error: "no_user" }, { status: 401 });
   }
+  const uid = who.uid;
 
   // From here on, the service role. Nothing below takes an id from the request.
   const admin = createClient(url, serviceKey, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
 
-  const photos = await removePhotos(admin, uid);
-  // Order per DELETION_ORDER: Postgres cascades into every user table, but not into Storage.
-  const account: StepResult = photos.ok
-    ? await deleteUser(admin, uid)
-    : { ok: false, detail: "not attempted" };
+  // The same steps whether or not the account is already gone. On a retry after a lost reply
+  // they find nothing to do, and what makes the 200 true is that they looked.
+  const results = await runSteps({
+    photos: () => removePhotos(admin, uid),
+    account: () => deleteUser(admin, uid),
+    stragglers: () => removePhotos(admin, uid),
+  });
 
-  const answer = verdict({ photos, account });
-  if (!answer.body.deleted) {
+  const answer = verdict(results);
+  if (answer.body.step) {
     // No uid and no key in the log line: a failed deletion is still somebody's account, and
     // the step plus the reason is all that is needed to act on it.
-    const detail = answer.body.step === "account" ? account.detail : photos.detail;
-    console.error("delete-account failed", answer.body.step, detail);
+    console.error("delete-account failed", who.kind, answer.body.step, results[answer.body.step].detail);
   }
   return Response.json(answer.body, { status: answer.status });
 });
@@ -136,5 +142,5 @@ async function removePhotos(admin: SupabaseClient, uid: string): Promise<StepRes
 /** The auth user, and with it every row that cascades off it (migrations 0001 to 0025). */
 async function deleteUser(admin: SupabaseClient, uid: string): Promise<StepResult> {
   const { error } = await admin.auth.admin.deleteUser(uid);
-  return error ? { ok: false, detail: error.message } : { ok: true };
+  return accountResult(error);
 }
