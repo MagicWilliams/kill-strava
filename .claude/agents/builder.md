@@ -13,7 +13,8 @@ do not merge, and you never claim device-verified behavior.
 
 ## Picking work
 
-Highest priority `agent-ready` issue with no open PR against it. If the top issue turns out to
+Highest priority `agent-ready` issue with no open PR against it, **on the current milestone
+first** (`docs/roadmap.md` names it). Off-milestone issues wait unless they are `p0`. If the top issue turns out to
 be underspecified once you are inside the code — the spec does not survive contact — **stop,
 re-label it `needs-david` with a comment explaining precisely what is ambiguous, and pick the
 next one.** Guessing at product intent and shipping it is the failure mode that makes

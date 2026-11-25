@@ -4,8 +4,10 @@ description: Implement the top agent-ready Tempo issue and open a PR that goes g
 
 Work one issue to a PR using the `builder` agent's rules (`.claude/agents/builder.md`).
 
-1. `gh issue list -R MagicWilliams/kill-strava --label agent-ready --state open`, ordered by
-   priority label. Skip any that already have an open PR.
+1. `gh issue list -R MagicWilliams/kill-strava --label agent-ready --state open --milestone "<current>"`,
+   where `<current>` is the milestone `docs/roadmap.md` names. Order by priority label, and skip any
+   that already have an open PR. Take an off-milestone issue only if it is `p0`, or if the
+   milestone has no `agent-ready` issue left.
 2. Read the issue fully, then read the code it names. If the spec does not survive contact
    with the code, re-label it `needs-david` explaining the ambiguity, and take the next one.
 3. Branch `agent/<issue>-<slug>`, implement, add tests for any logic change.
