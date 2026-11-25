@@ -90,6 +90,14 @@ final class RunStore: ObservableObject {
     /// The last ruling made on the review screen, for its Undo. One deep on purpose.
     @Published private(set) var lastOverlapDecision: OverlapDecisionRecord?
 
+    /// How many accounts this process has deleted (#295). Work that suspends captures it and
+    /// checks it before touching anything here: the store lives on as the next athlete's, and
+    /// a sync or a coach read begun for the last one comes back whenever it comes back.
+    ///
+    /// A count and not the user id, so a session the SDK drops on its own changes nothing
+    /// about how a refresh degrades.
+    @Published private(set) var accountGeneration = 0
+
     private let health = HealthService()
     private let effortsService = BestEffortsService()
     private let overlapService = OverlapReviewService()
@@ -116,11 +124,199 @@ final class RunStore: ObservableObject {
         await runLaunchSequence()
     }
 
+    /// Delete this account and everything the server holds for it (#295), then come back on
+    /// the same phone as a new athlete.
+    ///
+    /// Order is the whole design. Nothing local is touched until `delete-account` has said
+    /// the rows and the photos are gone: signing out first would put "deleted" on screen
+    /// over data still sitting on the server, with the anonymous session that was the only
+    /// way back to it thrown away. `AccountDeletion.mayForget` is that rule, and it is the
+    /// one thing in here a test can hold.
+    func deleteAccount() async -> AccountDeletion.Outcome {
+        guard let uid = Supa.userID else { return .failed }
+        // On disk before the call, so a reply that never arrives can be settled by the next
+        // launch even if the app dies waiting for it.
+        AccountGateway.asked = AccountDeletion.Asked(uid: uid, at: .now)
+        // Before the call, while there is still a user for the row to hang off. Telemetry is
+        // detached, so this can still lose the race with the delete that follows; that costs
+        // one missing row, which is the cheap end of the two failures available here.
+        Telemetry.info("account.delete_requested")
+
+        let outcome: AccountDeletion.Outcome
+        do {
+            outcome = try await AccountGateway.deleteAccount()
+        } catch {
+            Telemetry.error("account.delete_failed", error)
+            return .failed
+        }
+        guard AccountDeletion.mayForget(outcome) else {
+            Telemetry.warn("account.delete_refused")
+            return outcome
+        }
+
+        await leaveDeletedAccount(uid)
+        // Straight back through the launch sequence: anonymous sign-in mints a different
+        // user, that profile has never been onboarded, and RootTabView lands on Welcome.
+        phase = .idle
+        launch = .loading
+        await runLaunchSequence()
+        return .deleted
+    }
+
+    /// Let go of an account the server has confirmed deleted. The only caller of
+    /// `forgetDeletedAccount`, and it has only two of its own: the two places that read
+    /// `AccountDeletion.mayForget`.
+    ///
+    /// Nothing suspends before the first await, so nothing can wake and find half of it done.
+    /// The screens go down there too, before the network is waited on. The request on disk
+    /// goes last: if the app dies part way, the next launch asks again, is told again, and
+    /// finishes.
+    private func leaveDeletedAccount(_ uid: UUID) async {
+        Supa.markDeleted(uid)
+        accountGeneration += 1
+        forgetDeletedAccount(uid: uid.uuidString)
+        launch = .loading
+        await Supa.cancelRequestsInFlight()
+        await Supa.signOutLocally()
+        AccountGateway.asked = nil
+    }
+
+    private enum DeletionCheck { case nothingToSettle, unsettled, finished, unconfirmed }
+
+    /// Settle a deletion whose answer never arrived, before anything is loaded for its account.
+    ///
+    /// The auth server is asked first, because that changes nothing. `delete-account` is asked
+    /// only once there is no account left for it to delete, and the phone forgets on its
+    /// answer alone. Every decision is `AccountDeletion`'s.
+    private func settleDeletion() async -> DeletionCheck {
+        let asked: AccountDeletion.Asked
+        switch AccountDeletion.recheck(AccountGateway.asked, current: Supa.userID) {
+        case .none:
+            return .nothingToSettle
+        case .stale(let old):
+            // Cleared before the request is: if the app dies part way, the next launch repeats it.
+            clearLeftovers(of: old)
+            AccountGateway.asked = nil
+            return .nothingToSettle
+        case .ask(let pending):
+            asked = pending
+        }
+
+        switch AccountDeletion.settle(asked, standing: await AccountGateway.standing(), now: .now) {
+        case .keepAsking:
+            return .unsettled
+        case .drop:
+            AccountGateway.asked = nil
+            return .nothingToSettle
+        case .confirm:
+            guard let outcome = try? await AccountGateway.deleteAccount(),
+                  AccountDeletion.mayForget(outcome) else { return .unconfirmed }
+            await leaveDeletedAccount(asked.uid)
+            return .finished
+        }
+    }
+
+    /// What an account left on this phone when it asked to be deleted and its session went
+    /// before the answer came. No session is dropped here: there is none for it, and the one
+    /// held now belongs to someone else.
+    ///
+    /// Less than `forgetDeletedAccount` on purpose. A run in progress is this launch's, already
+    /// handed to the recorder, and it is not worth losing a run to tidy up after an account.
+    private func clearLeftovers(of asked: AccountDeletion.Asked) {
+        for key in AccountDeletion.localKeys(uid: asked.uid.uuidString) + AccountDeletion.unscopedKeys {
+            UserDefaults.standard.removeObject(forKey: key)
+        }
+        RecordedRunSaver.dropQueued(by: asked)
+        URLCache.shared.removeAllCachedResponses()
+        clearWidgetSnapshot()
+    }
+
+    /// Everything about the deleted account that lives on this phone rather than on the
+    /// server. Called only after a confirmed deletion.
+    private func forgetDeletedAccount(uid: String) {
+        // Started by an earlier refresh and still writing efforts for the account that is
+        // now gone. Its writes would fail under RLS anyway; cancelling says why.
+        effortsBackfill?.cancel()
+        effortsBackfill = nil
+        for key in AccountDeletion.localKeys(uid: uid) + AccountDeletion.unscopedKeys {
+            UserDefaults.standard.removeObject(forKey: key)
+        }
+        CoachConsentStore.shared.forget()
+        // A snapshot of a run that was still going when the account went. It is keyed to
+        // nothing, so the next athlete on this phone would be offered it at launch.
+        InProgressRunStore.erase()
+        // A run saved with no signal, with its journal and its photo. The relaunch that
+        // follows this retries whatever is in the queue, as whoever is signed in by then.
+        RecordedRunSaver.eraseQueue()
+        // Responses kept on disk by URLSession, run photos among them.
+        URLCache.shared.removeAllCachedResponses()
+        clearWidgetSnapshot()
+        forgetLoadedState()
+    }
+
+    /// Published state back to what a fresh process holds.
+    ///
+    /// Onboarding replaces the whole tab tree, so none of this is on screen while it is
+    /// stale. It is cleared anyway because the next athlete's first refresh fills in what
+    /// their data covers and nothing else: a plan, a goal or a takeaway left behind here
+    /// would be the previous account's, shown as theirs.
+    private func forgetLoadedState() {
+        runs = []
+        phase = .idle
+        riskTolerance = "standard"
+        maxHR = nil
+        daysPerWeek = 6
+        longRunDay = 0
+        units = .fallback
+        birthdate = nil
+        fitness = nil
+        todayTakeaway = nil
+        latestRead = nil
+        dataWarning = nil
+        plan = nil
+        goal = nil
+        planWeeks = []
+        sessions = []
+        todayCheckIn = nil
+        intakeHandoff = nil
+        startingPoint = nil
+        settingsGiven = []
+        pastBlocks = []
+        bestEfforts = BestEffortsService.Snapshot()
+        overlaps = []
+        overlapReview = OverlapReviewService.Snapshot()
+        lastOverlapDecision = nil
+    }
+
     private func runLaunchSequence() async {
         phase = .loading
-        let signedIn = await Supa.signInAnonymouslyIfNeeded()
+        var signedIn = await Supa.signInAnonymouslyIfNeeded()
+        var deletionUnsettled = false
+        if signedIn {
+            switch await settleDeletion() {
+            case .nothingToSettle:
+                break
+            case .unsettled:
+                deletionUnsettled = true
+            case .finished:
+                signedIn = await Supa.signInAnonymouslyIfNeeded()
+            case .unconfirmed:
+                // The account is gone and the server hasn't said so in the one way the phone
+                // acts on. Onboarding a user who doesn't exist would be worse than waiting.
+                launch = .unreachable(reason: LaunchGate.Copy.deletionUnconfirmed)
+                phase = .idle
+                return
+            }
+        }
         if signedIn { await Supa.ensureProfile() }
         let profile = signedIn ? await loadProfile() : .unreadable
+        // The auth server couldn't say whether the account is still there, and its profile has
+        // just said it isn't. Retry asks again (#295).
+        guard !AccountDeletion.blocksLaunch(unsettled: deletionUnsettled, profile: profile) else {
+            launch = .unreachable(reason: LaunchGate.Copy.deletionUnconfirmed)
+            phase = .idle
+            return
+        }
         // Before `launch` is set, not after: the first frame of the app has to know whether to
         // ask, and the `refresh` below generates takeaways that have to know whether they can.
         if signedIn, profile != .unreadable { await CoachConsentStore.shared.load() }
@@ -143,6 +339,9 @@ final class RunStore: ObservableObject {
     }
 
     func refresh() async {
+        // Checked after each stretch of awaiting. A refresh of a long archive takes long enough
+        // that the account it began for can be deleted while it runs (#295).
+        let generation = accountGeneration
         var ingested: [RunSummary] = []
         do {
             try await health.requestAuthorization()
@@ -154,6 +353,7 @@ final class RunStore: ObservableObject {
         // DB first: ingest dedupes against what's already recorded (Garmin re-exports
         // the same runs under new HK uuids when its Health settings change).
         var response = await readRuns()
+        guard generation == accountGeneration else { return }
         // Held outside the branch because the display rule needs it too: if the re-read
         // fails, `RunFetch.resolve` grafts HealthKit copies on, and that graft has to know
         // which workouts are already ours as retired rows (#202). That graft only follows an
@@ -162,7 +362,7 @@ final class RunStore: ObservableObject {
         if !ingested.isEmpty {
             var inserted = 0
             // No complete answer, no ingest: the next refresh proposes all of it again.
-            if let known = await readRetiredExternalIDs().ids {
+            if let known = await readRetiredExternalIDs().ids, generation == accountGeneration {
                 retired = known
                 do {
                     inserted = try await health.sync(ingested, existing: response.knownRows ?? runs,
@@ -185,6 +385,7 @@ final class RunStore: ObservableObject {
             }
         }
 
+        guard generation == accountGeneration else { return }
         // The display rule is pure and lives in RunFetch — a failed read must never look
         // like data, and a fallback must never look like the corrected record.
         let decision = RunFetch.resolve(response, ingested: ingested, onScreen: runs,
@@ -217,16 +418,20 @@ final class RunStore: ObservableObject {
             }
         }
 
+        guard generation == accountGeneration else { return }
         await matchRunsToSessions()
         await autoAdaptMissedQuality()
         await recomputeProjection()
+        guard generation == accountGeneration else { return }
         fitness = LoadModel.compute(runs: runs, checkInOK: checkInForToday?.feelsOk)
         await loadTodayTakeaway()
         await loadLatestRead()
+        guard generation == accountGeneration else { return }
         publishWidgetSnapshot()   // #76 — the widgets show exactly what this refresh produced
         await refreshOverlapReview()
         await refreshPastBlocks()
         await refreshBestEfforts()
+        guard generation == accountGeneration else { return }
         // Last, so a queued run lands against fully loaded state — and usually finds the row
         // this refresh's sync just wrote for it, leaving only its journal to attach (#122).
         await RecordedRunSaver.retryPending(store: self)
@@ -243,16 +448,19 @@ final class RunStore: ObservableObject {
     func absorbRecordedRuns(_ runIDs: [UUID]) async {
         // A failed re-read changes nothing on screen: the row is written, and the next
         // refresh shows it. No banner — nothing the athlete corrected is at stake here.
-        guard case .rows(let rows) = await readRuns() else { return }
+        let generation = accountGeneration
+        guard case .rows(let rows) = await readRuns(), generation == accountGeneration else { return }
         runs = rows
         phase = rows.isEmpty ? .empty : .ready
         dataWarning = nil
         recomputeOverlaps()
 
         await matchRunsToSessions()
+        guard generation == accountGeneration else { return }
         fitness = LoadModel.compute(runs: runs, checkInOK: checkInForToday?.feelsOk)
         // Today's session: shows the cached read, or generates it and republishes widgets.
         await loadTodayTakeaway()
+        guard generation == accountGeneration else { return }
         publishWidgetSnapshot()
 
         // Any recorded run that isn't today's session — a just-running day, an unplanned
@@ -262,7 +470,8 @@ final class RunStore: ObservableObject {
         for run in runs where runIDs.contains(run.id) && run.id != todayRunID {
             Task { [weak self] in
                 guard let self else { return }
-                if await TakeawayService.ensureTakeaway(for: run, store: self) != nil {
+                if await TakeawayService.ensureTakeaway(for: run, store: self) != nil,
+                   generation == self.accountGeneration {
                     self.publishWidgetSnapshot()
                 }
             }
@@ -295,7 +504,8 @@ final class RunStore: ObservableObject {
 
     func refreshPastBlocks() async {
         // A failed read keeps what we hold: an unreachable table is not an empty history.
-        if let blocks = await BlockReviewService.pastBlocks() { pastBlocks = blocks }
+        let generation = accountGeneration
+        if let blocks = await BlockReviewService.pastBlocks(), generation == accountGeneration { pastBlocks = blocks }
     }
 
     /// The goal a run was the race for: a closed block that recorded it as its race run, or
@@ -319,7 +529,9 @@ final class RunStore: ObservableObject {
     }
 
     private func refreshOverlapReview() async {
+        let generation = accountGeneration
         let snapshot = await overlapService.snapshot()
+        guard generation == accountGeneration else { return }
         // A failed read keeps what we already hold rather than flipping the feature off
         // mid-session; before 0012 is applied there is nothing held, so it stays off.
         if snapshot.available { overlapReview = snapshot }
@@ -341,7 +553,9 @@ final class RunStore: ObservableObject {
     /// journal the ruling carried over to it (#152), so its shoe and notes show at once.
     func resolveOverlap(_ pair: RunDedupe.OverlapPair, _ verdict: RunDedupe.OverlapVerdict) async -> Bool {
         guard let resolution = RunDedupe.resolution(for: pair, verdict) else { return false }
-        guard let transfer = await overlapService.record(resolution) else { return false }
+        let generation = accountGeneration
+        guard let transfer = await overlapService.record(resolution),
+              generation == accountGeneration else { return false }
 
         overlapReview.reviewed.insert(resolution.key)
         var retiredRun: RunSummary?
@@ -362,7 +576,9 @@ final class RunStore: ObservableObject {
     /// Take back the last ruling: the retired run returns and the pair is asked about again.
     func undoLastOverlapDecision() async -> Bool {
         guard let last = lastOverlapDecision else { return false }
-        guard let journals = await overlapService.undo(last.resolution, journal: last.journal) else {
+        let generation = accountGeneration
+        guard let journals = await overlapService.undo(last.resolution, journal: last.journal),
+              generation == accountGeneration else {
             return false
         }
 
@@ -394,7 +610,9 @@ final class RunStore: ObservableObject {
         // column on every refresh for an answer that cannot have changed.
         if bestEfforts.available && !pending { return }
 
+        let generation = accountGeneration
         let snapshot = await effortsService.snapshot()
+        guard generation == accountGeneration else { return }
         // A failed read leaves whatever we already hold on screen rather than blanking the
         // PR table: an unreachable table is not an empty one.
         if snapshot.available { bestEfforts = snapshot }
@@ -417,6 +635,9 @@ final class RunStore: ObservableObject {
                 if slice.isEmpty { break }
 
                 let covered = await self.effortsService.scanSlice(slice)
+                // Cancelled only when the account is deleted (#295), and by now the store, and
+                // the handle cleared at the end of this, may be the next athlete's.
+                guard !Task.isCancelled else { return }
                 // Nothing written means the writes are failing, not that the work is done.
                 // Spinning on the same slice would read the whole archive out of HealthKit
                 // over and over for no result — stop and let the next refresh try again.
@@ -433,6 +654,7 @@ final class RunStore: ObservableObject {
                 // Records may have moved under us — re-read the standing bests so History
                 // and the coach see the same numbers.
                 let snapshot = await self.effortsService.snapshot()
+                guard !Task.isCancelled else { return }
                 if snapshot.available {
                     self.bestEfforts = BestEffortsService.Snapshot(
                         bests: snapshot.bests,
@@ -464,7 +686,9 @@ final class RunStore: ObservableObject {
             todayTakeaway = nil
             return
         }
+        let generation = accountGeneration
         let cached = await readTakeaway(for: run)
+        guard generation == accountGeneration else { return }
         if let takeaway = cached.text {
             todayTakeaway = takeaway
             return
@@ -476,7 +700,8 @@ final class RunStore: ObservableObject {
         // preview appears on Today the moment it lands.
         Task { [weak self] in
             guard let self else { return }
-            if let generated = await TakeawayService.ensureTakeaway(for: run, store: self) {
+            if let generated = await TakeawayService.ensureTakeaway(for: run, store: self),
+               generation == self.accountGeneration {
                 self.todayTakeaway = generated
                 self.publishWidgetSnapshot()
             }
@@ -486,8 +711,11 @@ final class RunStore: ObservableObject {
     /// Read the newest cached coach read. A failed read keeps what's on screen — an
     /// unreachable table is not a coach who has never said anything.
     private func loadLatestRead() async {
+        let generation = accountGeneration
         do {
-            latestRead = try await TakeawayService.latestRead()
+            let read = try await TakeawayService.latestRead()
+            guard generation == accountGeneration else { return }
+            latestRead = read
         } catch {
             Telemetry.errorUnlessCancelled("takeaway.latest_unreadable", error)
         }
@@ -513,7 +741,10 @@ final class RunStore: ObservableObject {
     /// 7.6, and nothing on screen explains the gap.
     @discardableResult
     func reloadFromSupabase() async -> Bool {
-        switch await readRuns() {
+        let generation = accountGeneration
+        let response = await readRuns()
+        guard generation == accountGeneration else { return false }
+        switch response {
         case .rows(let dbRuns):
             runs = dbRuns
             phase = runs.isEmpty ? .empty : .ready
@@ -772,6 +1003,7 @@ final class RunStore: ObservableObject {
     func setUnits(_ new: Units) async {
         guard new != units, let uid = Supa.userID?.uuidString else { return }
         let previous = units
+        let generation = accountGeneration
         units = new
         struct Patch: Encodable { let units: String }
         do {
@@ -781,9 +1013,11 @@ final class RunStore: ObservableObject {
                 .execute()
             // The widgets print the unit the snapshot carries (#109); without a rewrite
             // they would stay in the old one until the next refresh.
+            guard generation == accountGeneration else { return }
             publishWidgetSnapshot()
         } catch {
             Telemetry.error("profile.units_write_failed", error, context: ["units": new.rawValue])
+            guard generation == accountGeneration else { return }
             units = previous
         }
     }

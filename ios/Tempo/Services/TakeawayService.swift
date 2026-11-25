@@ -28,6 +28,7 @@ enum TakeawayService {
 
     /// `ensureTakeaway`, keeping the reason when there is no read.
     static func takeaway(for run: RunSummary, detail: RunDetail? = nil, store: RunStore) async -> Outcome {
+        let generation = store.accountGeneration
         struct Row: Decodable { let coach_takeaway: String?; let correction_note: String? }
         let row: Row? = try? await Supa.client
             .from("runs")
@@ -48,6 +49,10 @@ enum TakeawayService {
 
         let d: RunDetail?
         if let detail { d = detail } else { d = await RunDetailLoader().load(run: run, maxHR: store.effectiveMaxHR) }
+
+        // The account this run belongs to has been deleted (#295). What was read about it must
+        // not go to the coach as the next account's, nor come back onto that account's Today.
+        guard generation == store.accountGeneration else { return .unavailable }
 
         struct RunPayload: Encodable {
             let date: String
@@ -96,7 +101,8 @@ enum TakeawayService {
             if let refusal = UsageLimit.refusal(from: error, surface: "takeaway") { return .limited(refusal) }
             return .unavailable
         }
-        guard let text = TakeawayReply.usable(reply.reply) else { return .unavailable }
+        guard let text = TakeawayReply.usable(reply.reply),
+              generation == store.accountGeneration else { return .unavailable }
 
         struct Patch: Encodable { let coach_takeaway: String }
         _ = try? await Supa.client.from("runs").update(Patch(coach_takeaway: text))

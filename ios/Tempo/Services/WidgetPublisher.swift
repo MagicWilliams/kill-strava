@@ -32,6 +32,13 @@ extension RunStore {
         WidgetCenter.shared.reloadAllTimelines()
     }
 
+    /// The account is gone, so the Home Screen must stop showing its week (#295). Here
+    /// rather than in `RunStore` because this file is the one that knows about WidgetKit.
+    func clearWidgetSnapshot() {
+        WidgetSnapshotStore.clear()
+        WidgetCenter.shared.reloadAllTimelines()
+    }
+
     /// The takeaway Today is showing, dated to the session it reads.
     private var todayTakeawayLine: WidgetSnapshot.CoachLine? {
         guard let text = todayTakeaway, let session = todaySession else { return nil }

@@ -252,7 +252,7 @@ final class HealthService {
     /// The previous refresh's unexplained-drop count, so a standing condition is reported
     /// once instead of on every launch. UserDefaults on purpose: losing it costs one
     /// duplicate event, which is a far cheaper failure than a table full of them.
-    private static let unexplainedDropsKey = "sync.dedupeDrops.unknownUUID.lastSeen"
+    nonisolated static let unexplainedDropsKey = "sync.dedupeDrops.unknownUUID.lastSeen"
     private static var lastUnexplainedDrops: Int? {
         get { UserDefaults.standard.object(forKey: unexplainedDropsKey) as? Int }
         set { UserDefaults.standard.set(newValue, forKey: unexplainedDropsKey) }

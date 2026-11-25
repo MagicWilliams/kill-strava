@@ -145,6 +145,19 @@ final class TabRouter: ObservableObject {
         path.removeAll()
         selection = tab
     }
+
+    /// The account is gone (#295): the next athlete starts on Today, with none of the last
+    /// one's screens, draft messages or pre-run answers waiting for them.
+    func reset() {
+        show(.today)
+        coachFocus = nil
+        coachDraft = nil
+        trainingIntakeShown = false
+        preRun = nil
+        pendingStart = nil
+        lastPreRun = nil
+        reopenPreRun = false
+    }
 }
 
 struct RootTabView: View {
@@ -169,7 +182,10 @@ struct RootTabView: View {
         case .unreachable(let reason):
             // The splash used to cover this case too, which is how a paused backend
             // became a frozen app. A dead end is now a screen you can act on.
-            LaunchErrorView(reason: reason) { await store.retryLaunch() }
+            LaunchErrorView(
+                reason: reason,
+                hint: LaunchGate.Copy.hint(deleting: AccountGateway.asked != nil || store.accountGeneration > 0)
+            ) { await store.retryLaunch() }
         case .onboarding:
             OnboardingView()
         case .ready:
@@ -426,6 +442,7 @@ private struct BounceOnSelect: ViewModifier {
 /// both wrong and alarming.
 struct LaunchErrorView: View {
     let reason: String
+    var hint = LaunchGate.Copy.hint
     let retry: () async -> Void
 
     @State private var retrying = false
@@ -442,7 +459,7 @@ struct LaunchErrorView: View {
                     Text(reason)
                         .font(Tokens.Font.ui(16, .semibold))
                         .foregroundStyle(Tokens.Palette.textPrimary)
-                    Text(LaunchGate.Copy.hint)
+                    Text(hint)
                         .font(Tokens.Font.ui(14))
                         .foregroundStyle(Tokens.Palette.textSecondary)
                 }

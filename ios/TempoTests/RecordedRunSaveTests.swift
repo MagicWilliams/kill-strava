@@ -366,6 +366,59 @@ final class RecordedRunSaveTests: XCTestCase {
         XCTAssertNil(RecordedRunSave.raceLink(for: decoded[0], savedRunID: UUID(), goal: raceGoal(), calendar: cal))
     }
 
+    /// The queue is a file, and files outlive sessions (#295). Deleting the account signs the
+    /// phone in as someone new and then refreshes, and the refresh retries the queue: the old
+    /// athlete's run, notes and photo would have gone up as the new one's.
+    func testAQueuedRunIsOnlyRetriedByTheAccountThatRecordedIt() throws {
+        let mine = UUID(), someoneElse = UUID()
+        var pending = queued(.outdoor, goalID: nil)
+        pending.owner = mine
+        let relaunched = try JSONDecoder().decode(RecordedRunSave.Pending.self, from: JSONEncoder().encode(pending))
+        XCTAssertEqual(relaunched.owner, mine, "who recorded it survives the relaunch")
+        XCTAssertTrue(RecordedRunSave.mayRetry(relaunched, as: mine))
+        XCTAssertFalse(RecordedRunSave.mayRetry(relaunched, as: someoneElse))
+
+    }
+
+    /// A build before this wrote no owner, and the entry may be the only copy of a journal.
+    func testARunQueuedByAnOlderBuildIsClaimed() {
+        let mine = UUID()
+        let claimed = RecordedRunSave.claiming([queued(.outdoor, goalID: nil)], for: mine)
+        XCTAssertEqual(claimed.map(\.owner), [mine])
+        XCTAssertTrue(RecordedRunSave.mayRetry(claimed[0], as: mine))
+    }
+
+    /// A session lost without a deletion: same phone, same person, new account. Nobody can sign
+    /// in as the old one to send this, so left with it the notes and photo are lost for good.
+    func testARunFromALostSessionGoesToTheAccountThatReplacedIt() {
+        let lost = UUID(), mine = UUID()
+        var pending = queued(.outdoor, goalID: nil)
+        pending.owner = lost
+        XCTAssertEqual(RecordedRunSave.claiming([pending], for: mine).map(\.owner), [mine])
+        XCTAssertEqual(RecordedRunSave.claiming([pending], for: mine, deletionAsked: lost).map(\.owner), [lost],
+                       "unless that account asked to be deleted")
+        XCTAssertEqual(RecordedRunSave.claiming([pending], for: mine, deletionAsked: mine).map(\.owner), [mine],
+                       "someone else's request is not this run's")
+        pending.owner = nil
+        XCTAssertEqual(RecordedRunSave.claiming([pending], for: mine, deletionAsked: lost).map(\.owner), [mine])
+    }
+
+    func testAStaleDeletionTakesOnlyWhatThatAccountQueued() {
+        let gone = UUID(), mine = UUID()
+        func entry(owner: UUID?, at offset: TimeInterval) -> RecordedRunSave.Pending {
+            var pending = queued(.outdoor, goalID: nil)
+            pending.owner = owner
+            pending.queuedAt = Date(timeIntervalSince1970: 10_000 + offset)
+            return pending
+        }
+        let asked = AccountDeletion.Asked(uid: gone, at: Date(timeIntervalSince1970: 10_000))
+        let kept = RecordedRunSave.leaving([
+            entry(owner: gone, at: -60), entry(owner: gone, at: 60),
+            entry(owner: nil, at: -60), entry(owner: nil, at: 60), entry(owner: mine, at: -60),
+        ], behind: asked)
+        XCTAssertEqual(kept, [entry(owner: nil, at: 60), entry(owner: mine, at: -60)])
+    }
+
     func testOnlyANotNowStaysQueued() {
         // No answer at all is the dead spot at the end of a run — the case the queue is for.
         for status in [nil, 408, 429, 500, 503] as [Int?] {

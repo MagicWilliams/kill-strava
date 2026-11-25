@@ -46,14 +46,16 @@ enum RecordedRunSaver {
         let assertion = UIApplication.shared.beginBackgroundTask(withName: "recorded-run-save")
         defer { if assertion != .invalid { UIApplication.shared.endBackgroundTask(assertion) } }
 
-        // Queue first, attempt second — see `RecordedRunSave.Pending`.
+        // Queue first, attempt second — see `RecordedRunSave.Pending`. With nobody signed in it
+        // has no owner, and the first refresh that is signed in claims it.
         let pending = RecordedRunSave.Pending(
             workout: workout,
             journal: journal,
             photoJPEG: photo.flatMap(RunJournal.jpegForUpload),
             queuedAt: .now,
             kind: kind,
-            goalID: goalID
+            goalID: goalID,
+            owner: Supa.userID
         )
         PendingQueue.update { RecordedRunSave.enqueue(pending, into: $0) }
 
@@ -71,10 +73,18 @@ enum RecordedRunSaver {
     /// A race that lands here is filed as its block's race now (#178), the link the recorder
     /// could not write with no row to point at — through the same `RaceLinker` write.
     static func retryPending(store: RunStore) async {
-        let queue = PendingQueue.load()
+        guard let account = Supa.userID else { return }
+        let asked = AccountGateway.asked?.uid
+        if PendingQueue.load().contains(where: { $0.owner != account }) {
+            PendingQueue.update { RecordedRunSave.claiming($0, for: account, deletionAsked: asked) }
+        }
+        let queue = PendingQueue.load().filter { RecordedRunSave.mayRetry($0, as: account) }
         guard !queue.isEmpty else { return }
         var landed: [UUID] = []
         for pending in queue {
+            // `queue` is a copy. If the account was deleted during the last attempt, the file
+            // is gone and what is left here belongs to nobody (#295).
+            guard AccountDeletion.mayContinue(owner: account, current: Supa.userID) else { return }
             guard case .saved(let runID) = await attempt(pending, photo: nil) else { continue }
             landed.append(runID)
             if let link = RecordedRunSave.raceLink(for: pending, savedRunID: runID, goal: store.goal) {
@@ -84,6 +94,22 @@ enum RecordedRunSaver {
         Telemetry.info("recorder.queue_retried", context: ["queued": "\(queue.count)",
                                                            "landed": "\(landed.count)"])
         if !landed.isEmpty { await store.absorbRecordedRuns(landed) }
+    }
+
+    /// Throw the queue away, for an account the server has confirmed deleted (#295). Without
+    /// it the relaunch that follows would retry the deleted athlete's run, journal and photo
+    /// into the account it has just signed in.
+    ///
+    /// The whole file, unreadable or not, and entries from an earlier account too: nothing can
+    /// sign in as that account again, so nothing could ever send them.
+    static func eraseQueue() {
+        PendingQueue.erase()
+    }
+
+    /// Drop what an account that asked to be deleted left in the queue (`RecordedRunSave.leaving`).
+    static func dropQueued(by asked: AccountDeletion.Asked) {
+        guard !PendingQueue.load().isEmpty else { return }
+        PendingQueue.update { RecordedRunSave.leaving($0, behind: asked) }
     }
 
     // MARK: - One attempt
@@ -99,11 +125,12 @@ enum RecordedRunSaver {
         defer { inFlight.remove(uuid) }
 
         // Not signed in yet (a launch that hasn't reached Supabase). Stays queued.
-        guard let userID = Supa.userID?.uuidString else { return .queued }
+        guard let account = Supa.userID, RecordedRunSave.mayRetry(pending, as: account) else { return .queued }
 
         do {
             let nearby = try await fetchNearby(pending.workout)
-            let decision = RecordedRunSave.decide(pending.workout, nearby: nearby, userID: userID)
+            try stillSignedIn(as: account)
+            let decision = RecordedRunSave.decide(pending.workout, nearby: nearby, userID: account.uuidString)
             let runID: UUID
             switch decision {
             case .tooShort:
@@ -118,6 +145,9 @@ enum RecordedRunSaver {
             case .insert(let row):
                 runID = try await write(row)
             }
+            // After the last await, so the journal below is handed off as the account the
+            // run was saved for or not at all.
+            try stillSignedIn(as: account)
             PendingQueue.update { RecordedRunSave.removing(uuid, from: $0) }
             Telemetry.info("recorder.run_saved", context: ["path": label(decision)])
             handOffJournal(pending, photo: photo, runID: runID)
@@ -134,6 +164,13 @@ enum RecordedRunSaver {
             Telemetry.error("recorder.row_write_refused", error)
             return .dropped
         }
+    }
+
+    /// Throws once the account this attempt began for is no longer the one signed in (#295).
+    /// The new account syncs the same workout out of Health, so a read that crossed the switch
+    /// would find *its* row and hang the old athlete's notes and photo on it.
+    private static func stillSignedIn(as account: UUID) throws {
+        guard AccountDeletion.mayContinue(owner: account, current: Supa.userID) else { throw CancellationError() }
     }
 
     /// Live rows starting within the dedupe window of the workout, newest first — the same
@@ -235,6 +272,10 @@ enum RecordedRunSaver {
     private enum PendingQueue {
         static var url: URL {
             URL.applicationSupportDirectory.appending(path: "recorded-runs-pending.json")
+        }
+
+        static func erase() {
+            try? FileManager.default.removeItem(at: url)
         }
 
         static func load() -> [RecordedRunSave.Pending] {

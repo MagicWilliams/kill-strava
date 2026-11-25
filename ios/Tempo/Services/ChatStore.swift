@@ -177,6 +177,17 @@ final class ChatStore: ObservableObject {
     private var opened = false
     private static let autoApplyTypes = CoachAcknowledgement.onboardingAutoApplyTypes
 
+    /// Whose conversation this is. A confirm or a coach reply outlives the screen on purpose,
+    /// so it can also outlive the account (#295), and everything it would do by then (a message
+    /// inserted, a profile patched, onboarding marked done) reads the signed-in user late.
+    private let owner = Supa.userID
+    private var accountIsCurrent: Bool {
+        AccountDeletion.mayContinue(owner: owner, current: Supa.userID)
+    }
+    private func requireCurrentAccount() throws {
+        guard accountIsCurrent else { throw CancellationError() }
+    }
+
     // Wire types
     struct WireMessage: Codable { let role: String; let content: String }
     /// `features` tells the coach what this build can read. A coach that predates a feature
@@ -416,6 +427,7 @@ final class ChatStore: ObservableObject {
     /// again here rather than trusted from admission time: a card can be resolved while it
     /// waits, and re-applying it would double the write.
     private func apply(_ messageID: UUID, runStore: RunStore) async -> Bool {
+        guard accountIsCurrent else { return false }
         guard let idx = messages.firstIndex(where: { $0.id == messageID }),
               let action = messages[idx].action,
               messages[idx].actionState.isOpenOffer,
@@ -474,6 +486,7 @@ final class ChatStore: ObservableObject {
             // No acknowledgement on a failure: the retry card is the response.
             return false
         }
+        guard accountIsCurrent else { return false }
         messages[idx].actionState = .applied
         if let stamped { messages[idx].action = stamped }
         persist(.applied, for: messageID, action: stamped)
@@ -543,6 +556,7 @@ final class ChatStore: ObservableObject {
             onboardingMode: onboardingMode,
             actionType: action.type
         ) else { return }
+        guard accountIsCurrent else { return }
         isThinking = true
         defer { isThinking = false }
         // A plan confirm puts its narration *after* the "Confirmed — …" turn, so the raw
@@ -705,6 +719,7 @@ final class ChatStore: ObservableObject {
         let risk = action.risk_named ?? action.displaySummary
         try? await Supa.client.from("risk_acknowledgments").insert(AckInsert(user_id: uid, risk: risk)).execute()
 
+        try requireCurrentAccount()
         runStore.setRiskTolerance(level)
     }
 
@@ -719,6 +734,7 @@ final class ChatStore: ObservableObject {
         // at form submit would let a dismissed card reshape the plan the athlete is still on.
         guard let uid = Supa.userID?.uuidString else { throw ActionError.badParams }
         try await Supa.client.from("profiles").update(intake.profilePatch).eq("id", value: uid).execute()
+        try requireCurrentAccount()
         runStore.setPlanSettings(daysPerWeek: intake.days_per_week, longRunDay: intake.long_run_day)
         runStore.setRiskTolerance(intake.risk_tolerance)
         let narration = try await invokePlanEngine(request, runStore: runStore)
@@ -760,6 +776,7 @@ final class ChatStore: ObservableObject {
         try await Supa.client.from("profiles")
             .update(Patch(days_per_week: action.days_per_week, long_run_day: action.long_run_day))
             .eq("id", value: uid).execute()
+        try requireCurrentAccount()
         runStore.setPlanSettings(daysPerWeek: action.days_per_week, longRunDay: action.long_run_day)
         guard regenerate else { return nil }
         // Cascade: settings change regenerates the plan forward + recomputes projection.
@@ -891,6 +908,7 @@ final class ChatStore: ObservableObject {
             wants_strength: action.wants_strength
         )).eq("id", value: uid).execute()
 
+        try requireCurrentAccount()
         if let bpm = action.max_hr { runStore.setMaxHR(bpm) }
         runStore.setBirthdate(action.birthdate)
     }
@@ -961,6 +979,7 @@ final class ChatStore: ObservableObject {
     // MARK: - Plumbing
 
     private func handleReply(_ reply: CoachReply, acknowledging: Bool = false) {
+        guard accountIsCurrent else { return }
         var actions = reply.proposed_actions ?? []
 
         // Onboarding: small facts apply silently — the athlete's answer was the consent.
@@ -974,6 +993,7 @@ final class ChatStore: ObservableObject {
                     guard let self else { return }
                     var settingsTouched = false
                     for action in silent {
+                        guard self.accountIsCurrent else { return }
                         if let changes = IntakeChanges(fact: action) {
                             await self.foldIntoIntake(changes, runStore: store)
                         }
@@ -993,7 +1013,7 @@ final class ChatStore: ObservableObject {
                             self.errorText = "Couldn't save that. Tell the coach again."
                         }
                     }
-                    if settingsTouched, let goal = store.goal, PlanRequest.canRegenerate(goal) {
+                    if settingsTouched, self.accountIsCurrent, let goal = store.goal, PlanRequest.canRegenerate(goal) {
                         // No confirmation turn to sit under here — the interview applied these
                         // silently — so the narration goes in on its own.
                         do {
@@ -1083,6 +1103,7 @@ final class ChatStore: ObservableObject {
     }
 
     private func requestReply(history: [WireMessage], context: CoachContext, acknowledging: Bool = false) async -> ReplyOutcome {
+        guard accountIsCurrent else { return .failed }
         var context = context
         context.memory = memoryContext
         context.open_proposal = OpenProposal.liveCard(in: messages, now: .now)?.action.map(OpenProposal.forCoach)
@@ -1119,7 +1140,7 @@ final class ChatStore: ObservableObject {
     private func append(_ role: ChatMessage.Role, _ text: String, action: ProposedAction? = nil) {
         let id = UUID()
         messages.append(ChatMessage(id: id, role: role, text: text, action: action))
-        guard let uid = Supa.userID?.uuidString else { return }
+        guard accountIsCurrent, let uid = owner?.uuidString else { return }
         let row = MessageInsert(
             id: id.uuidString,
             user_id: uid,

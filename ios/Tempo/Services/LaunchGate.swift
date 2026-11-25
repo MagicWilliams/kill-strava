@@ -49,6 +49,14 @@ enum LaunchGate: Equatable {
         static let noSession = "Couldn't sign in to Tempo's server."
         static let noProfile = "Couldn't load your profile."
         static let hint = "Your training history is safe on the server. This is a connection problem, and no data was lost."
+
+        /// A deletion the server has carried out but not confirmed to this phone (#295).
+        static let deletionUnconfirmed = "Couldn't finish deleting your account."
+        /// Under a launch that fails during or after a deletion. `hint` would be promising
+        /// that data the athlete asked to have deleted is safe on the server.
+        static let hintAfterDeletion = "Check your connection and try again."
+
+        static func hint(deleting: Bool) -> String { deleting ? hintAfterDeletion : hint }
     }
 }
 

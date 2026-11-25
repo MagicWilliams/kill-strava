@@ -173,6 +173,9 @@ extension RunStore {
     /// definitively reports zero active plans.
     func loadPlan() async {
         guard Supa.userID != nil else { return }
+        // Every commit below is checked against this: a read that began before an account was
+        // deleted (#295) must not put that account's plan back on screen for the next one.
+        let generation = accountGeneration
 
         let fetched: [PlanInfo]
         do {
@@ -191,6 +194,7 @@ extension RunStore {
             Telemetry.error("plan.load_failed", error)
             return
         }
+        guard generation == accountGeneration else { return }
 
         guard let newPlan = fetched.first else {
             // Definitive: no active plan exists.
@@ -208,6 +212,7 @@ extension RunStore {
                 .limit(1)
                 .execute()
                 .value
+            guard generation == accountGeneration else { return }
             plan = nil; goal = standalone?.first; planWeeks = []; sessions = []
             return
         }
@@ -239,6 +244,7 @@ extension RunStore {
             .execute()
             .value
 
+        guard generation == accountGeneration else { return }
         // Commit only what actually loaded; a partial failure keeps prior data visible.
         plan = newPlan
         if let newGoal { goal = newGoal }
@@ -270,6 +276,7 @@ extension RunStore {
         } catch {
             response = .unreachable
         }
+        guard generation == accountGeneration else { return }
         todayCheckIn = CheckInToday.resolve(response, held: todayCheckIn)
     }
 
@@ -333,7 +340,7 @@ extension RunStore {
         guard plan != nil else { return }
         let today = PlanDates.todayString
         var changed = false
-        for (idx, session) in sessions.enumerated() {
+        for session in sessions {
             guard session.status == "planned", session.type != "rest", session.date <= today else { continue }
             guard let match = runs.first(where: {
                 PlanDates.day.string(from: $0.start) == session.date
@@ -343,6 +350,9 @@ extension RunStore {
                 .update(Patch(status: "done", run_id: match.id.uuidString))
                 .eq("id", value: session.id.uuidString)
                 .execute()) != nil {
+                // Found again by id: the list can be replaced or emptied during the write,
+                // and an index from before it is an out-of-bounds crash (#295).
+                guard let idx = sessions.firstIndex(where: { $0.id == session.id }) else { continue }
                 sessions[idx].status = "done"
                 sessions[idx].run_id = match.id
                 changed = true
@@ -368,17 +378,15 @@ extension RunStore {
         let weekStart = PlanDates.day.string(from: week.start)
         let weekEnd = PlanDates.day.string(from: week.end)
 
-        guard let missedIdx = sessions.firstIndex(where: {
+        guard let missed = sessions.first(where: {
             ($0.isQuality || $0.type == "long") && $0.status == "planned" && !$0.adapted
                 && $0.date >= weekStart && $0.date < today
         }) else { return }
-        guard let easyIdx = sessions.firstIndex(where: {
+        guard let easy = sessions.first(where: {
             $0.type == "easy" && $0.status == "planned" && !$0.adapted
                 && $0.date > today && $0.date < weekEnd
         }) else { return }
 
-        let missed = sessions[missedIdx]
-        let easy = sessions[easyIdx]
         func dayName(_ iso: String) -> String {
             PlanDates.day.date(from: iso).map { $0.formatted(.dateTime.weekday(.wide)) } ?? iso
         }
@@ -400,6 +408,9 @@ extension RunStore {
             )).eq("id", value: easy.id.uuidString).execute()
         } catch { return }   // adaptation is best-effort; never disturb state on failure
 
+        // By id, not by the indices above: the list may have changed during the writes (#295).
+        guard let missedIdx = sessions.firstIndex(where: { $0.id == missed.id }),
+              let easyIdx = sessions.firstIndex(where: { $0.id == easy.id }) else { return }
         sessions[missedIdx].date = easy.date
         sessions[missedIdx].adapted = true
         sessions[missedIdx].adaptation_note = "Moved from \(dayName(missed.date))."
@@ -412,11 +423,13 @@ extension RunStore {
 
     func submitCheckIn(feelsOk: Bool, note: String? = nil) async {
         guard let uid = Supa.userID?.uuidString else { return }
+        let generation = accountGeneration
         struct Row: Encodable { let user_id: String; let date: String; let feels_ok: Bool; let note: String? }
         let row = Row(user_id: uid, date: PlanDates.todayString, feels_ok: feelsOk, note: note)
         _ = try? await Supa.client.from("check_ins")
             .upsert(row, onConflict: "user_id,date")
             .execute()
+        guard generation == accountGeneration else { return }
         todayCheckIn = CheckInInfo(date: row.date, feels_ok: feelsOk, note: note)
     }
 

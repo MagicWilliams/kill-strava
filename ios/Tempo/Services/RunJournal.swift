@@ -52,8 +52,11 @@ enum RunJournal {
         forRun runID: UUID
     ) -> Task<Outcome, Never> {
         let assertion = UIApplication.shared.beginBackgroundTask(withName: "run-journal")
+        // Whose journal this is, read at the tap. The work below runs on for up to twenty
+        // seconds of retries, and the account can be deleted inside that (#295).
+        let owner = Supa.userID
         return Task.detached(priority: .utility) {
-            let outcome = await write(entry, photo: photo, forRun: runID)
+            let outcome = await write(entry, photo: photo, forRun: runID, owner: owner)
             await MainActor.run {
                 if assertion != .invalid { UIApplication.shared.endBackgroundTask(assertion) }
             }
@@ -63,10 +66,10 @@ enum RunJournal {
 
     /// Fields first, then the photo. Each is independent: a refused photo does not undo the
     /// notes, and a failed notes write does not stop the photo.
-    static func write(_ entry: RunJournalEntry, photo: UIImage?, forRun runID: UUID) async -> Outcome {
-        let fieldsSaved = await saveFields(entry, forRun: runID)
+    static func write(_ entry: RunJournalEntry, photo: UIImage?, forRun runID: UUID, owner: UUID?) async -> Outcome {
+        let fieldsSaved = await saveFields(entry, forRun: runID, owner: owner)
         guard let photo else { return Outcome(fieldsSaved: fieldsSaved, photo: .none) }
-        if let path = await attachPhoto(photo, toRun: runID) {
+        if let path = await attachPhoto(photo, toRun: runID, owner: owner) {
             return Outcome(fieldsSaved: fieldsSaved, photo: .attached(path))
         }
         return Outcome(fieldsSaved: fieldsSaved, photo: .failed)
@@ -78,10 +81,10 @@ enum RunJournal {
     /// athlete cleared is cleared (see `RunJournalPayload.Fields`). `photo_path` is not
     /// touched. Returns whether it landed.
     @discardableResult
-    static func saveFields(_ entry: RunJournalEntry, forRun runID: UUID) async -> Bool {
+    static func saveFields(_ entry: RunJournalEntry, forRun runID: UUID, owner: UUID?) async -> Bool {
         let fields = RunJournalPayload.fields(for: entry)
         do {
-            try await withRetry("journal.fields_write_failed") {
+            try await withRetry("journal.fields_write_failed", owner: owner) {
                 try await Supa.client
                     .from("runs")
                     .update(fields)
@@ -102,8 +105,12 @@ enum RunJournal {
     /// Upload before the row write, never the other way round: a `photo_path` naming an
     /// object that never arrived is a broken image on Run Detail, whereas an object no row
     /// names is merely an orphan in a private bucket.
-    static func attachPhoto(_ image: UIImage, toRun runID: UUID) async -> String? {
-        guard let uid = Supa.userID else { return nil }
+    ///
+    /// The key is built from `owner` and never from whoever is signed in by now, so a photo
+    /// that outlives its account is refused by the bucket's policy instead of landing in the
+    /// next account's folder.
+    static func attachPhoto(_ image: UIImage, toRun runID: UUID, owner: UUID?) async -> String? {
+        guard let uid = owner else { return nil }
         guard let jpeg = jpegForUpload(image) else {
             Telemetry.warn("journal.photo_encode_failed")
             return nil
@@ -111,7 +118,7 @@ enum RunJournal {
         let path = RunJournalPayload.photoPath(userID: uid, runID: runID, photoID: UUID())
 
         do {
-            try await withRetry("journal.photo_upload_failed", context: ["bytes": "\(jpeg.count)"]) {
+            try await withRetry("journal.photo_upload_failed", owner: owner, context: ["bytes": "\(jpeg.count)"]) {
                 // `upsert: true`: if an attempt landed but its response was lost, the retry
                 // overwrites its own object instead of failing as a duplicate.
                 _ = try await Supa.client.storage
@@ -119,7 +126,7 @@ enum RunJournal {
                     .upload(path, data: jpeg,
                             options: FileOptions(contentType: "image/jpeg", upsert: true))
             }
-            try await withRetry("journal.photo_path_write_failed") {
+            try await withRetry("journal.photo_path_write_failed", owner: owner) {
                 try await Supa.client
                     .from("runs")
                     .update(RunJournalPayload.PhotoPathUpdate(photoPath: path))
@@ -161,7 +168,7 @@ enum RunJournal {
     /// `RunDetailJournal.orphanedObjectKey` and `deletePhotoObject` below.
     static func detachPhoto(fromRun runID: UUID) async -> Bool {
         do {
-            try await withRetry("journal.photo_detach_failed") {
+            try await withRetry("journal.photo_detach_failed", owner: Supa.userID) {
                 try await Supa.client
                     .from("runs")
                     .update(RunJournalPayload.PhotoPathUpdate(photoPath: nil))
@@ -221,14 +228,17 @@ enum RunJournal {
     // MARK: - Retry
 
     /// Run `operation`, retrying transient failures on `RunJournalPayload.retryDelays`.
-    /// Logs once, with the final error, when it gives up — not once per attempt.
+    /// Logs once, with the final error, when it gives up — not once per attempt. Every attempt
+    /// checks that `owner` is still the account signed in, the first included.
     private static func withRetry(
         _ event: String,
+        owner: UUID?,
         context: [String: String] = [:],
         _ operation: () async throws -> Void
     ) async throws {
         var attempt = 0
         while true {
+            guard AccountDeletion.mayContinue(owner: owner, current: Supa.userID) else { throw CancellationError() }
             do {
                 try await operation()
                 return

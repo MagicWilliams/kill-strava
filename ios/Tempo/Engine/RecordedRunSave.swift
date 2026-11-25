@@ -124,6 +124,43 @@ enum RecordedRunSave {
         /// goal is still the active one: a block replaced while the run sat queued does not
         /// get someone else's race filed under it.
         var goalID: UUID? = nil
+        /// The account it was recorded under (#295). The file outlives the session it was
+        /// written in, and a retry runs as whoever is signed in by then. Nil for a run queued
+        /// by an older build, which didn't say; `claiming` fills it in.
+        var owner: UUID? = nil
+    }
+
+    /// Give every run in the queue to the account that finds it, unless its own account asked
+    /// to be deleted.
+    ///
+    /// An anonymous session can be lost without anyone asking for that, and the person holding
+    /// the phone is then the same person with a new account. The entry may be the only copy of
+    /// their notes and photo, and no one else can ever sign in as the old account to send it. A
+    /// confirmed deletion erases the queue, so nothing of a deleted account's is here to claim.
+    static func claiming(_ queue: [Pending], for account: UUID, deletionAsked: UUID? = nil) -> [Pending] {
+        queue.map { pending in
+            guard pending.owner == nil || pending.owner != deletionAsked else { return pending }
+            var claimed = pending
+            claimed.owner = account
+            return claimed
+        }
+    }
+
+    /// The queue without what an account left in it when it asked to go and its session went
+    /// before the server's answer arrived (`AccountDeletion.Recheck.stale`). An entry with no
+    /// owner is that account's if it was queued by then, and later than that it is the next
+    /// athlete's.
+    static func leaving(_ queue: [Pending], behind asked: AccountDeletion.Asked) -> [Pending] {
+        queue.filter { pending in
+            guard let owner = pending.owner else { return pending.queuedAt > asked.at }
+            return owner != asked.uid
+        }
+    }
+
+    /// May the signed-in account retry this run? Only its own, once `claiming` has settled
+    /// whose it is.
+    static func mayRetry(_ pending: Pending, as account: UUID) -> Bool {
+        pending.owner == account
     }
 
     /// The link to write once a queued run's row lands on a retry, or nil for none (#178).
